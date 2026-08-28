@@ -1,7 +1,5 @@
 import { form, query, command } from '$app/server';
 import * as v from 'valibot';
-import fs from 'node:fs';
-import path from 'node:path';
 import { parseExcelBuffer } from '#lib/server/excel';
 import { getGrantScheme, GRANT_SCHEMES } from '#lib/grants/index';
 import type {
@@ -31,6 +29,7 @@ export const recalculateGrant = command(
 		participant: v.any(),
 		options: v.object({
 			includeOffsetRows: v.boolean(),
+			restrictToExitDate: v.optional(v.boolean(), true),
 			restrictToYear: v.optional(v.number()),
 			customAgaTimeline: v.optional(
 				v.array(
@@ -55,45 +54,6 @@ export const recalculateGrant = command(
 	}
 );
 
-// Remote Command: Load bundled sample Excel calculation (dynamically locates any sample workbook in sample_data/)
-export const loadSampleCalculation = command(
-	v.object({
-		includeOffsetRows: v.optional(v.boolean(), true),
-		restrictToYear: v.optional(v.number())
-	}),
-	async ({ includeOffsetRows, restrictToYear }): Promise<GrantTransformationResult> => {
-		const sampleDir = path.resolve('sample_data');
-		let sampleFilePath = '';
-
-		if (fs.existsSync(sampleDir)) {
-			const files = fs.readdirSync(sampleDir).filter(f => f.endsWith('.xlsx') && !f.startsWith('~$'));
-			if (files.length > 0) {
-				sampleFilePath = path.join(sampleDir, files[0]);
-			}
-		}
-
-		if (!sampleFilePath || !fs.existsSync(sampleFilePath)) {
-			const rootFiles = fs.readdirSync(path.resolve('.')).filter(f => f.endsWith('.xlsx') && !f.startsWith('~$'));
-			if (rootFiles.length > 0) {
-				sampleFilePath = path.resolve(rootFiles[0]);
-			}
-		}
-
-		if (!sampleFilePath || !fs.existsSync(sampleFilePath)) {
-			throw new Error('Keine Beispiel-Excel-Datei gefunden.');
-		}
-
-		const buffer = fs.readFileSync(sampleFilePath);
-		const { participant, records } = parseExcelBuffer(buffer);
-		const scheme = getGrantScheme('sgb16i-berlin');
-
-		return scheme.transform(records, participant, {
-			includeOffsetRows: includeOffsetRows ?? true,
-			restrictToYear
-		});
-	}
-);
-
 // Remote Command: Direct Base64 / ArrayBuffer spreadsheet processor (works seamlessly with Drag&Drop / File Readers)
 export const processExcelFile = command(
 	v.object({
@@ -101,9 +61,10 @@ export const processExcelFile = command(
 		fileName: v.string(),
 		schemeId: v.optional(v.string(), 'sgb16i-berlin'),
 		includeOffsetRows: v.optional(v.boolean(), true),
+		restrictToExitDate: v.optional(v.boolean(), true),
 		restrictToYear: v.optional(v.number())
 	}),
-	async ({ fileBase64, fileName, schemeId, includeOffsetRows, restrictToYear }): Promise<GrantTransformationResult> => {
+	async ({ fileBase64, fileName, schemeId, includeOffsetRows, restrictToExitDate, restrictToYear }): Promise<GrantTransformationResult> => {
 		try {
 			const buffer = Buffer.from(fileBase64, 'base64');
 			const { participant, records } = parseExcelBuffer(buffer);
@@ -111,6 +72,7 @@ export const processExcelFile = command(
 
 			return scheme.transform(records, participant, {
 				includeOffsetRows: includeOffsetRows ?? true,
+				restrictToExitDate: restrictToExitDate ?? true,
 				restrictToYear
 			});
 		} catch (err: any) {
@@ -125,9 +87,10 @@ export const uploadExcel = form(
 		excelFile: v.optional(v.any()),
 		schemeId: v.optional(v.string(), 'sgb16i-berlin'),
 		includeOffsetRows: v.optional(v.string(), 'true'),
+		restrictToExitDate: v.optional(v.string(), 'true'),
 		restrictToYear: v.optional(v.string())
 	}),
-	async ({ excelFile, schemeId, includeOffsetRows, restrictToYear }): Promise<GrantTransformationResult> => {
+	async ({ excelFile, schemeId, includeOffsetRows, restrictToExitDate, restrictToYear }): Promise<GrantTransformationResult> => {
 		if (!excelFile || !(excelFile instanceof File)) {
 			throw new Error('Bitte wählen Sie eine gültige Excel-Datei (.xlsx) aus.');
 		}
@@ -139,6 +102,7 @@ export const uploadExcel = form(
 		const scheme = getGrantScheme(schemeId);
 		const options: GrantTransformationOptions = {
 			includeOffsetRows: includeOffsetRows === 'true' || includeOffsetRows === 'on',
+			restrictToExitDate: restrictToExitDate !== 'false',
 			restrictToYear: restrictToYear ? parseInt(restrictToYear, 10) : undefined
 		};
 

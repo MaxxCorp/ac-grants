@@ -121,7 +121,8 @@ export interface ControlCheckResult {
 
 export interface GrantTransformationOptions {
 	includeOffsetRows: boolean;
-	restrictToYear?: number; // e.g. 2029 for 41 months restriction, or undefined for full 60 months
+	restrictToExitDate?: boolean; // Default true: only generate outputs until the exit date in Excel cell F2
+	restrictToYear?: number; // Optional fallback year restriction
 	customAgaTimeline?: AgaRatePeriod[];
 }
 

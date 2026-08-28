@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getAvailableSchemes, recalculateGrant, loadSampleCalculation } from '#lib/grant.remote';
+	import { getAvailableSchemes, recalculateGrant } from '#lib/grant.remote';
 	import type { GrantTransformationResult, AgaRatePeriod } from '#lib/types/grant';
 	import FileUpload from '#lib/components/FileUpload.svelte';
 	import ControlDashboard from '#lib/components/ControlDashboard.svelte';
@@ -10,24 +10,15 @@
 	let availableSchemes = $state<any[]>([]);
 	let selectedSchemeId = $state('sgb16i-berlin');
 	let includeOffset = $state(true);
-	let runtimeMode = $state<'full' | 'restricted'>('full'); // 'full' (60 mo) vs 'restricted' (41 mo)
+	let restrictToExitDate = $state(true); // Default true: only generate outputs until cell F2 exit date
 	let currentResult = $state<GrantTransformationResult | null>(null);
 	let isRecalculating = $state(false);
-
-	const restrictYear = $derived(runtimeMode === 'restricted' ? 2029 : undefined);
 
 	onMount(async () => {
 		try {
 			// Fetch schemes from Remote Query
 			const schemes = await getAvailableSchemes();
 			availableSchemes = schemes;
-
-			// Automatically load bundled sample calculation (Langner) for instant interactive experience
-			const sampleRes = await loadSampleCalculation({
-				includeOffsetRows: includeOffset,
-				restrictToYear: restrictYear
-			});
-			currentResult = sampleRes;
 		} catch (err) {
 			console.error('Initial load error:', err);
 		}
@@ -44,8 +35,8 @@
 		}
 	}
 
-	async function handleRuntimeModeChange(mode: 'full' | 'restricted') {
-		runtimeMode = mode;
+	async function handleExitDateRestrictionChange(val: boolean) {
+		restrictToExitDate = val;
 		if (currentResult) {
 			await triggerRecalculate();
 		}
@@ -61,7 +52,7 @@
 					participant: currentResult.participant,
 					options: {
 						includeOffsetRows: includeOffset,
-						restrictToYear: runtimeMode === 'restricted' ? 2029 : undefined,
+						restrictToExitDate,
 						customAgaTimeline: newTimeline
 					}
 				});
@@ -84,7 +75,7 @@
 					participant: currentResult.participant,
 					options: {
 						includeOffsetRows: includeOffset,
-						restrictToYear: runtimeMode === 'restricted' ? 2029 : undefined,
+						restrictToExitDate,
 						customAgaTimeline: currentResult.agaTimeline
 					}
 				});
@@ -141,21 +132,23 @@
 			</div>
 
 			<div class="config-item">
-				<span class="config-label">Laufzeit-Darstellung:</span>
+				<span class="config-label">Laufzeit-Umfang:</span>
 				<div class="segmented-control">
 					<button
 						type="button"
-						class="seg-btn {runtimeMode === 'full' ? 'active' : ''}"
-						onclick={() => handleRuntimeModeChange('full')}
+						class="seg-btn {restrictToExitDate ? 'active' : ''}"
+						onclick={() => handleExitDateRestrictionChange(true)}
+						title="Standard: Ausgabe nur bis zum tatsächlichen Austrittsdatum laut Excel Zelle F2 ({currentResult?.participant?.runtimeEnd || 'Zelle F2'})"
 					>
-						Vollständige 5 Jahre (60 Mo)
+						Bis Austrittsdatum {currentResult?.participant?.runtimeEnd ? `(${currentResult.participant.runtimeEnd})` : 'Zelle F2'}
 					</button>
 					<button
 						type="button"
-						class="seg-btn {runtimeMode === 'restricted' ? 'active' : ''}"
-						onclick={() => handleRuntimeModeChange('restricted')}
+						class="seg-btn {!restrictToExitDate ? 'active' : ''}"
+						onclick={() => handleExitDateRestrictionChange(false)}
+						title="Optionale Überschreibung: Vollständige 5 Jahre (60 Monate) generieren"
 					>
-						Formular-Begrenzung 2029 (41 Mo)
+						Vollständige 5 Jahre (60 Mo)
 					</button>
 				</div>
 			</div>
@@ -179,7 +172,7 @@
 				onResult={handleResult}
 				selectedScheme={selectedSchemeId}
 				{includeOffset}
-				{restrictYear}
+				{restrictToExitDate}
 			/>
 		</section>
 

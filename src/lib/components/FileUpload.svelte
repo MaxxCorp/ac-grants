@@ -1,16 +1,18 @@
 <script lang="ts">
-	import { uploadExcel, loadSampleCalculation, processExcelFile } from '#lib/grant.remote';
+	import { processExcelFile } from '#lib/grant.remote';
 	import type { GrantTransformationResult } from '#lib/types/grant';
 
 	let {
 		onResult,
 		selectedScheme = 'sgb16i-berlin',
 		includeOffset = true,
+		restrictToExitDate = true,
 		restrictYear = undefined
 	}: {
 		onResult: (res: GrantTransformationResult) => void;
 		selectedScheme?: string;
 		includeOffset?: boolean;
+		restrictToExitDate?: boolean;
 		restrictYear?: number | undefined;
 	} = $props();
 
@@ -18,23 +20,6 @@
 	let isProcessing = $state(false);
 	let errorMessage = $state<string | null>(null);
 	let successFileName = $state<string | null>(null);
-
-	async function handleLoadSample() {
-		try {
-			isProcessing = true;
-			errorMessage = null;
-			const res = await loadSampleCalculation({
-				includeOffsetRows: includeOffset,
-				restrictToYear: restrictYear
-			});
-			successFileName = 'Beispiel (Hansen / Langner)';
-			onResult(res);
-		} catch (err: any) {
-			errorMessage = err?.message || 'Fehler beim Laden des Beispiels.';
-		} finally {
-			isProcessing = false;
-		}
-	}
 
 	function handleDragOver(e: DragEvent) {
 		e.preventDefault();
@@ -83,6 +68,7 @@
 						fileName: file.name,
 						schemeId: selectedScheme,
 						includeOffsetRows: includeOffset,
+						restrictToExitDate,
 						restrictToYear: restrictYear
 					});
 
@@ -168,18 +154,6 @@
 					</svg>
 					Datei auswählen
 				</label>
-
-				<button
-					type="button"
-					class="btn btn-secondary"
-					onclick={handleLoadSample}
-					disabled={isProcessing}
-				>
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<polygon points="5 3 19 12 5 21 5 3"></polygon>
-					</svg>
-					Beispieldaten laden
-				</button>
 			</div>
 		</div>
 	</div>
@@ -314,17 +288,6 @@
 	.btn-primary:hover {
 		background: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
 		box-shadow: 0 4px 15px rgba(79, 70, 229, 0.4);
-	}
-
-	.btn-secondary {
-		background: rgba(255, 255, 255, 0.08);
-		color: #e2e8f0;
-		border: 1px solid rgba(255, 255, 255, 0.15);
-	}
-
-	.btn-secondary:hover:not(:disabled) {
-		background: rgba(255, 255, 255, 0.15);
-		color: #ffffff;
 	}
 
 	.btn:disabled {

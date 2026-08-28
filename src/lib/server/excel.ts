@@ -128,18 +128,18 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 	};
 
 	// Parse Participant Metadata from Row 2
-	const rawName = String(getCellValue('A', 2) || 'Frau Nadine Langner').trim();
+	const rawName = String(getCellValue('A', 2) || 'Teilnehmer/in').trim();
 	const rawEG = String(getCellValue('B', 2) || 'EG1').trim();
 	const rawES = String(getCellValue('C', 2) || 'ES1').trim();
-	const rawRuntime = String(getCellValue('F', 2) || '01.08.2026 - 31.07.2031').trim();
+	const rawRuntime = String(getCellValue('F', 2) || '').trim();
 	const weeklyHours = parseNumber(getCellValue('J', 2), 30);
 	const sachkostenMonthly = parseNumber(getCellValue('M', 2), 155);
-	const childrenCount = parseNumber(getCellValue('U', 2), 2);
-	const healthInsuranceName = String(getCellValue('W', 2) || 'Barmer').trim();
-	const defaultAgaRate = parseNumber(getCellValue('Y', 2), 0.23815);
+	const childrenCount = parseNumber(getCellValue('U', 2), 0);
+	const healthInsuranceName = String(getCellValue('W', 2) || 'GKV').trim();
+	const defaultAgaRate = parseNumber(getCellValue('Y', 2), 0.2314);
 
-	let runtimeStart = '01.08.2026';
-	let runtimeEnd = '31.07.2031';
+	let runtimeStart = '';
+	let runtimeEnd = '';
 	const runtimeParts = rawRuntime.split('-').map(s => s.trim());
 	if (runtimeParts.length === 2) {
 		runtimeStart = runtimeParts[0];

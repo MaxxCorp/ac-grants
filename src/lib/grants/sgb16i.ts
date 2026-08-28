@@ -109,12 +109,72 @@ export function getEffectiveAgaRate(
 	return defaultRate;
 }
 
+export function parseDateComponents(dateStr: string): { day: number; month: number; year: number } | null {
+	if (!dateStr) return null;
+	const clean = dateStr.trim();
+
+	// DD.MM.YYYY or DD.MM.YY
+	const ddmmyyyy = clean.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+	if (ddmmyyyy) {
+		const day = parseInt(ddmmyyyy[1], 10);
+		const month = parseInt(ddmmyyyy[2], 10);
+		let year = parseInt(ddmmyyyy[3], 10);
+		if (year < 100) year += 2000;
+		return { day, month, year };
+	}
+
+	// YYYY-MM-DD
+	const yyyymmdd = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+	if (yyyymmdd) {
+		const year = parseInt(yyyymmdd[1], 10);
+		const month = parseInt(yyyymmdd[2], 10);
+		const day = parseInt(yyyymmdd[3], 10);
+		return { day, month, year };
+	}
+
+	// DD/MM/YYYY
+	const slash = clean.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+	if (slash) {
+		const day = parseInt(slash[1], 10);
+		const month = parseInt(slash[2], 10);
+		let year = parseInt(slash[3], 10);
+		if (year < 100) year += 2000;
+		return { day, month, year };
+	}
+
+	return null;
+}
+
+export function isRecordWithinExitDate(record: MonthlyRecord, exitDateStr: string): boolean {
+	const exit = parseDateComponents(exitDateStr);
+	if (!exit) return true;
+
+	if (record.year < exit.year) return true;
+	if (record.year > exit.year) return false;
+
+	// Same year
+	if (record.month < exit.month) return true;
+	if (record.month > exit.month) return false;
+
+	// Same year and same month
+	if (record.startDate) {
+		const startComp = parseDateComponents(record.startDate);
+		if (startComp && startComp.year === exit.year && startComp.month === exit.month) {
+			if (startComp.day > exit.day) {
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
 export function transformSgb16i(
 	rawRecords: MonthlyRecord[],
 	participant: ParticipantInfo,
 	options: GrantTransformationOptions
 ): GrantTransformationResult {
-	const { includeOffsetRows, restrictToYear, customAgaTimeline } = options;
+	const { includeOffsetRows, restrictToExitDate = true, restrictToYear, customAgaTimeline } = options;
 
 	// Apply custom AGA rates, calculate full unscaled and scaled monthly amounts
 	let records = rawRecords.map(r => {
@@ -156,7 +216,10 @@ export function transformSgb16i(
 		};
 	});
 
-	if (restrictToYear && restrictToYear > 0) {
+	// Default behavior: filter records by cell F2 exit date
+	if (restrictToExitDate && participant.runtimeEnd) {
+		records = records.filter(r => isRecordWithinExitDate(r, participant.runtimeEnd));
+	} else if (restrictToYear && restrictToYear > 0) {
 		records = records.filter(r => r.year <= restrictToYear);
 	}
 
