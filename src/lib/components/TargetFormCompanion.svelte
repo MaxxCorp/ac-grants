@@ -215,20 +215,63 @@
 
 	<!-- Tab Content Area -->
 	<div class="tab-content">
+		<!-- Quick Legend Toolbar -->
+		<div class="table-legend-bar">
+			<div class="legend-items">
+				<span class="legend-item legend-control">
+					<span class="legend-dot dot-control"></span>
+					<span class="legend-label">Steuerungs- / Parametereingaben</span>
+					<span class="legend-hint">(Arbeitszeit, Anteil %, Monate)</span>
+				</span>
+				<span class="legend-item legend-sum">
+					<span class="legend-dot dot-sum"></span>
+					<span class="legend-label">Gesamtsumme (Zeile)</span>
+					<span class="legend-hint">(Summe Förderposition)</span>
+				</span>
+				<span class="legend-item legend-ctrlsum">
+					<span class="legend-dot dot-ctrlsum"></span>
+					<span class="legend-label">Kontrollsumme</span>
+					<span class="legend-hint">(Rechnerischer Prüfwert)</span>
+				</span>
+				<span class="legend-item legend-data">
+					<span class="legend-dot dot-data"></span>
+					<span class="legend-label">Finanz- & Jahresbeträge</span>
+					<span class="legend-hint">(AG-Brutto mtl., 2026–2031)</span>
+				</span>
+			</div>
+			<div class="legend-right">
+				<span class="legend-tip">💡 Klick auf beliebigen Wert kopiert direkt in die Zwischenablage</span>
+			</div>
+		</div>
+
 		<div class="table-container">
 			<table class="target-table">
 				<thead>
 					<tr>
 						<th class="th-action"></th>
-						<th class="th-hours">Arbeitszeit|TLN Nr.</th>
-						<th class="th-amount">AG Brutto mtl.</th>
-						<th class="th-pct">Anteil [%]</th>
-						<th class="th-months">Anzahl Monate</th>
-						<th class="th-sum">Summe</th>
+						<th class="th-hours th-control-header" title="Steuerungseingabe: Wochenarbeitszeit / TLN-Nummer">
+							<span class="th-content"><span class="th-tag control-tag">⚙</span>Arbeitszeit|TLN Nr.</span>
+						</th>
+						<th class="th-amount th-data-header" title="Datenfeld: Monatlicher AG-Bruttobetrag">
+							<span class="th-content">AG Brutto mtl.</span>
+						</th>
+						<th class="th-pct th-control-header" title="Steuerungseingabe: Fördersatz in %">
+							<span class="th-content"><span class="th-tag control-tag">⚙</span>Anteil [%]</span>
+						</th>
+						<th class="th-months th-control-header" title="Steuerungseingabe: Anzahl der Fördermonate im Berechnungszeitraum">
+							<span class="th-content"><span class="th-tag control-tag">⚙</span>Anzahl Monate</span>
+						</th>
+						<th class="th-sum th-sum-header" title="Gesamtförderbetrag dieser Zeile">
+							<span class="th-content"><span class="th-tag sum-tag">∑</span>Summe</span>
+						</th>
 						{#each result.years as y}
-							<th class="th-year">{y}</th>
+							<th class="th-year th-data-header" title="Datenfeld: Jahresanteil {y}">
+								<span class="th-content">{y}</span>
+							</th>
 						{/each}
-						<th class="th-ctrl">Kontrollsumme</th>
+						<th class="th-ctrl th-control-sum-header" title="Kontrollsumme: Quersumme zur mathematischen Konsistenzprüfung">
+							<span class="th-content"><span class="th-tag ctrl-sum-tag">✓</span>Kontrollsumme</span>
+						</th>
 						<th class="th-row-action">Aktion</th>
 					</tr>
 				</thead>
@@ -251,13 +294,13 @@
 								</span>
 							</td>
 
-							<!-- Arbeitszeit / Stunden -->
+							<!-- Arbeitszeit / Stunden (Steuerungseingabe) -->
 							<td class="td-cell">
 								<button
 									type="button"
-									class="copy-cell-btn {copiedField === `hours-${row.id}` ? 'cell-just-copied' : ''}"
+									class="copy-cell-btn cell-control cell-hours {copiedField === `hours-${row.id}` ? 'cell-just-copied' : ''}"
 									onclick={() => copyToClipboard(row.workingHours, `hours-${row.id}`, row.id)}
-									title="Klicken zum Kopieren"
+									title="Steuerungseingabe: Arbeitszeit kopieren ({row.workingHours})"
 								>
 									<span>{row.workingHours}</span>
 									{#if copiedField === `hours-${row.id}`}
@@ -266,13 +309,13 @@
 								</button>
 							</td>
 
-							<!-- AG Brutto mtl. -->
+							<!-- AG Brutto mtl. (Datenfeld) -->
 							<td class="td-cell">
 								<button
 									type="button"
-									class="copy-cell-btn font-mono {copiedField === `monthly-${row.id}` ? 'cell-just-copied' : ''}"
+									class="copy-cell-btn cell-data font-mono {copiedField === `monthly-${row.id}` ? 'cell-just-copied' : ''}"
 									onclick={() => copyToClipboard(row.monthlyAmount, `monthly-${row.id}`, row.id)}
-									title="Klicken zum Kopieren"
+									title="Datenfeld: AG Brutto monatlich kopieren"
 								>
 									<span>{row.monthlyAmount.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
 									{#if copiedField === `monthly-${row.id}`}
@@ -281,13 +324,13 @@
 								</button>
 							</td>
 
-							<!-- Anteil % -->
+							<!-- Anteil % (Steuerungseingabe) -->
 							<td class="td-cell">
 								<button
 									type="button"
-									class="copy-cell-btn {copiedField === `pct-${row.id}` ? 'cell-just-copied' : ''}"
+									class="copy-cell-btn cell-control cell-pct {copiedField === `pct-${row.id}` ? 'cell-just-copied' : ''}"
 									onclick={() => copyToClipboard(row.percentage, `pct-${row.id}`, row.id)}
-									title="Klicken zum Kopieren"
+									title="Steuerungseingabe: Förderquote {row.percentage}% kopieren"
 								>
 									<span>{row.percentage}</span>
 									{#if copiedField === `pct-${row.id}`}
@@ -296,13 +339,13 @@
 								</button>
 							</td>
 
-							<!-- Anzahl Monate -->
+							<!-- Anzahl Monate (Steuerungseingabe) -->
 							<td class="td-cell">
 								<button
 									type="button"
-									class="copy-cell-btn {copiedField === `months-${row.id}` ? 'cell-just-copied' : ''}"
+									class="copy-cell-btn cell-control cell-months {copiedField === `months-${row.id}` ? 'cell-just-copied' : ''}"
 									onclick={() => copyToClipboard(row.monthCount, `months-${row.id}`, row.id, true)}
-									title="Klicken zum Kopieren"
+									title="Steuerungseingabe: Monatsanzahl {row.monthCount} kopieren"
 								>
 									<span>{row.monthCount.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
 									{#if copiedField === `months-${row.id}`}
@@ -311,13 +354,13 @@
 								</button>
 							</td>
 
-							<!-- Summe -->
+							<!-- Summe (Gesamtsumme Position - Gold/Amber) -->
 							<td class="td-cell">
 								<button
 									type="button"
-									class="copy-cell-btn font-mono font-bold {copiedField === `sum-${row.id}` ? 'cell-just-copied' : ''}"
+									class="copy-cell-btn cell-sum font-mono font-bold {copiedField === `sum-${row.id}` ? 'cell-just-copied' : ''}"
 									onclick={() => copyToClipboard(row.totalSum, `sum-${row.id}`, row.id)}
-									title="Klicken zum Kopieren"
+									title="Gesamtsumme: Positionssumme {formatCurrency(row.totalSum)} kopieren"
 								>
 									<span>{formatCurrency(row.totalSum)}</span>
 									{#if copiedField === `sum-${row.id}`}
@@ -326,16 +369,17 @@
 								</button>
 							</td>
 
-							<!-- Jahre -->
+							<!-- Jahre (Datenfelder) -->
 							{#each result.years as y}
+								{@const yVal = row.yearlyAmounts[y] || 0}
 								<td class="td-cell">
 									<button
 										type="button"
-										class="copy-cell-btn font-mono {copiedField === `y-${y}-${row.id}` ? 'cell-just-copied' : ''}"
-										onclick={() => copyToClipboard(row.yearlyAmounts[y] || 0, `y-${y}-${row.id}`, row.id)}
-										title="Klicken zum Kopieren"
+										class="copy-cell-btn cell-data cell-year font-mono {yVal === 0 ? 'cell-zero' : ''} {copiedField === `y-${y}-${row.id}` ? 'cell-just-copied' : ''}"
+										onclick={() => copyToClipboard(yVal, `y-${y}-${row.id}`, row.id)}
+										title="Datenfeld: Jahreswert {y} ({formatCurrency(yVal)}) kopieren"
 									>
-										<span>{formatCurrency(row.yearlyAmounts[y] || 0)}</span>
+										<span>{formatCurrency(yVal)}</span>
 										{#if copiedField === `y-${y}-${row.id}`}
 											<span class="copied-tooltip">✓</span>
 										{/if}
@@ -343,13 +387,13 @@
 								</td>
 							{/each}
 
-							<!-- Kontrollsumme -->
+							<!-- Kontrollsumme (Kontrollwert / Checksumme) -->
 							<td class="td-cell">
 								<button
 									type="button"
-									class="copy-cell-btn font-mono font-bold {copiedField === `ctrl-${row.id}` ? 'cell-just-copied' : ''}"
+									class="copy-cell-btn cell-control-sum font-mono font-bold {copiedField === `ctrl-${row.id}` ? 'cell-just-copied' : ''}"
 									onclick={() => copyToClipboard(row.controlSum, `ctrl-${row.id}`, row.id)}
-									title="Klicken zum Kopieren"
+									title="Kontrollsumme: Quersummen-Prüfwert {formatCurrency(row.controlSum)} kopieren"
 								>
 									<span>{formatCurrency(row.controlSum)}</span>
 									{#if copiedField === `ctrl-${row.id}`}
@@ -364,7 +408,7 @@
 									type="button"
 									class="copy-row-btn {isLastCopied ? 'btn-active-row' : ''}"
 									onclick={() => copyRowTSV(row)}
-									title="Ganze Zeile als Tabellenwerte kopieren"
+									title="Ganze Zeile als Tabellenwerte kopieren (TSV)"
 								>
 									{#if copiedField === `row-tsv-${row.id}`}
 										✓ Kopiert
@@ -389,7 +433,7 @@
 									<!-- 1. Name -->
 									<button
 										type="button"
-										class="copy-meta-btn {copiedField === `name-${row.id}` ? 'btn-copied' : ''}"
+										class="copy-meta-btn meta-name-btn {copiedField === `name-${row.id}` ? 'btn-copied' : ''}"
 										onclick={() => copyToClipboard(row.participantName, `name-${row.id}`, row.id)}
 										title="Name einzeln kopieren"
 									>
@@ -401,7 +445,7 @@
 									<!-- 2. Laufzeit -->
 									<button
 										type="button"
-										class="copy-meta-btn {copiedField === `rt-${row.id}` ? 'btn-copied' : ''}"
+										class="copy-meta-btn meta-runtime-btn {copiedField === `rt-${row.id}` ? 'btn-copied' : ''}"
 										onclick={() => copyToClipboard(row.runtimeText, `rt-${row.id}`, row.id)}
 										title="Laufzeit einzeln kopieren"
 									>
@@ -413,7 +457,7 @@
 									<!-- 3. Tarif -->
 									<button
 										type="button"
-										class="copy-meta-btn {copiedField === `tf-${row.id}` ? 'btn-copied' : ''}"
+										class="copy-meta-btn meta-tariff-btn {copiedField === `tf-${row.id}` ? 'btn-copied' : ''}"
 										onclick={() => copyToClipboard(row.tariffText, `tf-${row.id}`, row.id)}
 										title="Tarif einzeln kopieren"
 									>
@@ -425,7 +469,7 @@
 									<!-- 4. Zeitraum -->
 									<button
 										type="button"
-										class="copy-meta-btn {copiedField === `cp-${row.id}` ? 'btn-copied' : ''}"
+										class="copy-meta-btn meta-period-btn {copiedField === `cp-${row.id}` ? 'btn-copied' : ''}"
 										onclick={() => copyToClipboard(row.calculationPeriodText, `cp-${row.id}`, row.id)}
 										title="Berechnungszeitraum einzeln kopieren"
 									>
@@ -580,15 +624,17 @@
 		background: rgba(15, 23, 42, 0.85);
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		border-radius: 16px;
-		overflow: hidden;
 		margin: 2rem 0;
 		box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
 		backdrop-filter: blur(16px);
+		position: relative;
 	}
 
 	.window-titlebar {
 		background: rgba(30, 41, 59, 0.85);
 		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+		border-top-left-radius: 16px;
+		border-top-right-radius: 16px;
 		padding: 0.85rem 1.25rem;
 		display: flex;
 		justify-content: space-between;
@@ -712,12 +758,20 @@
 		font-weight: 500;
 	}
 
+	/* Sticky Tabs Navigation Bar */
 	.tabs-nav {
+		position: sticky;
+		top: 0;
+		z-index: 100;
 		display: flex;
-		background: rgba(15, 23, 42, 0.9);
-		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+		background: #0b1120;
+		background: rgba(11, 17, 32, 0.98);
+		border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 		padding: 0 0.75rem;
 		overflow-x: auto;
+		backdrop-filter: blur(20px);
+		-webkit-backdrop-filter: blur(20px);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 	}
 
 	.tab-btn {
@@ -740,43 +794,193 @@
 	.tab-btn.active {
 		color: #ffffff;
 		border-bottom-color: #6366f1;
-		background: rgba(99, 102, 241, 0.08);
+		background: rgba(99, 102, 241, 0.12);
 	}
 
 	.tab-content {
-		padding: 1.25rem;
+		padding: 0 1.25rem 1.25rem 1.25rem;
+	}
+
+	/* Quick Legend Toolbar */
+	.table-legend-bar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		padding: 0.85rem 0.25rem 0.75rem 0.25rem;
+		font-size: 0.8rem;
+	}
+
+	.legend-items {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 1.25rem;
+	}
+
+	.legend-item {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	.legend-dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 3px;
+		display: inline-block;
+	}
+
+	.dot-control {
+		background: rgba(14, 165, 233, 0.3);
+		border: 1.5px solid #38bdf8;
+		box-shadow: 0 0 6px rgba(56, 189, 248, 0.4);
+	}
+
+	.dot-sum {
+		background: rgba(245, 158, 11, 0.3);
+		border: 1.5px solid #fbbf24;
+		box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+	}
+
+	.dot-ctrlsum {
+		background: rgba(139, 92, 246, 0.3);
+		border: 1.5px solid #a78bfa;
+		box-shadow: 0 0 6px rgba(167, 139, 250, 0.4);
+	}
+
+	.dot-data {
+		background: rgba(30, 41, 59, 0.9);
+		border: 1.5px solid rgba(255, 255, 255, 0.3);
+	}
+
+	.legend-label {
+		font-weight: 600;
+	}
+
+	.legend-control .legend-label {
+		color: #7dd3fc;
+	}
+
+	.legend-sum .legend-label {
+		color: #fde68a;
+	}
+
+	.legend-ctrlsum .legend-label {
+		color: #c084fc;
+	}
+
+	.legend-data .legend-label {
+		color: #e2e8f0;
+	}
+
+	.legend-hint {
+		color: #64748b;
+		font-size: 0.725rem;
+	}
+
+	.legend-tip {
+		color: #94a3b8;
+		font-size: 0.775rem;
 	}
 
 	.table-container {
-		overflow-x: auto;
-		background: rgba(15, 23, 42, 0.6);
 		border: 1px solid rgba(255, 255, 255, 0.08);
 		border-radius: 10px;
+		background: rgba(15, 23, 42, 0.6);
+		overflow: visible;
 	}
 
 	.target-table {
 		width: 100%;
-		border-collapse: collapse;
-		font-size: 0.875rem;
+		border-collapse: separate;
+		border-spacing: 0;
+		font-size: 0.85rem;
+	}
+
+	/* Sticky Table Header */
+	.target-table thead {
+		position: sticky;
+		top: 44px;
+		z-index: 90;
 	}
 
 	.target-table th {
-		background: rgba(30, 41, 59, 0.8);
+		position: sticky;
+		top: 44px;
+		z-index: 90;
+		background: #111827;
+		background: rgba(17, 24, 39, 0.99);
+		backdrop-filter: blur(16px);
+		-webkit-backdrop-filter: blur(16px);
 		color: #94a3b8;
-		padding: 0.65rem 0.6rem;
+		padding: 0.6rem 0.35rem;
 		font-weight: 600;
-		font-size: 0.8rem;
+		font-size: 0.775rem;
 		text-align: right;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+		border-top: 1px solid rgba(255, 255, 255, 0.1);
+		border-bottom: 2px solid rgba(99, 102, 241, 0.4);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+		user-select: none;
 	}
 
 	.target-table th.th-action,
 	.target-table th.th-row-action {
 		text-align: center;
+		padding: 0.6rem 0.25rem;
 	}
 
 	.target-table th.th-hours {
 		text-align: center;
+	}
+
+	.th-content {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		white-space: nowrap;
+	}
+
+	.th-tag {
+		font-size: 0.65rem;
+		padding: 1px 3px;
+		border-radius: 3px;
+		font-weight: 700;
+	}
+
+	.th-control-header {
+		color: #38bdf8 !important;
+	}
+
+	.control-tag {
+		background: rgba(14, 165, 233, 0.2);
+		color: #38bdf8;
+		border: 1px solid rgba(56, 189, 248, 0.4);
+	}
+
+	.th-sum-header {
+		color: #fbbf24 !important;
+	}
+
+	.sum-tag {
+		background: rgba(245, 158, 11, 0.2);
+		color: #fbbf24;
+		border: 1px solid rgba(245, 158, 11, 0.4);
+	}
+
+	.th-control-sum-header {
+		color: #c084fc !important;
+	}
+
+	.ctrl-sum-tag {
+		background: rgba(139, 92, 246, 0.2);
+		color: #c084fc;
+		border: 1px solid rgba(167, 139, 250, 0.4);
+	}
+
+	.th-data-header {
+		color: #cbd5e1;
 	}
 
 	.data-row {
@@ -846,50 +1050,116 @@
 	}
 
 	.td-row-num {
-		padding: 0.5rem 0.6rem;
+		padding: 0.35rem 0.25rem;
 		text-align: center;
-		width: 52px;
+		width: 44px;
 	}
 
 	.row-badge {
 		display: inline-flex;
 		align-items: center;
-		gap: 3px;
+		gap: 2px;
 		font-weight: 700;
 		color: #ef4444;
-		font-size: 0.85rem;
+		font-size: 0.825rem;
 	}
 
 	.td-cell {
-		padding: 0.35rem 0.45rem;
+		padding: 0.3rem 0.25rem;
 		text-align: right;
 	}
 
+	/* Base Copy Button */
 	.copy-cell-btn {
 		width: 100%;
-		background: rgba(30, 41, 59, 0.7);
-		border: 1px solid rgba(255, 255, 255, 0.1);
 		border-radius: 6px;
-		color: #f1f5f9;
-		padding: 0.35rem 0.55rem;
-		font-size: 0.85rem;
+		padding: 0.35rem 0.35rem;
+		font-size: 0.825rem;
 		text-align: right;
 		cursor: pointer;
 		position: relative;
 		transition: all 0.15s ease;
 	}
 
-	.copy-cell-btn:hover {
+	/* 1. Control / Parameter Inputs (Arbeitszeit, Anteil %, Monate) - Sky/Cyan */
+	.copy-cell-btn.cell-control {
+		background: rgba(14, 165, 233, 0.12);
+		border: 1px solid rgba(56, 189, 248, 0.38);
+		color: #7dd3fc;
+		font-weight: 600;
+		text-align: center;
+	}
+
+	.copy-cell-btn.cell-control:hover {
+		background: rgba(14, 165, 233, 0.28);
+		border-color: #38bdf8;
+		color: #ffffff;
+		box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+		transform: translateY(-1px);
+	}
+
+	/* 2. Position Total / Summe - Warm Amber/Gold */
+	.copy-cell-btn.cell-sum {
+		background: rgba(245, 158, 11, 0.14);
+		border: 1px solid rgba(245, 158, 11, 0.4);
+		color: #fde68a;
+		font-weight: 700;
+	}
+
+	.copy-cell-btn.cell-sum:hover {
+		background: rgba(245, 158, 11, 0.28);
+		border-color: #fbbf24;
+		color: #ffffff;
+		box-shadow: 0 0 12px rgba(245, 158, 11, 0.45);
+		transform: translateY(-1px);
+	}
+
+	/* 3. Control Sum / Checksum (Kontrollsumme) - Soft Violet/Purple */
+	.copy-cell-btn.cell-control-sum {
+		background: rgba(139, 92, 246, 0.14);
+		border: 1px solid rgba(167, 139, 250, 0.38);
+		color: #ddd6fe;
+	}
+
+	.copy-cell-btn.cell-control-sum:hover {
+		background: rgba(139, 92, 246, 0.28);
+		border-color: #a78bfa;
+		color: #ffffff;
+		box-shadow: 0 0 12px rgba(167, 139, 250, 0.45);
+		transform: translateY(-1px);
+	}
+
+	/* 4. Financial / Numerical Data Fields (AG-Brutto, Jahreswerte) - Slate/White */
+	.copy-cell-btn.cell-data {
+		background: rgba(30, 41, 59, 0.72);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		color: #f1f5f9;
+	}
+
+	.copy-cell-btn.cell-data:hover {
 		background: rgba(99, 102, 241, 0.25);
 		border-color: #818cf8;
 		color: #ffffff;
-		box-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
+		box-shadow: 0 0 12px rgba(99, 102, 241, 0.35);
+		transform: translateY(-1px);
 	}
 
-	.copy-cell-btn.cell-just-copied {
-		background: rgba(16, 185, 129, 0.25);
-		border-color: #34d399;
+	.copy-cell-btn.cell-zero {
+		color: #64748b;
+		opacity: 0.75;
+	}
+
+	.copy-cell-btn.cell-zero:hover {
 		color: #ffffff;
+		opacity: 1;
+	}
+
+	/* Common Cell Copied Feedback */
+	.copy-cell-btn.cell-just-copied {
+		background: rgba(16, 185, 129, 0.35) !important;
+		border-color: #34d399 !important;
+		color: #ffffff !important;
+		box-shadow: 0 0 12px rgba(52, 211, 153, 0.5) !important;
 	}
 
 	.copied-tooltip {
@@ -902,6 +1172,8 @@
 		padding: 1px 4px;
 		border-radius: 3px;
 		font-weight: bold;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+		z-index: 10;
 	}
 
 	.copy-row-btn {
@@ -961,25 +1233,47 @@
 		transform: translateY(-1px);
 	}
 
+	.copy-meta-btn.meta-runtime-btn {
+		background: rgba(14, 165, 233, 0.1);
+		border-color: rgba(56, 189, 248, 0.3);
+		color: #bae6fd;
+	}
+
+	.copy-meta-btn.meta-runtime-btn:hover {
+		background: rgba(14, 165, 233, 0.22);
+		border-color: #38bdf8;
+	}
+
+	.copy-meta-btn.meta-period-btn {
+		background: rgba(14, 165, 233, 0.1);
+		border-color: rgba(56, 189, 248, 0.3);
+		color: #bae6fd;
+	}
+
+	.copy-meta-btn.meta-period-btn:hover {
+		background: rgba(14, 165, 233, 0.22);
+		border-color: #38bdf8;
+	}
+
 	.copy-meta-btn.highlight-btn {
-		background: rgba(245, 158, 11, 0.12);
-		border-color: rgba(245, 158, 11, 0.35);
+		background: rgba(245, 158, 11, 0.14);
+		border-color: rgba(245, 158, 11, 0.4);
 		color: #fde68a;
 	}
 
 	.copy-meta-btn.highlight-btn:hover {
-		background: rgba(245, 158, 11, 0.25);
+		background: rgba(245, 158, 11, 0.28);
 		border-color: #fbbf24;
 	}
 
 	.copy-meta-btn.cost-type-btn {
-		background: rgba(16, 185, 129, 0.12);
-		border-color: rgba(16, 185, 129, 0.35);
+		background: rgba(16, 185, 129, 0.14);
+		border-color: rgba(16, 185, 129, 0.4);
 		color: #a7f3d0;
 	}
 
 	.copy-meta-btn.cost-type-btn:hover {
-		background: rgba(16, 185, 129, 0.25);
+		background: rgba(16, 185, 129, 0.28);
 		border-color: #34d399;
 	}
 
@@ -1098,6 +1392,8 @@
 		background: rgba(30, 41, 59, 0.95);
 		color: #ffffff;
 		border-top: 2px solid rgba(99, 102, 241, 0.4);
+		border-bottom-left-radius: 10px;
+		border-bottom-right-radius: 10px;
 		font-size: 0.9rem;
 	}
 
