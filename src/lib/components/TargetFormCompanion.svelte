@@ -928,13 +928,13 @@
 	/* Sticky Table Header */
 	.target-table thead {
 		position: sticky;
-		top: 44px;
+		top: 0;
 		z-index: 90;
 	}
 
 	.target-table th {
 		position: sticky;
-		top: 44px;
+		top: 0;
 		z-index: 90;
 		background: #111827;
 		background: rgba(17, 24, 39, 0.99);
