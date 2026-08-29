@@ -65,28 +65,61 @@ export function buildCompoundOneLineText(
 }
 
 /**
- * Returns the tariff step string (ES1, ES2, ES3) based on contract duration elapsed from runtimeStart
+ * Returns the tariff step string (ES1..ES6) based on contract duration elapsed from runtimeStart
+ * and starting experience level (from Cell C2, default ES1).
+ * In the AWO Tarif:
+ * - In ES1: 1 year (12 months) to reach ES2
+ * - In ES2: 2 years (24 months) to reach ES3
+ * - In ES3: 3 years (36 months) to reach ES4
+ * - In ES4: 4 years (48 months) to reach ES5
+ * - In ES5: 5 years (60 months) to reach ES6
  */
-export function getTariffStep(record: MonthlyRecord, runtimeStart?: string): string {
+export function getTariffStep(
+	record: MonthlyRecord,
+	runtimeStart?: string,
+	initialTariffStep: string = 'ES1'
+): string {
+	let initialStepNum = 1;
+	const match = String(initialTariffStep).match(/\d+/);
+	if (match) {
+		initialStepNum = Math.max(1, Math.min(6, parseInt(match[0], 10)));
+	}
+
+	let elapsedMonths = 0;
 	if (runtimeStart) {
-		const parts = runtimeStart.split('.');
-		if (parts.length === 3) {
-			const startY = parseInt(parts[2], 10);
-			const startM = parseInt(parts[1], 10);
-			const elapsedMonths = (record.year - startY) * 12 + (record.month - startM);
-			if (elapsedMonths < 12) return 'ES1';
-			if (elapsedMonths < 36) return 'ES2';
-			return 'ES3';
+		const comp = parseDateComponents(runtimeStart);
+		if (comp) {
+			elapsedMonths = (record.year - comp.year) * 12 + (record.month - comp.month);
+		} else {
+			const parts = runtimeStart.split('.');
+			if (parts.length === 3) {
+				const startY = parseInt(parts[2], 10);
+				const startM = parseInt(parts[1], 10);
+				elapsedMonths = (record.year - startY) * 12 + (record.month - startM);
+			}
+		}
+	} else {
+		elapsedMonths = (record.year - 2026) * 12 + (record.month - 8);
+	}
+
+	if (elapsedMonths < 0) {
+		return `ES${initialStepNum}`;
+	}
+
+	let currentStep = initialStepNum;
+	let remainingMonths = elapsedMonths;
+
+	while (currentStep < 6) {
+		const requiredMonthsInStep = currentStep * 12;
+		if (remainingMonths >= requiredMonthsInStep) {
+			remainingMonths -= requiredMonthsInStep;
+			currentStep += 1;
+		} else {
+			break;
 		}
 	}
-	const { year, month } = record;
-	if (year < 2027 || (year === 2027 && month < 8)) {
-		return 'ES1';
-	}
-	if (year === 2027 || year === 2028 || (year === 2029 && month < 8)) {
-		return 'ES2';
-	}
-	return 'ES3';
+
+	return `ES${currentStep}`;
 }
 
 /**
@@ -257,7 +290,7 @@ export function transformSgb16i(
 		const startDateText = getPeriodStartDate(currentJcGroup);
 		const endDateText = getPeriodEndDate(currentJcGroup);
 		const calculationPeriodText = `${startDateText}-${endDateText}`;
-		const tariffStep = getTariffStep(first, participant.runtimeStart);
+		const tariffStep = getTariffStep(first, participant.runtimeStart, participant.tariffStep);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
 		const runtimeText = `${participant.runtimeStart}-${participant.runtimeEnd}`;
 
@@ -267,7 +300,7 @@ export function transformSgb16i(
 
 		if (previousJcGroup) {
 			const prevFirst = previousJcGroup[0];
-			const prevStep = getTariffStep(prevFirst, participant.runtimeStart);
+			const prevStep = getTariffStep(prevFirst, participant.runtimeStart, participant.tariffStep);
 			const currStep = tariffStep;
 			const stepChanged = prevStep !== currStep;
 			const degressionChanged = prevFirst.jcDegressionPct !== percentage;
@@ -333,7 +366,7 @@ export function transformSgb16i(
 			const prev = currentJcGroup[currentJcGroup.length - 1];
 			const sameFte = Math.abs(prev.fteSalary - r.fteSalary) < 0.01;
 			const sameDegression = prev.jcDegressionPct === r.jcDegressionPct;
-			const sameTariffStep = getTariffStep(prev, participant.runtimeStart) === getTariffStep(r, participant.runtimeStart);
+			const sameTariffStep = getTariffStep(prev, participant.runtimeStart, participant.tariffStep) === getTariffStep(r, participant.runtimeStart, participant.tariffStep);
 
 			if (sameFte && sameDegression && sameTariffStep) {
 				currentJcGroup.push(r);
@@ -438,7 +471,7 @@ export function transformSgb16i(
 		const totalSum = Object.values(yearlyAmounts).reduce((a, b) => round2(a + b), 0);
 		const startDateText = getPeriodStartDate(currentSvGroup);
 		const endDateText = getPeriodEndDate(currentSvGroup);
-		const tariffStep = getTariffStep(first, participant.runtimeStart);
+		const tariffStep = getTariffStep(first, participant.runtimeStart, participant.tariffStep);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
 		const runtimeText = `${participant.runtimeStart}-${participant.runtimeEnd}`;
 		const calculationPeriodText = `${startDateText}-${endDateText}`;
@@ -449,7 +482,7 @@ export function transformSgb16i(
 
 		if (previousSvGroup) {
 			const prevFirst = previousSvGroup[0];
-			const prevStep = getTariffStep(prevFirst, participant.runtimeStart);
+			const prevStep = getTariffStep(prevFirst, participant.runtimeStart, participant.tariffStep);
 			const currStep = tariffStep;
 			const stepChanged = prevStep !== currStep;
 			const tariffIncreased = !stepChanged && first.fteSalary > prevFirst.fteSalary;
@@ -504,7 +537,7 @@ export function transformSgb16i(
 			const currShortfall = r.fullMonthlySvShortfall || r.landSvShortfall / (r.monthUnits || 1.0);
 			const sameSv = Math.abs(prevShortfall - currShortfall) < 0.01;
 			const sameAga = Math.abs(prev.agaRealRate - r.agaRealRate) < 0.00001;
-			const sameStep = getTariffStep(prev, participant.runtimeStart) === getTariffStep(r, participant.runtimeStart);
+			const sameStep = getTariffStep(prev, participant.runtimeStart, participant.tariffStep) === getTariffStep(r, participant.runtimeStart, participant.tariffStep);
 
 			if (sameSv && sameAga && sameStep) {
 				currentSvGroup.push(r);
@@ -544,14 +577,14 @@ export function transformSgb16i(
 		const startDateText = getPeriodStartDate(currentDegGroup);
 		const endDateText = getPeriodEndDate(currentDegGroup);
 		const calculationPeriodText = `${startDateText}-${endDateText}`;
-		const tariffStep = getTariffStep(first, participant.runtimeStart);
+		const tariffStep = getTariffStep(first, participant.runtimeStart, participant.tariffStep);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
 		const runtimeText = `${participant.runtimeStart}-${participant.runtimeEnd}`;
 
 		let explanationText = '';
 		if (previousDegGroup) {
 			const prevFirst = previousDegGroup[0];
-			const prevStep = getTariffStep(prevFirst, participant.runtimeStart);
+			const prevStep = getTariffStep(prevFirst, participant.runtimeStart, participant.tariffStep);
 			const currStep = tariffStep;
 			const stepChanged = prevStep !== currStep;
 			const degressionChanged = prevFirst.jcDegressionPct !== first.jcDegressionPct;
@@ -612,7 +645,7 @@ export function transformSgb16i(
 			const prev = currentDegGroup[currentDegGroup.length - 1];
 			const sameFte = Math.abs(prev.fteSalary - r.fteSalary) < 0.01;
 			const sameDeg = prev.jcDegressionPct === r.jcDegressionPct;
-			const sameStep = getTariffStep(prev, participant.runtimeStart) === getTariffStep(r, participant.runtimeStart);
+			const sameStep = getTariffStep(prev, participant.runtimeStart, participant.tariffStep) === getTariffStep(r, participant.runtimeStart, participant.tariffStep);
 
 			if (sameFte && sameDeg && sameStep) {
 				currentDegGroup.push(r);
@@ -644,7 +677,7 @@ export function transformSgb16i(
 
 			const costTypeText = `Jahressonderzahlung ${y}`;
 			const runtimeText = `${participant.runtimeStart}-${participant.runtimeEnd}`;
-			const tariffText = `AWO Berlin ${participant.tariffGroup}/${getTariffStep(jszRecord, participant.runtimeStart)}`;
+			const tariffText = `AWO Berlin ${participant.tariffGroup}/${getTariffStep(jszRecord, participant.runtimeStart, participant.tariffStep)}`;
 			const calculationPeriodText = `01.01.${y}-31.12.${y}`;
 
 			const compoundOneLineText = buildCompoundOneLineText(

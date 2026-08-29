@@ -94,6 +94,24 @@ export function normalizeExcelDate(rawDate: unknown): { dateStr: string; year: n
 	return { dateStr: str, year: 0, month: 1 };
 }
 
+export function normalizeTariffStep(val: unknown): string {
+	if (val === null || val === undefined) return 'ES1';
+	const s = String(val).trim();
+	if (!s) return 'ES1';
+	const match = s.match(/\d+/);
+	if (match) {
+		const num = parseInt(match[0], 10);
+		if (num >= 1 && num <= 6) {
+			return `ES${num}`;
+		}
+	}
+	const upper = s.toUpperCase().replace(/\s+/g, '');
+	if (upper.startsWith('ES')) {
+		return upper;
+	}
+	return 'ES1';
+}
+
 function parseNumber(val: unknown, defaultVal = 0): number {
 	if (val === null || val === undefined) return defaultVal;
 	if (typeof val === 'number') return isNaN(val) ? defaultVal : val;
@@ -130,7 +148,7 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 	// Parse Participant Metadata from Row 2
 	const rawName = String(getCellValue('A', 2) || 'Teilnehmer/in').trim();
 	const rawEG = String(getCellValue('B', 2) || 'EG1').trim();
-	const rawES = String(getCellValue('C', 2) || 'ES1').trim();
+	const rawES = normalizeTariffStep(getCellValue('C', 2));
 	const rawRuntime = String(getCellValue('F', 2) || '').trim();
 	const weeklyHours = parseNumber(getCellValue('J', 2), 30);
 	const sachkostenMonthly = parseNumber(getCellValue('M', 2), 155);
