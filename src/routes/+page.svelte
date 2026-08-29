@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getAvailableSchemes, recalculateGrant } from '#lib/grant.remote';
-	import type { GrantTransformationResult, AgaRatePeriod } from '#lib/types/grant';
+	import type { GrantTransformationResult, AgaRatePeriod, RuntimeScope } from '#lib/types/grant';
 	import FileUpload from '#lib/components/FileUpload.svelte';
 	import ControlDashboard from '#lib/components/ControlDashboard.svelte';
 	import TargetFormCompanion from '#lib/components/TargetFormCompanion.svelte';
@@ -10,7 +10,7 @@
 	let availableSchemes = $state<any[]>([]);
 	let selectedSchemeId = $state('sgb16i-berlin');
 	let includeOffset = $state(true);
-	let restrictToExitDate = $state(true); // Default true: only generate outputs until cell F2 exit date
+	let runtimeScope = $state<RuntimeScope>('exit_date'); // 'exit_date' | 'foerderperiode' | 'full_5_years'
 	let currentResult = $state<GrantTransformationResult | null>(null);
 	let isRecalculating = $state(false);
 
@@ -26,6 +26,9 @@
 
 	async function handleResult(res: GrantTransformationResult) {
 		currentResult = res;
+		if (res.options?.runtimeScope) {
+			runtimeScope = res.options.runtimeScope;
+		}
 	}
 
 	async function handleToggleOffset(val: boolean) {
@@ -35,8 +38,8 @@
 		}
 	}
 
-	async function handleExitDateRestrictionChange(val: boolean) {
-		restrictToExitDate = val;
+	async function handleRuntimeScopeChange(val: RuntimeScope) {
+		runtimeScope = val;
 		if (currentResult) {
 			await triggerRecalculate();
 		}
@@ -52,7 +55,7 @@
 					participant: currentResult.participant,
 					options: {
 						includeOffsetRows: includeOffset,
-						restrictToExitDate,
+						runtimeScope,
 						customAgaTimeline: newTimeline
 					}
 				});
@@ -75,7 +78,7 @@
 					participant: currentResult.participant,
 					options: {
 						includeOffsetRows: includeOffset,
-						restrictToExitDate,
+						runtimeScope,
 						customAgaTimeline: currentResult.agaTimeline
 					}
 				});
@@ -136,16 +139,24 @@
 				<div class="segmented-control">
 					<button
 						type="button"
-						class="seg-btn {restrictToExitDate ? 'active' : ''}"
-						onclick={() => handleExitDateRestrictionChange(true)}
+						class="seg-btn {runtimeScope === 'exit_date' ? 'active' : ''}"
+						onclick={() => handleRuntimeScopeChange('exit_date')}
 						title="Standard: Ausgabe nur bis zum tatsächlichen Austrittsdatum laut Excel Zelle F2 ({currentResult?.participant?.runtimeEnd || 'Zelle F2'})"
 					>
 						Bis Austrittsdatum {currentResult?.participant?.runtimeEnd ? `(${currentResult.participant.runtimeEnd})` : 'Zelle F2'}
 					</button>
 					<button
 						type="button"
-						class="seg-btn {!restrictToExitDate ? 'active' : ''}"
-						onclick={() => handleExitDateRestrictionChange(false)}
+						class="seg-btn {runtimeScope === 'foerderperiode' ? 'active' : ''}"
+						onclick={() => handleRuntimeScopeChange('foerderperiode')}
+						title="Förderperiode: Ausgabe bis zum Ende der aktuellen Förderperiode (31.12.2029)"
+					>
+						Förderperiode (bis 31.12.2029)
+					</button>
+					<button
+						type="button"
+						class="seg-btn {runtimeScope === 'full_5_years' ? 'active' : ''}"
+						onclick={() => handleRuntimeScopeChange('full_5_years')}
 						title="Optionale Überschreibung: Vollständige 5 Jahre (60 Monate) generieren"
 					>
 						Vollständige 5 Jahre (60 Mo)
@@ -172,7 +183,7 @@
 				onResult={handleResult}
 				selectedScheme={selectedSchemeId}
 				{includeOffset}
-				{restrictToExitDate}
+				{runtimeScope}
 			/>
 		</section>
 

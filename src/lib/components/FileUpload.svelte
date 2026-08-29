@@ -1,17 +1,19 @@
 <script lang="ts">
 	import { processExcelFile } from '#lib/grant.remote';
-	import type { GrantTransformationResult } from '#lib/types/grant';
+	import type { GrantTransformationResult, RuntimeScope } from '#lib/types/grant';
 
 	let {
 		onResult,
 		selectedScheme = 'sgb16i-berlin',
 		includeOffset = true,
+		runtimeScope = 'exit_date',
 		restrictToExitDate = true,
 		restrictYear = undefined
 	}: {
 		onResult: (res: GrantTransformationResult) => void;
 		selectedScheme?: string;
 		includeOffset?: boolean;
+		runtimeScope?: RuntimeScope;
 		restrictToExitDate?: boolean;
 		restrictYear?: number | undefined;
 	} = $props();
@@ -68,6 +70,7 @@
 						fileName: file.name,
 						schemeId: selectedScheme,
 						includeOffsetRows: includeOffset,
+						runtimeScope,
 						restrictToExitDate,
 						restrictToYear: restrictYear
 					});

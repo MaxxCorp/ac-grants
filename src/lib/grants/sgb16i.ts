@@ -7,7 +7,8 @@ import type {
 	FormRowItem,
 	ControlCheckResult,
 	ControlCheckItem,
-	AgaRatePeriod
+	AgaRatePeriod,
+	RuntimeScope
 } from '#lib/types/grant';
 
 function round2(val: number): number {
@@ -202,15 +203,160 @@ export function isRecordWithinExitDate(record: MonthlyRecord, exitDateStr: strin
 	return true;
 }
 
+export function calculate5YearEndDate(startDateStr: string): string {
+	const comp = parseDateComponents(startDateStr);
+	if (!comp) return '';
+	if (comp.day === 1) {
+		let endMonth = comp.month - 1;
+		let endYear = comp.year + 5;
+		if (endMonth === 0) {
+			endMonth = 12;
+			endYear = comp.year + 4;
+		}
+		const lastDay = new Date(endYear, endMonth, 0).getDate();
+		return `${String(lastDay).padStart(2, '0')}.${String(endMonth).padStart(2, '0')}.${endYear}`;
+	} else {
+		const endDay = comp.day - 1;
+		const endYear = comp.year + 5;
+		return `${String(endDay).padStart(2, '0')}.${String(comp.month).padStart(2, '0')}.${endYear}`;
+	}
+}
+
+export function ensureRecordsSpanScope(
+	records: MonthlyRecord[],
+	participant: ParticipantInfo,
+	scope: RuntimeScope
+): MonthlyRecord[] {
+	if (records.length === 0) return records;
+	const result = [...records];
+
+	const startComp = parseDateComponents(participant.runtimeStart) || { day: 1, month: 8, year: 2026 };
+	let targetMonths = 60;
+	if (scope === 'exit_date') {
+		return result;
+	} else if (scope === 'foerderperiode') {
+		const startTotalM = startComp.year * 12 + startComp.month;
+		const endTotalM = 2029 * 12 + 12;
+		targetMonths = Math.max(result.length, endTotalM - startTotalM + 1);
+	} else if (scope === 'full_5_years') {
+		targetMonths = 60;
+	}
+
+	const currentTotalMonths = round2(result.reduce((sum, r) => sum + (r.monthUnits || 1.0), 0));
+	if (currentTotalMonths >= targetMonths) {
+		return result;
+	}
+
+	let lastRec = result[result.length - 1];
+	let currentYear = lastRec.year;
+	let currentMonth = lastRec.month;
+	const weeklyHours = participant.weeklyHours || 30;
+	const defaultAga = participant.defaultAgaRate || 0.2314;
+	const fteSalary = lastRec.fteSalary > 0 ? lastRec.fteSalary : 2774.73;
+
+	const monthsToAdd = Math.ceil(targetMonths - currentTotalMonths);
+	for (let i = 0; i < monthsToAdd; i++) {
+		currentMonth += 1;
+		if (currentMonth > 12) {
+			currentMonth = 1;
+			currentYear += 1;
+		}
+
+		if (scope === 'foerderperiode' && (currentYear > 2029 || (currentYear === 2029 && currentMonth > 12))) {
+			break;
+		}
+
+		const elapsedMonths = (currentYear - startComp.year) * 12 + (currentMonth - startComp.month);
+		const monthNum = elapsedMonths + 1;
+
+		let jcDegressionPct = 100;
+		if (monthNum > 48) {
+			jcDegressionPct = 70;
+		} else if (monthNum > 36) {
+			jcDegressionPct = 80;
+		} else if (monthNum > 24) {
+			jcDegressionPct = 90;
+		}
+
+		const mStr = String(currentMonth).padStart(2, '0');
+		const lastDay = new Date(currentYear, currentMonth, 0).getDate();
+		const dateStr = `${currentYear}-${mStr}-${String(lastDay).padStart(2, '0')}`;
+		const rowStartDate = `01.${mStr}.${currentYear}`;
+		const rowEndDate = `${String(lastDay).padStart(2, '0')}.${mStr}.${currentYear}`;
+
+		const fullMonthlyPartTime = (fteSalary * weeklyHours) / 39;
+		const fullMonthlyFlatRate = fullMonthlyPartTime * 0.19;
+		const fullMonthlyJcTotalGross = fullMonthlyPartTime + fullMonthlyFlatRate;
+		const fullMonthlySvShortfall = fullMonthlyPartTime * (defaultAga - 0.19);
+
+		const partTimeSalary = round2(fullMonthlyPartTime);
+		const agaRealAmount = round2(partTimeSalary * defaultAga);
+		const totalEmployerCost = round2(partTimeSalary + agaRealAmount);
+		const jcFlatRateAmount = round2(partTimeSalary * 0.19);
+		const jcTotalGross = round2(partTimeSalary + jcFlatRateAmount);
+		const jcGrantAmount = round2((jcTotalGross * jcDegressionPct) / 100);
+		const landSvShortfall = round2(partTimeSalary * (defaultAga - 0.19));
+		const landDegressionAmount = round2((jcTotalGross * (100 - jcDegressionPct)) / 100);
+		const sachkostenAmount = round2(participant.sachkostenMonthly || 155);
+
+		let isJszMonth = false;
+		let jszAmount = 0;
+		let jszAgaAmount = 0;
+		if (currentMonth === 12) {
+			isJszMonth = true;
+			jszAmount = round2(partTimeSalary * 0.85);
+			jszAgaAmount = round2(jszAmount * defaultAga);
+		}
+
+		const newRec: MonthlyRecord = {
+			date: dateStr,
+			year: currentYear,
+			month: currentMonth,
+			monthUnits: 1.0,
+			startDate: rowStartDate,
+			endDate: rowEndDate,
+			fteSalary,
+			partTimeSalary,
+			fullMonthlyPartTime,
+			weeklyHours,
+			fullTimeHours: 39,
+			jcFlatRateAmount,
+			jcTotalGross,
+			fullMonthlyJcTotalGross,
+			jcDegressionPct,
+			jcGrantAmount,
+			agaRealRate: defaultAga,
+			agaRealAmount,
+			totalEmployerCost,
+			landSvShortfall,
+			fullMonthlySvShortfall,
+			landDegressionAmount,
+			jszAmount,
+			jszAgaAmount,
+			sachkostenAmount,
+			isJszMonth
+		};
+
+		result.push(newRec);
+	}
+
+	return result;
+}
+
 export function transformSgb16i(
 	rawRecords: MonthlyRecord[],
 	participant: ParticipantInfo,
 	options: GrantTransformationOptions
 ): GrantTransformationResult {
-	const { includeOffsetRows, restrictToExitDate = true, restrictToYear, customAgaTimeline } = options;
+	const { includeOffsetRows, restrictToYear, customAgaTimeline } = options;
+	const runtimeScope: RuntimeScope =
+		options.runtimeScope || (options.restrictToExitDate === false ? 'full_5_years' : 'exit_date');
+
+	// Ensure dataset covers requested scope if synthetic projection is needed
+	const extendedRaw = ensureRecordsSpanScope(rawRecords, participant, runtimeScope);
 
 	// Apply custom AGA rates, calculate full unscaled and scaled monthly amounts
-	let records = rawRecords.map(r => {
+	const allProcessedRecords = extendedRaw.map(r => {
 		const effectiveAga = getEffectiveAgaRate(r, participant.defaultAgaRate, customAgaTimeline);
 		const safeMonthUnits = r.monthUnits && r.monthUnits > 0 ? r.monthUnits : 1.0;
 
@@ -249,11 +395,24 @@ export function transformSgb16i(
 		};
 	});
 
-	// Default behavior: filter records by cell F2 exit date
-	if (restrictToExitDate && participant.runtimeEnd) {
+	// Filter active records according to selected runtime scope
+	let records = [...allProcessedRecords];
+	if (runtimeScope === 'exit_date' && participant.runtimeEnd) {
 		records = records.filter(r => isRecordWithinExitDate(r, participant.runtimeEnd));
-	} else if (restrictToYear && restrictToYear > 0) {
-		records = records.filter(r => r.year <= restrictToYear);
+	} else if (runtimeScope === 'foerderperiode') {
+		records = records.filter(r => isRecordWithinExitDate(r, '31.12.2029'));
+	} else if (options.restrictToYear && options.restrictToYear > 0) {
+		records = records.filter(r => r.year <= options.restrictToYear);
+	}
+	// 'full_5_years' uses all records (which spans up to 60 months)
+
+	let effectiveRuntimeEnd = participant.runtimeEnd || '';
+	if (runtimeScope === 'foerderperiode') {
+		effectiveRuntimeEnd = '31.12.2029';
+	} else if (runtimeScope === 'full_5_years') {
+		effectiveRuntimeEnd = records.length > 0 ? getPeriodEndDate(records) : (participant.runtimeStart ? calculate5YearEndDate(participant.runtimeStart) : participant.runtimeEnd);
+	} else {
+		effectiveRuntimeEnd = participant.runtimeEnd || (records.length > 0 ? getPeriodEndDate(records) : '');
 	}
 
 	const years = Array.from(new Set(records.map(r => r.year))).sort((a, b) => a - b);
@@ -292,7 +451,7 @@ export function transformSgb16i(
 		const calculationPeriodText = `${startDateText}-${endDateText}`;
 		const tariffStep = getTariffStep(first, participant.runtimeStart, participant.tariffStep);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
-		const runtimeText = `${participant.runtimeStart}-${participant.runtimeEnd}`;
+		const runtimeText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
 
 		// Detect reasons for Erläuterung only when needed (Tariferhöhung, Stufenaufstieg, Degression)
 		const costTypeText = 'AG-Brutto, inkl. 19% Pauschale';
@@ -394,9 +553,9 @@ export function transformSgb16i(
 		for (const y of years) offsetYearly[y] = 0;
 		offsetYearly[firstYear] = jcRoundingDelta;
 
-		const runtimeText = `${participant.runtimeStart}-${participant.runtimeEnd}`;
+		const runtimeText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${participant.tariffStep}`;
-		const calculationPeriodText = `${participant.runtimeStart}-${participant.runtimeEnd}`;
+		const calculationPeriodText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
 		const explanationText = 'Ausgleich K-Hilfe vs. reale Kalkulation';
 		const costTypeText = 'Ausgleichsbetrag';
 		const compoundOneLineText = buildCompoundOneLineText(
@@ -473,7 +632,7 @@ export function transformSgb16i(
 		const endDateText = getPeriodEndDate(currentSvGroup);
 		const tariffStep = getTariffStep(first, participant.runtimeStart, participant.tariffStep);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
-		const runtimeText = `${participant.runtimeStart}-${participant.runtimeEnd}`;
+		const runtimeText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
 		const calculationPeriodText = `${startDateText}-${endDateText}`;
 
 		const agaPctStr = `${(first.agaRealRate * 100).toFixed(3).replace('.', ',')}%`;
@@ -579,7 +738,7 @@ export function transformSgb16i(
 		const calculationPeriodText = `${startDateText}-${endDateText}`;
 		const tariffStep = getTariffStep(first, participant.runtimeStart, participant.tariffStep);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
-		const runtimeText = `${participant.runtimeStart}-${participant.runtimeEnd}`;
+		const runtimeText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
 
 		let explanationText = '';
 		if (previousDegGroup) {
@@ -676,7 +835,7 @@ export function transformSgb16i(
 			}
 
 			const costTypeText = `Jahressonderzahlung ${y}`;
-			const runtimeText = `${participant.runtimeStart}-${participant.runtimeEnd}`;
+			const runtimeText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
 			const tariffText = `AWO Berlin ${participant.tariffGroup}/${getTariffStep(jszRecord, participant.runtimeStart, participant.tariffStep)}`;
 			const calculationPeriodText = `01.01.${y}-31.12.${y}`;
 
@@ -729,9 +888,9 @@ export function transformSgb16i(
 		for (const y of years) offsetYearly[y] = 0;
 		offsetYearly[firstYear] = landRoundingDelta;
 
-		const runtimeText = `${participant.runtimeStart}-${participant.runtimeEnd}`;
+		const runtimeText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${participant.tariffStep}`;
-		const calculationPeriodText = `${participant.runtimeStart}-${participant.runtimeEnd}`;
+		const calculationPeriodText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
 		const explanationText = 'Ausgleich K-Hilfe vs. reale Kalkulation';
 		const costTypeText = 'Ausgleichsbetrag';
 		const compoundOneLineText = buildCompoundOneLineText(
@@ -796,10 +955,15 @@ export function transformSgb16i(
 	const skName = participant.name.startsWith('Hr.') || participant.name.startsWith('Herr')
 		? participant.name
 		: `Fr. ${participant.name.replace(/^Frau\s+/i, '')}`;
-	const skRuntime = `${participant.runtimeStart} - ${participant.runtimeEnd}`;
+	const skRuntime = `${participant.runtimeStart} - ${effectiveRuntimeEnd}`;
 	const skTariff = `AWO Berlin ${participant.tariffGroup}/${participant.tariffStep}`;
 	const skPeriod = `${getPeriodStartDate(records)} - ${getPeriodEndDate(records)}`;
-	const skExplanation = `JC Antrag bewilligt bis ${participant.runtimeEnd}`;
+	let skExplanation = `JC Antrag bewilligt bis ${effectiveRuntimeEnd}`;
+	if (runtimeScope === 'foerderperiode') {
+		skExplanation = `Förderperiode bis ${effectiveRuntimeEnd}`;
+	} else if (runtimeScope === 'full_5_years') {
+		skExplanation = `Gesamtlaufzeit 5 Jahre bis ${effectiveRuntimeEnd}`;
+	}
 	const skCostType = `Sachkostenpauschale ${sachkostenRate.toFixed(2).replace('.', ',')} € mtl.`;
 	const skCompoundOneLineText = buildCompoundOneLineText(skName, skRuntime, skTariff, skPeriod, skExplanation, skCostType);
 
@@ -916,7 +1080,7 @@ export function transformSgb16i(
 		{
 			id: 'aga-default',
 			startDate: participant.runtimeStart ? formatDateDMY(participant.runtimeStart) : '2026-08-01',
-			endDate: participant.runtimeEnd ? formatDateDMY(participant.runtimeEnd) : '2031-07-31',
+			endDate: effectiveRuntimeEnd ? formatDateDMY(effectiveRuntimeEnd) : (participant.runtimeEnd ? formatDateDMY(participant.runtimeEnd) : '2031-07-31'),
 			rate: participant.defaultAgaRate,
 			label: `${participant.healthInsuranceName} Standard (${(participant.defaultAgaRate * 100).toFixed(3)}%)`
 		}
@@ -931,7 +1095,10 @@ export function transformSgb16i(
 		tabs: [jcTab, landTab, skTab],
 		controls,
 		agaTimeline: defaultAgaTimeline,
-		options,
-		rawMonthlyRecords: records
+		options: {
+			...options,
+			runtimeScope
+		},
+		rawMonthlyRecords: allProcessedRecords
 	};
 }

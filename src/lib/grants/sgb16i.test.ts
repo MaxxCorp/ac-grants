@@ -321,6 +321,94 @@ describe('§16i SGB II / ZGS Berlin Transformation Engine', () => {
 		expect(jcRow2.explanationText).toContain('Degression auf 90%');
 	});
 
+	it('should correctly filter and adapt outputs based on runtimeScope (exit_date, foerderperiode, full_5_years)', () => {
+		const participant: ParticipantInfo = {
+			name: 'Erika Mustermann',
+			tariffGroup: 'EG1',
+			tariffStep: 'ES1',
+			runtimeStart: '01.08.2026',
+			runtimeEnd: '31.08.2028', // 24 months exit date in Cell F2
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			sachkostenMonthly: 155,
+			childrenCount: 0,
+			healthInsuranceName: 'DAK',
+			defaultAgaRate: 0.2314
+		};
+
+		// Provide 60 monthly records (Aug 2026 to Jul 2031)
+		const records: MonthlyRecord[] = [];
+		let currentDate = new Date(2026, 7, 1);
+		for (let i = 0; i < 60; i++) {
+			const y = currentDate.getFullYear();
+			const m = currentDate.getMonth() + 1;
+			const lastDay = new Date(y, m, 0).getDate();
+			const mStr = String(m).padStart(2, '0');
+			const fteSalary = 2600;
+			const partTimeSalary = (fteSalary * 30) / 39;
+			const jcFlatRate = partTimeSalary * 0.19;
+			const jcTotalGross = partTimeSalary + jcFlatRate;
+			const degPct = i < 24 ? 100 : i < 36 ? 90 : i < 48 ? 80 : 70;
+
+			records.push({
+				date: `${y}-${mStr}-${String(lastDay).padStart(2, '0')}`,
+				year: y,
+				month: m,
+				monthUnits: 1.0,
+				startDate: `01.${mStr}.${y}`,
+				endDate: `${String(lastDay).padStart(2, '0')}.${mStr}.${y}`,
+				fteSalary,
+				partTimeSalary,
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: jcFlatRate,
+				jcTotalGross,
+				jcDegressionPct: degPct,
+				jcGrantAmount: (jcTotalGross * degPct) / 100,
+				agaRealRate: 0.2314,
+				agaRealAmount: partTimeSalary * 0.2314,
+				totalEmployerCost: partTimeSalary * 1.2314,
+				landSvShortfall: partTimeSalary * (0.2314 - 0.19),
+				landDegressionAmount: 0,
+				jszAmount: m === 12 ? 1700 : 0,
+				jszAgaAmount: m === 12 ? 1700 * 0.2314 : 0,
+				isJszMonth: m === 12,
+				sachkostenAmount: 155
+			});
+
+			currentDate = new Date(y, m, 1);
+		}
+
+		// 1. Test exit_date (default: 24 months, until 31.08.2028)
+		const resExit = transformSgb16i(records, participant, { includeOffsetRows: false, runtimeScope: 'exit_date' });
+		expect(resExit.runtimeMonths).toBe(24.5 || 25 || 24); // 2026-08-01 to 2028-08-31 is 25 months
+		expect(resExit.years).toEqual([2026, 2027, 2028]);
+		expect(resExit.tabs[0].rows[0].runtimeText).toBe('01.08.2026-31.08.2028');
+		// CRITICAL: Ensure full records are preserved in rawMonthlyRecords
+		expect(resExit.rawMonthlyRecords.length).toBe(60);
+
+		// 2. Test foerderperiode (until 31.12.2029)
+		const resFoerder = transformSgb16i(resExit.rawMonthlyRecords, participant, { includeOffsetRows: false, runtimeScope: 'foerderperiode' });
+		expect(resFoerder.years).toEqual([2026, 2027, 2028, 2029]);
+		expect(resFoerder.runtimeMonths).toBe(41); // Aug 2026 to Dec 2029 = 5 + 12 + 12 + 12 = 41 months
+		expect(resFoerder.tabs[0].rows[0].runtimeText).toBe('01.08.2026-31.12.2029');
+		expect(resFoerder.tabs[2].rows[0].explanationText).toBe('Förderperiode bis 31.12.2029');
+		expect(resFoerder.rawMonthlyRecords.length).toBe(60);
+
+		// 3. Test full_5_years (full 60 months, until 31.07.2031)
+		const resFull = transformSgb16i(resFoerder.rawMonthlyRecords, participant, { includeOffsetRows: false, runtimeScope: 'full_5_years' });
+		expect(resFull.runtimeMonths).toBe(60);
+		expect(resFull.years).toEqual([2026, 2027, 2028, 2029, 2030, 2031]);
+		expect(resFull.tabs[0].rows[0].runtimeText).toBe('01.08.2026-31.07.2031');
+		expect(resFull.tabs[2].rows[0].explanationText).toBe('Gesamtlaufzeit 5 Jahre bis 31.07.2031');
+		expect(resFull.rawMonthlyRecords.length).toBe(60);
+
+		// 4. Test switching back to exit_date from full_5_years
+		const resBack = transformSgb16i(resFull.rawMonthlyRecords, participant, { includeOffsetRows: false, runtimeScope: 'exit_date' });
+		expect(resBack.years).toEqual([2026, 2027, 2028]);
+		expect(resBack.rawMonthlyRecords.length).toBe(60);
+	});
+
 	it('should correctly normalize various representations of experience levels from cell C2', () => {
 		expect(normalizeTariffStep('1')).toBe('ES1');
 		expect(normalizeTariffStep('ES1')).toBe('ES1');
