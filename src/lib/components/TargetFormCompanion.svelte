@@ -890,31 +890,9 @@
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		border-radius: 12px;
 		background: rgba(15, 23, 42, 0.7);
-		overflow-x: auto;
-		overflow-y: visible;
+		overflow: visible;
 		max-width: 100%;
 		box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.25);
-		scrollbar-width: thin;
-		scrollbar-color: rgba(99, 102, 241, 0.5) rgba(15, 23, 42, 0.8);
-	}
-
-	.table-container::-webkit-scrollbar {
-		height: 8px;
-	}
-
-	.table-container::-webkit-scrollbar-track {
-		background: rgba(15, 23, 42, 0.8);
-		border-bottom-left-radius: 12px;
-		border-bottom-right-radius: 12px;
-	}
-
-	.table-container::-webkit-scrollbar-thumb {
-		background: rgba(99, 102, 241, 0.5);
-		border-radius: 4px;
-	}
-
-	.table-container::-webkit-scrollbar-thumb:hover {
-		background: rgba(99, 102, 241, 0.8);
 	}
 
 	.target-table {
@@ -925,17 +903,11 @@
 		font-size: 0.85rem;
 	}
 
-	/* Sticky Table Header */
-	.target-table thead {
-		position: sticky;
-		top: 0;
-		z-index: 90;
-	}
-
+	/* Sticky Table Header (sticks directly under sticky .tabs-nav at top: 45px when scrolling) */
 	.target-table th {
 		position: sticky;
-		top: 0;
-		z-index: 90;
+		top: 45px;
+		z-index: 80;
 		background: #111827;
 		background: rgba(17, 24, 39, 0.99);
 		backdrop-filter: blur(16px);
