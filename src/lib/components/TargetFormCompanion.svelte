@@ -276,19 +276,19 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each activeTab.rows as row (row.id)}
+					{#each activeTab.rows as row, idx (row.id)}
 						{@const rowExplanation = getRowExplanation(row)}
 						{@const rowCostType = getRowCostType(row)}
 						{@const compoundText = getCompoundOneLine(row)}
 						{@const isLastCopied = lastCopiedRowId === row.id}
+						{@const isEven = idx % 2 === 0}
 
-						<tr class="data-row {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
+						<!-- 1. Numeric Values Data Row -->
+						<tr class="data-row {isEven ? 'row-even' : 'row-odd'} {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
 							<td class="td-row-num">
-								<span class="row-badge {isLastCopied ? 'badge-highlight' : ''}">
+								<span class="row-badge {isLastCopied ? 'badge-highlight' : ''}" title="Förderzeile {row.rowNumber}">
 									{#if isLastCopied}
 										<span class="active-dot" title="Zuletzt kopierte Zeile">●</span>
-									{:else}
-										<span class="minus-icon">−</span>
 									{/if}
 									{row.rowNumber}
 								</span>
@@ -420,7 +420,7 @@
 						</tr>
 
 						<!-- Sub-Row 1: Individual Entities (Name, Laufzeit, Tarif, Zeitraum, Erläuterung, Betragstyp einzeln kopierbar) -->
-						<tr class="sub-row-meta {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
+						<tr class="sub-row-meta {isEven ? 'row-even' : 'row-odd'} {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
 							<td colspan={7 + result.years.length} class="meta-td">
 								<div class="meta-content">
 									{#if isLastCopied}
@@ -508,7 +508,7 @@
 						</tr>
 
 						<!-- Sub-Row 2: Compound One-Line Text (Name, Laufzeit, Tarif, Zeitraum, Erläuterung, Betragstyp in einer Zeile mit 5 Leerzeichen getrennt) -->
-						<tr class="sub-row-desc {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
+						<tr class="sub-row-desc {isEven ? 'row-even' : 'row-odd'} {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
 							<td colspan={7 + result.years.length} class="desc-td">
 								<div class="desc-container">
 									<div
@@ -723,17 +723,17 @@
 	}
 
 	.overview-table th {
-		padding: 0.4rem 0.65rem;
+		padding: 0.55rem 0.75rem;
 		color: #94a3b8;
 		font-weight: 600;
 		text-align: left;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+		border-bottom: 2px solid rgba(255, 255, 255, 0.12);
 	}
 
 	.overview-table td {
-		padding: 0.45rem 0.65rem;
+		padding: 0.55rem 0.75rem;
 		color: #e2e8f0;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 	}
 
 	.overview-table tr {
@@ -742,11 +742,12 @@
 	}
 
 	.overview-table tr:hover {
-		background: rgba(255, 255, 255, 0.04);
+		background: rgba(255, 255, 255, 0.06);
 	}
 
 	.overview-table tr.active-row {
-		background: rgba(99, 102, 241, 0.15);
+		background: rgba(99, 102, 241, 0.18);
+		border-left: 3px solid #818cf8;
 	}
 
 	.status-indicator {
@@ -886,14 +887,39 @@
 	}
 
 	.table-container {
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-radius: 10px;
-		background: rgba(15, 23, 42, 0.6);
-		overflow: visible;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 12px;
+		background: rgba(15, 23, 42, 0.7);
+		overflow-x: auto;
+		overflow-y: visible;
+		max-width: 100%;
+		box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.25);
+		scrollbar-width: thin;
+		scrollbar-color: rgba(99, 102, 241, 0.5) rgba(15, 23, 42, 0.8);
+	}
+
+	.table-container::-webkit-scrollbar {
+		height: 8px;
+	}
+
+	.table-container::-webkit-scrollbar-track {
+		background: rgba(15, 23, 42, 0.8);
+		border-bottom-left-radius: 12px;
+		border-bottom-right-radius: 12px;
+	}
+
+	.table-container::-webkit-scrollbar-thumb {
+		background: rgba(99, 102, 241, 0.5);
+		border-radius: 4px;
+	}
+
+	.table-container::-webkit-scrollbar-thumb:hover {
+		background: rgba(99, 102, 241, 0.8);
 	}
 
 	.target-table {
 		width: 100%;
+		min-width: 1180px;
 		border-collapse: separate;
 		border-spacing: 0;
 		font-size: 0.85rem;
@@ -915,12 +941,12 @@
 		backdrop-filter: blur(16px);
 		-webkit-backdrop-filter: blur(16px);
 		color: #94a3b8;
-		padding: 0.6rem 0.35rem;
+		padding: 0.65rem 0.4rem;
 		font-weight: 600;
 		font-size: 0.775rem;
 		text-align: right;
 		border-top: 1px solid rgba(255, 255, 255, 0.1);
-		border-bottom: 2px solid rgba(99, 102, 241, 0.4);
+		border-bottom: 2px solid rgba(99, 102, 241, 0.5);
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 		user-select: none;
 	}
@@ -928,7 +954,7 @@
 	.target-table th.th-action,
 	.target-table th.th-row-action {
 		text-align: center;
-		padding: 0.6rem 0.25rem;
+		padding: 0.65rem 0.35rem;
 	}
 
 	.target-table th.th-hours {
@@ -983,40 +1009,92 @@
 		color: #cbd5e1;
 	}
 
+	/* Distinct Row Separation & Zebra Grouping */
 	.data-row {
-		border-top: 1px solid rgba(255, 255, 255, 0.08);
-		transition: background 0.2s ease;
+		border-top: 3px solid rgba(99, 102, 241, 0.4);
+		transition: background 0.15s ease;
 	}
 
-	.data-row:hover {
-		background: rgba(255, 255, 255, 0.02);
+	.target-table tbody tr:first-child.data-row {
+		border-top: none;
+	}
+
+	.row-even {
+		background: rgba(30, 41, 59, 0.32);
+	}
+
+	.row-odd {
+		background: rgba(15, 23, 42, 0.55);
+	}
+
+	.data-row:hover,
+	.sub-row-meta:hover,
+	.sub-row-desc:hover {
+		background: rgba(99, 102, 241, 0.12) !important;
 	}
 
 	.offset-row {
-		background: rgba(56, 189, 248, 0.04);
+		background: rgba(14, 165, 233, 0.08) !important;
+	}
+
+	.offset-row.data-row {
+		border-top: 3px solid rgba(56, 189, 248, 0.6);
 	}
 
 	/* Last Copied Row Highlight Styling */
 	.last-copied-row {
-		background: rgba(99, 102, 241, 0.14) !important;
-		border-left: 4px solid #818cf8 !important;
-		box-shadow: inset 4px 0 16px rgba(99, 102, 241, 0.2);
+		background: rgba(99, 102, 241, 0.22) !important;
 	}
 
-	.last-copied-row:hover {
-		background: rgba(99, 102, 241, 0.2) !important;
+	.data-row.last-copied-row {
+		border-top: 3px solid #818cf8 !important;
+	}
+
+	.sub-row-desc.last-copied-row td {
+		border-bottom: 3px solid #818cf8 !important;
+	}
+
+	.td-row-num {
+		padding: 0.55rem 0.35rem 0.3rem 0.6rem;
+		text-align: center;
+		width: 52px;
+		vertical-align: middle;
+	}
+
+	.row-badge {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 3px;
+		min-width: 32px;
+		height: 24px;
+		padding: 0 6px;
+		border-radius: 6px;
+		background: rgba(99, 102, 241, 0.2);
+		border: 1px solid rgba(129, 140, 248, 0.4);
+		font-weight: 700;
+		color: #c7d2fe;
+		font-size: 0.8rem;
+		font-family: monospace;
+	}
+
+	.offset-row .row-badge {
+		background: rgba(14, 165, 233, 0.22);
+		border-color: rgba(56, 189, 248, 0.5);
+		color: #38bdf8;
 	}
 
 	.badge-highlight {
-		color: #818cf8 !important;
-		font-weight: 800 !important;
-		text-shadow: 0 0 10px rgba(129, 140, 248, 0.6);
+		background: rgba(99, 102, 241, 0.55) !important;
+		border-color: #818cf8 !important;
+		color: #ffffff !important;
+		box-shadow: 0 0 10px rgba(129, 140, 248, 0.6);
 	}
 
 	.active-dot {
 		color: #818cf8;
 		animation: pulse-dot 1.5s infinite;
-		font-size: 0.85rem;
+		font-size: 0.75rem;
 	}
 
 	@keyframes pulse-dot {
@@ -1049,36 +1127,23 @@
 		animation: pulse-dot 1.5s infinite;
 	}
 
-	.td-row-num {
-		padding: 0.35rem 0.25rem;
-		text-align: center;
-		width: 44px;
-	}
-
-	.row-badge {
-		display: inline-flex;
-		align-items: center;
-		gap: 2px;
-		font-weight: 700;
-		color: #ef4444;
-		font-size: 0.825rem;
-	}
-
 	.td-cell {
-		padding: 0.3rem 0.25rem;
+		padding: 0.4rem 0.3rem 0.25rem 0.3rem;
 		text-align: right;
+		vertical-align: middle;
 	}
 
 	/* Base Copy Button */
 	.copy-cell-btn {
 		width: 100%;
 		border-radius: 6px;
-		padding: 0.35rem 0.35rem;
+		padding: 0.35rem 0.4rem;
 		font-size: 0.825rem;
 		text-align: right;
 		cursor: pointer;
 		position: relative;
 		transition: all 0.15s ease;
+		white-space: nowrap;
 	}
 
 	/* 1. Control / Parameter Inputs (Arbeitszeit, Anteil %, Monate) - Sky/Cyan */
@@ -1176,13 +1241,20 @@
 		z-index: 10;
 	}
 
+	.td-action {
+		padding: 0.4rem 0.4rem 0.25rem 0.4rem;
+		text-align: center;
+		vertical-align: middle;
+	}
+
 	.copy-row-btn {
 		background: rgba(255, 255, 255, 0.06);
 		border: 1px solid rgba(255, 255, 255, 0.12);
-		border-radius: 4px;
+		border-radius: 6px;
 		color: #cbd5e1;
-		padding: 0.3rem 0.6rem;
+		padding: 0.35rem 0.65rem;
 		font-size: 0.75rem;
+		font-weight: 500;
 		cursor: pointer;
 		white-space: nowrap;
 		transition: all 0.15s ease;
@@ -1201,8 +1273,8 @@
 	}
 
 	.sub-row-meta td {
-		padding: 0.4rem 0.6rem 0.35rem 3.5rem;
-		transition: background 0.2s ease;
+		padding: 0.3rem 0.75rem 0.3rem 1.25rem;
+		transition: background 0.15s ease;
 	}
 
 	.meta-content {
@@ -1213,7 +1285,7 @@
 	}
 
 	.copy-meta-btn {
-		background: rgba(30, 41, 59, 0.75);
+		background: rgba(30, 41, 59, 0.85);
 		border: 1px solid rgba(255, 255, 255, 0.1);
 		border-radius: 6px;
 		color: #e2e8f0;
@@ -1304,9 +1376,13 @@
 	}
 
 	.sub-row-desc td {
-		padding: 0.2rem 0.6rem 0.85rem 3.5rem;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-		transition: background 0.2s ease;
+		padding: 0.25rem 0.75rem 1rem 1.25rem;
+		border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+		transition: background 0.15s ease;
+	}
+
+	.offset-row.sub-row-desc td {
+		border-bottom: 2px solid rgba(56, 189, 248, 0.35);
 	}
 
 	.desc-container {
@@ -1314,12 +1390,15 @@
 		align-items: center;
 		gap: 0.65rem;
 		width: 100%;
+		max-width: 100%;
+		box-sizing: border-box;
 	}
 
 	.desc-display-box {
 		flex: 1;
-		background: rgba(30, 41, 59, 0.85);
-		border: 1px solid rgba(99, 102, 241, 0.3);
+		min-width: 0;
+		background: rgba(30, 41, 59, 0.9);
+		border: 1px solid rgba(99, 102, 241, 0.35);
 		border-radius: 6px;
 		padding: 0.45rem 0.75rem;
 		display: flex;
@@ -1327,6 +1406,7 @@
 		gap: 0.65rem;
 		cursor: pointer;
 		transition: all 0.15s ease;
+		overflow: hidden;
 	}
 
 	.desc-display-box:hover {
@@ -1335,7 +1415,7 @@
 	}
 
 	.desc-display-box.active-desc-box {
-		background: rgba(30, 41, 59, 0.95);
+		background: rgba(30, 41, 59, 0.98);
 		border-color: #818cf8;
 		box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
 	}
@@ -1353,6 +1433,7 @@
 		color: #f1f5f9;
 		white-space: pre-wrap;
 		word-break: break-word;
+		overflow-wrap: anywhere;
 	}
 
 	.desc-copy-action-btn {

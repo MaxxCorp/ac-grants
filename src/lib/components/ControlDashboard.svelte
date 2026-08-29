@@ -324,18 +324,26 @@
 	}
 
 	.audit-table th {
-		background: rgba(30, 41, 59, 0.7);
+		background: rgba(30, 41, 59, 0.85);
 		color: #94a3b8;
-		padding: 0.65rem 0.85rem;
+		padding: 0.75rem 0.85rem;
 		font-weight: 600;
 		text-align: left;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+		border-bottom: 2px solid rgba(99, 102, 241, 0.4);
 	}
 
 	.audit-table td {
-		padding: 0.65rem 0.85rem;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+		padding: 0.75rem 0.85rem;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 		color: #e2e8f0;
+	}
+
+	.audit-table tbody tr:nth-child(even) {
+		background: rgba(255, 255, 255, 0.02);
+	}
+
+	.audit-table tbody tr:hover {
+		background: rgba(99, 102, 241, 0.1);
 	}
 
 	.text-right {
