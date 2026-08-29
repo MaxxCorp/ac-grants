@@ -169,112 +169,115 @@
 				</select>
 			</div>
 
-			<!-- Start of Output Generation -->
-			<div class="config-item runtime-config">
-				<span class="config-label">Ausgabe ab:</span>
-				<div class="segmented-control">
-					<button
-						type="button"
-						class="seg-btn {runtimeStartScope === 'contract_start' ? 'active' : ''}"
-						onclick={() => handleRuntimeStartScopeChange('contract_start')}
-						title="Standard: Ausgabe ab Vertragsbeginn laut Excel Zelle F2 ({currentResult?.participant?.runtimeStart || 'Zelle F2'})"
-					>
-						Ab Vertragsbeginn {currentResult?.participant?.runtimeStart ? `(${currentResult.participant.runtimeStart})` : 'Zelle F2'}
-					</button>
-					<button
-						type="button"
-						class="seg-btn {runtimeStartScope === 'custom' ? 'active' : ''}"
-						onclick={() => handleRuntimeStartScopeChange('custom')}
-						title="Beliebiges individuelles Berechnungs-Startdatum angeben"
-					>
-						Freies Startdatum...
-					</button>
-				</div>
-
-				{#if runtimeStartScope === 'custom'}
-					<div class="custom-date-picker">
-						<label for="customStartDateInput" class="custom-date-label">Start:</label>
-						<input
-							id="customStartDateInput"
-							type="text"
-							placeholder="DD.MM.YYYY"
-							class="custom-date-input"
-							bind:value={customStartDate}
-							onchange={() => triggerRecalculate()}
-							onkeydown={(e) => e.key === 'Enter' && triggerRecalculate()}
-						/>
+			<!-- Visually Grouped Output Range Controls (Stacked One Above the Other) -->
+			<div class="runtime-scope-group">
+				<!-- Row 1: Start of Output Generation -->
+				<div class="runtime-config-row">
+					<span class="config-label">Ausgabe ab:</span>
+					<div class="segmented-control">
 						<button
 							type="button"
-							class="btn-apply-date"
-							onclick={() => triggerRecalculate()}
-							title="Startdatum anwenden"
+							class="seg-btn {runtimeStartScope === 'contract_start' ? 'active' : ''}"
+							onclick={() => handleRuntimeStartScopeChange('contract_start')}
+							title="Standard: Ausgabe ab Vertragsbeginn laut Excel Zelle F2 ({currentResult?.participant?.runtimeStart || 'Zelle F2'})"
 						>
-							Anwenden
+							Ab Vertragsbeginn {currentResult?.participant?.runtimeStart ? `(${currentResult.participant.runtimeStart})` : 'Zelle F2'}
 						</button>
-					</div>
-				{/if}
-			</div>
-
-			<!-- End of Output Generation -->
-			<div class="config-item runtime-config">
-				<span class="config-label">Ausgabe bis:</span>
-				<div class="segmented-control">
-					<button
-						type="button"
-						class="seg-btn {runtimeScope === 'exit_date' ? 'active' : ''}"
-						onclick={() => handleRuntimeScopeChange('exit_date')}
-						title="Standard: Berechnung nur bis zum aktuellen Vertragsende laut Excel Zelle F2 ({currentResult?.participant?.runtimeEnd || 'Zelle F2'})"
-					>
-						Bis Austrittsdatum {currentResult?.participant?.runtimeEnd ? `(${currentResult.participant.runtimeEnd})` : 'Zelle F2'}
-					</button>
-					<button
-						type="button"
-						class="seg-btn {runtimeScope === 'foerderperiode' ? 'active' : ''}"
-						onclick={() => handleRuntimeScopeChange('foerderperiode')}
-						title="Förderperiode: Berechnung bis zum Ende der aktuellen Förderperiode (31.12.2029)"
-					>
-						Förderperiode (bis 31.12.2029)
-					</button>
-					<button
-						type="button"
-						class="seg-btn {runtimeScope === 'full_5_years' ? 'active' : ''}"
-						onclick={() => handleRuntimeScopeChange('full_5_years')}
-						title="Vollständige 5 Jahre (60 Monate) generieren"
-					>
-						Vollständige 5 Jahre (60 Mo)
-					</button>
-					<button
-						type="button"
-						class="seg-btn {runtimeScope === 'custom' ? 'active' : ''}"
-						onclick={() => handleRuntimeScopeChange('custom')}
-						title="Beliebiges individuelles Berechnungs-Enddatum angeben"
-					>
-						Freies Enddatum...
-					</button>
-				</div>
-
-				{#if runtimeScope === 'custom'}
-					<div class="custom-date-picker">
-						<label for="customEndDateInput" class="custom-date-label">Ende:</label>
-						<input
-							id="customEndDateInput"
-							type="text"
-							placeholder="DD.MM.YYYY"
-							class="custom-date-input"
-							bind:value={customEndDate}
-							onchange={() => triggerRecalculate()}
-							onkeydown={(e) => e.key === 'Enter' && triggerRecalculate()}
-						/>
 						<button
 							type="button"
-							class="btn-apply-date"
-							onclick={() => triggerRecalculate()}
-							title="Enddatum anwenden"
+							class="seg-btn {runtimeStartScope === 'custom' ? 'active' : ''}"
+							onclick={() => handleRuntimeStartScopeChange('custom')}
+							title="Beliebiges individuelles Berechnungs-Startdatum angeben"
 						>
-							Anwenden
+							Freies Startdatum...
 						</button>
 					</div>
-				{/if}
+
+					{#if runtimeStartScope === 'custom'}
+						<div class="custom-date-picker">
+							<label for="customStartDateInput" class="custom-date-label">Start:</label>
+							<input
+								id="customStartDateInput"
+								type="text"
+								placeholder="DD.MM.YYYY"
+								class="custom-date-input"
+								bind:value={customStartDate}
+								onchange={() => triggerRecalculate()}
+								onkeydown={(e) => e.key === 'Enter' && triggerRecalculate()}
+							/>
+							<button
+								type="button"
+								class="btn-apply-date"
+								onclick={() => triggerRecalculate()}
+								title="Startdatum anwenden"
+							>
+								Anwenden
+							</button>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Row 2: End of Output Generation -->
+				<div class="runtime-config-row">
+					<span class="config-label">Ausgabe bis:</span>
+					<div class="segmented-control">
+						<button
+							type="button"
+							class="seg-btn {runtimeScope === 'exit_date' ? 'active' : ''}"
+							onclick={() => handleRuntimeScopeChange('exit_date')}
+							title="Standard: Berechnung nur bis zum aktuellen Vertragsende laut Excel Zelle F2 ({currentResult?.participant?.runtimeEnd || 'Zelle F2'})"
+						>
+							Bis Austrittsdatum {currentResult?.participant?.runtimeEnd ? `(${currentResult.participant.runtimeEnd})` : 'Zelle F2'}
+						</button>
+						<button
+							type="button"
+							class="seg-btn {runtimeScope === 'foerderperiode' ? 'active' : ''}"
+							onclick={() => handleRuntimeScopeChange('foerderperiode')}
+							title="Förderperiode: Berechnung bis zum Ende der aktuellen Förderperiode (31.12.2029)"
+						>
+							Förderperiode (bis 31.12.2029)
+						</button>
+						<button
+							type="button"
+							class="seg-btn {runtimeScope === 'full_5_years' ? 'active' : ''}"
+							onclick={() => handleRuntimeScopeChange('full_5_years')}
+							title="Vollständige 5 Jahre (60 Monate) generieren"
+						>
+							Vollständige 5 Jahre (60 Mo)
+						</button>
+						<button
+							type="button"
+							class="seg-btn {runtimeScope === 'custom' ? 'active' : ''}"
+							onclick={() => handleRuntimeScopeChange('custom')}
+							title="Beliebiges individuelles Berechnungs-Enddatum angeben"
+						>
+							Freies Enddatum...
+						</button>
+					</div>
+
+					{#if runtimeScope === 'custom'}
+						<div class="custom-date-picker">
+							<label for="customEndDateInput" class="custom-date-label">Ende:</label>
+							<input
+								id="customEndDateInput"
+								type="text"
+								placeholder="DD.MM.YYYY"
+								class="custom-date-input"
+								bind:value={customEndDate}
+								onchange={() => triggerRecalculate()}
+								onkeydown={(e) => e.key === 'Enter' && triggerRecalculate()}
+							/>
+							<button
+								type="button"
+								class="btn-apply-date"
+								onclick={() => triggerRecalculate()}
+								title="Enddatum anwenden"
+							>
+								Anwenden
+							</button>
+						</div>
+					{/if}
+				</div>
 			</div>
 
 			<div class="config-item offset-toggle">
@@ -422,6 +425,30 @@
 		align-items: center;
 		gap: 0.65rem;
 		flex-wrap: wrap;
+	}
+
+	.runtime-scope-group {
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+		background: rgba(15, 23, 42, 0.45);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 10px;
+		padding: 0.65rem 0.9rem;
+	}
+
+	.runtime-config-row {
+		display: flex;
+		align-items: center;
+		gap: 0.65rem;
+		flex-wrap: wrap;
+	}
+
+	.runtime-config-row .config-label {
+		min-width: 82px;
+		font-size: 0.85rem;
+		color: #94a3b8;
+		font-weight: 500;
 	}
 
 	.config-item label,
