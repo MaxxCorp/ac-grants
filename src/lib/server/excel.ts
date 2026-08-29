@@ -178,13 +178,13 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 		defaultAgaRate
 	};
 
-	// Parse monthly records from Row 11 onwards
+	// Parse monthly records from Row 4 onwards (after header rows)
 	const records: MonthlyRecord[] = [];
 	let lastPendingJsz = 0;
 	let lastPendingJszAga = 0;
 
-	// Loop through rows up to 105
-	for (let r = 11; r <= 100; r++) {
+	// Loop through rows up to 120
+	for (let r = 4; r <= 120; r++) {
 		const colA = getCellValue('A', r);
 		const colF = getCellValue('F', r);
 		const colO = getCellValue('O', r);
@@ -200,7 +200,7 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 			lastPendingJszAga = parseNumber(getCellValue('X', r), 0);
 
 			// Attach JSZ to the previous monthly record (usually the last month of that year, e.g. Dec)
-			if (records.length > 0) {
+			if (records.length > 0 && (lastPendingJsz > 0 || lastPendingJszAga > 0)) {
 				const lastRecord = records[records.length - 1];
 				lastRecord.jszAmount = lastPendingJsz;
 				lastRecord.jszAgaAmount = lastPendingJszAga;
