@@ -225,7 +225,8 @@ export function calculate5YearEndDate(startDateStr: string): string {
 export function ensureRecordsSpanScope(
 	records: MonthlyRecord[],
 	participant: ParticipantInfo,
-	scope: RuntimeScope
+	scope: RuntimeScope,
+	customEndDate?: string
 ): MonthlyRecord[] {
 	if (records.length === 0) return records;
 	const result = [...records];
@@ -240,6 +241,13 @@ export function ensureRecordsSpanScope(
 		targetMonths = Math.max(result.length, endTotalM - startTotalM + 1);
 	} else if (scope === 'full_5_years') {
 		targetMonths = 60;
+	} else if (scope === 'custom' && customEndDate) {
+		const customComp = parseDateComponents(customEndDate);
+		if (customComp) {
+			const startTotalM = startComp.year * 12 + startComp.month;
+			const endTotalM = customComp.year * 12 + customComp.month;
+			targetMonths = Math.max(result.length, endTotalM - startTotalM + 1);
+		}
 	}
 
 	const currentTotalMonths = round2(result.reduce((sum, r) => sum + (r.monthUnits || 1.0), 0));
@@ -264,6 +272,13 @@ export function ensureRecordsSpanScope(
 
 		if (scope === 'foerderperiode' && (currentYear > 2029 || (currentYear === 2029 && currentMonth > 12))) {
 			break;
+		}
+
+		if (scope === 'custom' && customEndDate) {
+			const customComp = parseDateComponents(customEndDate);
+			if (customComp && (currentYear > customComp.year || (currentYear === customComp.year && currentMonth > customComp.month))) {
+				break;
+			}
 		}
 
 		const elapsedMonths = (currentYear - startComp.year) * 12 + (currentMonth - startComp.month);
@@ -353,7 +368,7 @@ export function transformSgb16i(
 		options.runtimeScope || (options.restrictToExitDate === false ? 'full_5_years' : 'exit_date');
 
 	// Ensure dataset covers requested scope if synthetic projection is needed
-	const extendedRaw = ensureRecordsSpanScope(rawRecords, participant, runtimeScope);
+	const extendedRaw = ensureRecordsSpanScope(rawRecords, participant, runtimeScope, options.customEndDate);
 
 	// Apply custom AGA rates, calculate full unscaled and scaled monthly amounts
 	const allProcessedRecords = extendedRaw.map(r => {
@@ -401,19 +416,21 @@ export function transformSgb16i(
 		records = records.filter(r => isRecordWithinExitDate(r, participant.runtimeEnd));
 	} else if (runtimeScope === 'foerderperiode') {
 		records = records.filter(r => isRecordWithinExitDate(r, '31.12.2029'));
+	} else if (runtimeScope === 'custom' && options.customEndDate) {
+		records = records.filter(r => isRecordWithinExitDate(r, options.customEndDate!));
 	} else if (options.restrictToYear && options.restrictToYear > 0) {
-		records = records.filter(r => r.year <= options.restrictToYear);
+		const yr = options.restrictToYear;
+		records = records.filter(r => r.year <= yr);
 	}
 	// 'full_5_years' uses all records (which spans up to 60 months)
 
-	let effectiveRuntimeEnd = participant.runtimeEnd || '';
-	if (runtimeScope === 'foerderperiode') {
-		effectiveRuntimeEnd = '31.12.2029';
-	} else if (runtimeScope === 'full_5_years') {
-		effectiveRuntimeEnd = records.length > 0 ? getPeriodEndDate(records) : (participant.runtimeStart ? calculate5YearEndDate(participant.runtimeStart) : participant.runtimeEnd);
-	} else {
-		effectiveRuntimeEnd = participant.runtimeEnd || (records.length > 0 ? getPeriodEndDate(records) : '');
-	}
+	// In the ZGS form, the contract runtime in Cell F2 is the fixed Laufzeit for individual lines
+	const contractRuntimeText = participant.runtimeEnd
+		? `${participant.runtimeStart}-${participant.runtimeEnd}`
+		: (participant.runtimeStart || '');
+	const contractRuntimeWithSpaces = participant.runtimeEnd
+		? `${participant.runtimeStart} - ${participant.runtimeEnd}`
+		: (participant.runtimeStart || '');
 
 	const years = Array.from(new Set(records.map(r => r.year))).sort((a, b) => a - b);
 	const runtimeMonths = round2(records.reduce((sum, r) => sum + (r.monthUnits || 1.0), 0));
@@ -451,7 +468,7 @@ export function transformSgb16i(
 		const calculationPeriodText = `${startDateText}-${endDateText}`;
 		const tariffStep = getTariffStep(first, participant.runtimeStart, participant.tariffStep);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
-		const runtimeText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
+		const runtimeText = contractRuntimeText;
 
 		// Detect reasons for Erläuterung only when needed (Tariferhöhung, Stufenaufstieg, Degression)
 		const costTypeText = 'AG-Brutto, inkl. 19% Pauschale';
@@ -553,9 +570,9 @@ export function transformSgb16i(
 		for (const y of years) offsetYearly[y] = 0;
 		offsetYearly[firstYear] = jcRoundingDelta;
 
-		const runtimeText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
+		const runtimeText = contractRuntimeText;
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${participant.tariffStep}`;
-		const calculationPeriodText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
+		const calculationPeriodText = contractRuntimeText;
 		const explanationText = 'Ausgleich K-Hilfe vs. reale Kalkulation';
 		const costTypeText = 'Ausgleichsbetrag';
 		const compoundOneLineText = buildCompoundOneLineText(
@@ -632,7 +649,7 @@ export function transformSgb16i(
 		const endDateText = getPeriodEndDate(currentSvGroup);
 		const tariffStep = getTariffStep(first, participant.runtimeStart, participant.tariffStep);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
-		const runtimeText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
+		const runtimeText = contractRuntimeText;
 		const calculationPeriodText = `${startDateText}-${endDateText}`;
 
 		const agaPctStr = `${(first.agaRealRate * 100).toFixed(3).replace('.', ',')}%`;
@@ -738,7 +755,7 @@ export function transformSgb16i(
 		const calculationPeriodText = `${startDateText}-${endDateText}`;
 		const tariffStep = getTariffStep(first, participant.runtimeStart, participant.tariffStep);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
-		const runtimeText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
+		const runtimeText = contractRuntimeText;
 
 		let explanationText = '';
 		if (previousDegGroup) {
@@ -835,7 +852,7 @@ export function transformSgb16i(
 			}
 
 			const costTypeText = `Jahressonderzahlung ${y}`;
-			const runtimeText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
+			const runtimeText = contractRuntimeText;
 			const tariffText = `AWO Berlin ${participant.tariffGroup}/${getTariffStep(jszRecord, participant.runtimeStart, participant.tariffStep)}`;
 			const calculationPeriodText = `01.01.${y}-31.12.${y}`;
 
@@ -888,9 +905,9 @@ export function transformSgb16i(
 		for (const y of years) offsetYearly[y] = 0;
 		offsetYearly[firstYear] = landRoundingDelta;
 
-		const runtimeText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
+		const runtimeText = contractRuntimeText;
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${participant.tariffStep}`;
-		const calculationPeriodText = `${participant.runtimeStart}-${effectiveRuntimeEnd}`;
+		const calculationPeriodText = contractRuntimeText;
 		const explanationText = 'Ausgleich K-Hilfe vs. reale Kalkulation';
 		const costTypeText = 'Ausgleichsbetrag';
 		const compoundOneLineText = buildCompoundOneLineText(
@@ -955,15 +972,10 @@ export function transformSgb16i(
 	const skName = participant.name.startsWith('Hr.') || participant.name.startsWith('Herr')
 		? participant.name
 		: `Fr. ${participant.name.replace(/^Frau\s+/i, '')}`;
-	const skRuntime = `${participant.runtimeStart} - ${effectiveRuntimeEnd}`;
+	const skRuntime = contractRuntimeWithSpaces;
 	const skTariff = `AWO Berlin ${participant.tariffGroup}/${participant.tariffStep}`;
 	const skPeriod = `${getPeriodStartDate(records)} - ${getPeriodEndDate(records)}`;
-	let skExplanation = `JC Antrag bewilligt bis ${effectiveRuntimeEnd}`;
-	if (runtimeScope === 'foerderperiode') {
-		skExplanation = `Förderperiode bis ${effectiveRuntimeEnd}`;
-	} else if (runtimeScope === 'full_5_years') {
-		skExplanation = `Gesamtlaufzeit 5 Jahre bis ${effectiveRuntimeEnd}`;
-	}
+	const skExplanation = `JC Antrag bewilligt bis ${participant.runtimeEnd || getPeriodEndDate(records)}`;
 	const skCostType = `Sachkostenpauschale ${sachkostenRate.toFixed(2).replace('.', ',')} € mtl.`;
 	const skCompoundOneLineText = buildCompoundOneLineText(skName, skRuntime, skTariff, skPeriod, skExplanation, skCostType);
 
@@ -1080,7 +1092,7 @@ export function transformSgb16i(
 		{
 			id: 'aga-default',
 			startDate: participant.runtimeStart ? formatDateDMY(participant.runtimeStart) : '2026-08-01',
-			endDate: effectiveRuntimeEnd ? formatDateDMY(effectiveRuntimeEnd) : (participant.runtimeEnd ? formatDateDMY(participant.runtimeEnd) : '2031-07-31'),
+			endDate: participant.runtimeEnd ? formatDateDMY(participant.runtimeEnd) : '2031-07-31',
 			rate: participant.defaultAgaRate,
 			label: `${participant.healthInsuranceName} Standard (${(participant.defaultAgaRate * 100).toFixed(3)}%)`
 		}

@@ -381,31 +381,52 @@ describe('§16i SGB II / ZGS Berlin Transformation Engine', () => {
 
 		// 1. Test exit_date (default: 24 months, until 31.08.2028)
 		const resExit = transformSgb16i(records, participant, { includeOffsetRows: false, runtimeScope: 'exit_date' });
-		expect(resExit.runtimeMonths).toBe(24.5 || 25 || 24); // 2026-08-01 to 2028-08-31 is 25 months
+		expect(resExit.runtimeMonths).toBe(25); // 2026-08-01 to 2028-08-31 is 25 months
 		expect(resExit.years).toEqual([2026, 2027, 2028]);
 		expect(resExit.tabs[0].rows[0].runtimeText).toBe('01.08.2026-31.08.2028');
+		expect(resExit.tabs[2].rows[0].runtimeText).toBe('01.08.2026 - 31.08.2028');
+		expect(resExit.tabs[2].rows[0].explanationText).toBe('JC Antrag bewilligt bis 31.08.2028');
 		// CRITICAL: Ensure full records are preserved in rawMonthlyRecords
 		expect(resExit.rawMonthlyRecords.length).toBe(60);
 
-		// 2. Test foerderperiode (until 31.12.2029)
+		// 2. Test foerderperiode (until 31.12.2029):
+		// Laufzeit on all lines remains the contract runtime from cell F2 (01.08.2026-31.08.2028),
+		// while the calculation generates additional rows up to 31.12.2029.
 		const resFoerder = transformSgb16i(resExit.rawMonthlyRecords, participant, { includeOffsetRows: false, runtimeScope: 'foerderperiode' });
 		expect(resFoerder.years).toEqual([2026, 2027, 2028, 2029]);
 		expect(resFoerder.runtimeMonths).toBe(41); // Aug 2026 to Dec 2029 = 5 + 12 + 12 + 12 = 41 months
-		expect(resFoerder.tabs[0].rows[0].runtimeText).toBe('01.08.2026-31.12.2029');
-		expect(resFoerder.tabs[2].rows[0].explanationText).toBe('Förderperiode bis 31.12.2029');
+		expect(resFoerder.tabs[0].rows[0].runtimeText).toBe('01.08.2026-31.08.2028');
+		expect(resFoerder.tabs[2].rows[0].runtimeText).toBe('01.08.2026 - 31.08.2028');
+		expect(resFoerder.tabs[2].rows[0].explanationText).toBe('JC Antrag bewilligt bis 31.08.2028');
 		expect(resFoerder.rawMonthlyRecords.length).toBe(60);
 
-		// 3. Test full_5_years (full 60 months, until 31.07.2031)
+		// 3. Test full_5_years (full 60 months, until 31.07.2031):
+		// Laufzeit on all lines remains the contract runtime from cell F2 (01.08.2026-31.08.2028),
+		// while all 60 months are generated.
 		const resFull = transformSgb16i(resFoerder.rawMonthlyRecords, participant, { includeOffsetRows: false, runtimeScope: 'full_5_years' });
 		expect(resFull.runtimeMonths).toBe(60);
 		expect(resFull.years).toEqual([2026, 2027, 2028, 2029, 2030, 2031]);
-		expect(resFull.tabs[0].rows[0].runtimeText).toBe('01.08.2026-31.07.2031');
-		expect(resFull.tabs[2].rows[0].explanationText).toBe('Gesamtlaufzeit 5 Jahre bis 31.07.2031');
+		expect(resFull.tabs[0].rows[0].runtimeText).toBe('01.08.2026-31.08.2028');
+		expect(resFull.tabs[2].rows[0].runtimeText).toBe('01.08.2026 - 31.08.2028');
+		expect(resFull.tabs[2].rows[0].explanationText).toBe('JC Antrag bewilligt bis 31.08.2028');
 		expect(resFull.rawMonthlyRecords.length).toBe(60);
 
-		// 4. Test switching back to exit_date from full_5_years
-		const resBack = transformSgb16i(resFull.rawMonthlyRecords, participant, { includeOffsetRows: false, runtimeScope: 'exit_date' });
+		// 4. Test custom arbitrary end date (e.g. 31.03.2029)
+		const resCustom = transformSgb16i(resFull.rawMonthlyRecords, participant, {
+			includeOffsetRows: false,
+			runtimeScope: 'custom',
+			customEndDate: '31.03.2029'
+		});
+		expect(resCustom.years).toEqual([2026, 2027, 2028, 2029]);
+		expect(resCustom.runtimeMonths).toBe(32); // Aug 2026 to Mar 2029 = 5 + 12 + 12 + 3 = 32 months
+		expect(resCustom.tabs[0].rows[0].runtimeText).toBe('01.08.2026-31.08.2028');
+		expect(resCustom.tabs[2].rows[0].runtimeText).toBe('01.08.2026 - 31.08.2028');
+		expect(resCustom.rawMonthlyRecords.length).toBe(60);
+
+		// 5. Test switching back to exit_date from custom
+		const resBack = transformSgb16i(resCustom.rawMonthlyRecords, participant, { includeOffsetRows: false, runtimeScope: 'exit_date' });
 		expect(resBack.years).toEqual([2026, 2027, 2028]);
+		expect(resBack.runtimeMonths).toBe(25);
 		expect(resBack.rawMonthlyRecords.length).toBe(60);
 	});
 

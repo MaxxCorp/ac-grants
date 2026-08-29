@@ -119,11 +119,12 @@ export interface ControlCheckResult {
 	};
 }
 
-export type RuntimeScope = 'exit_date' | 'foerderperiode' | 'full_5_years';
+export type RuntimeScope = 'exit_date' | 'foerderperiode' | 'full_5_years' | 'custom';
 
 export interface GrantTransformationOptions {
 	includeOffsetRows: boolean;
-	runtimeScope?: RuntimeScope; // 'exit_date' (cell F2) | 'foerderperiode' (until 31.12.2029) | 'full_5_years' (60 months)
+	runtimeScope?: RuntimeScope; // 'exit_date' (cell F2) | 'foerderperiode' (until 31.12.2029) | 'full_5_years' (60 months) | 'custom'
+	customEndDate?: string; // Arbitrary end date for calculation (e.g. '31.03.2029' or '2029-03-31')
 	restrictToExitDate?: boolean; // Legacy compatibility: true -> 'exit_date', false -> 'full_5_years'
 	restrictToYear?: number; // Optional fallback year restriction
 	customAgaTimeline?: AgaRatePeriod[];

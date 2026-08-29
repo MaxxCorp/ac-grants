@@ -10,7 +10,8 @@
 	let availableSchemes = $state<any[]>([]);
 	let selectedSchemeId = $state('sgb16i-berlin');
 	let includeOffset = $state(true);
-	let runtimeScope = $state<RuntimeScope>('exit_date'); // 'exit_date' | 'foerderperiode' | 'full_5_years'
+	let runtimeScope = $state<RuntimeScope>('exit_date'); // 'exit_date' | 'foerderperiode' | 'full_5_years' | 'custom'
+	let customEndDate = $state('');
 	let currentResult = $state<GrantTransformationResult | null>(null);
 	let isRecalculating = $state(false);
 
@@ -29,6 +30,11 @@
 		if (res.options?.runtimeScope) {
 			runtimeScope = res.options.runtimeScope;
 		}
+		if (res.options?.customEndDate) {
+			customEndDate = res.options.customEndDate;
+		} else if (!customEndDate && res.participant?.runtimeEnd) {
+			customEndDate = res.participant.runtimeEnd;
+		}
 	}
 
 	async function handleToggleOffset(val: boolean) {
@@ -40,6 +46,9 @@
 
 	async function handleRuntimeScopeChange(val: RuntimeScope) {
 		runtimeScope = val;
+		if (val === 'custom' && !customEndDate && currentResult?.participant?.runtimeEnd) {
+			customEndDate = currentResult.participant.runtimeEnd;
+		}
 		if (currentResult) {
 			await triggerRecalculate();
 		}
@@ -56,6 +65,7 @@
 					options: {
 						includeOffsetRows: includeOffset,
 						runtimeScope,
+						customEndDate: runtimeScope === 'custom' ? customEndDate : undefined,
 						customAgaTimeline: newTimeline
 					}
 				});
@@ -79,6 +89,7 @@
 					options: {
 						includeOffsetRows: includeOffset,
 						runtimeScope,
+						customEndDate: runtimeScope === 'custom' ? customEndDate : undefined,
 						customAgaTimeline: currentResult.agaTimeline
 					}
 				});
@@ -134,14 +145,14 @@
 				</select>
 			</div>
 
-			<div class="config-item">
+			<div class="config-item runtime-config">
 				<span class="config-label">Laufzeit-Umfang:</span>
 				<div class="segmented-control">
 					<button
 						type="button"
 						class="seg-btn {runtimeScope === 'exit_date' ? 'active' : ''}"
 						onclick={() => handleRuntimeScopeChange('exit_date')}
-						title="Standard: Ausgabe nur bis zum tatsächlichen Austrittsdatum laut Excel Zelle F2 ({currentResult?.participant?.runtimeEnd || 'Zelle F2'})"
+						title="Standard: Berechnung nur bis zum aktuellen Vertragsende laut Excel Zelle F2 ({currentResult?.participant?.runtimeEnd || 'Zelle F2'})"
 					>
 						Bis Austrittsdatum {currentResult?.participant?.runtimeEnd ? `(${currentResult.participant.runtimeEnd})` : 'Zelle F2'}
 					</button>
@@ -149,7 +160,7 @@
 						type="button"
 						class="seg-btn {runtimeScope === 'foerderperiode' ? 'active' : ''}"
 						onclick={() => handleRuntimeScopeChange('foerderperiode')}
-						title="Förderperiode: Ausgabe bis zum Ende der aktuellen Förderperiode (31.12.2029)"
+						title="Förderperiode: Berechnung bis zum Ende der aktuellen Förderperiode (31.12.2029)"
 					>
 						Förderperiode (bis 31.12.2029)
 					</button>
@@ -157,11 +168,42 @@
 						type="button"
 						class="seg-btn {runtimeScope === 'full_5_years' ? 'active' : ''}"
 						onclick={() => handleRuntimeScopeChange('full_5_years')}
-						title="Optionale Überschreibung: Vollständige 5 Jahre (60 Monate) generieren"
+						title="Vollständige 5 Jahre (60 Monate) generieren"
 					>
 						Vollständige 5 Jahre (60 Mo)
 					</button>
+					<button
+						type="button"
+						class="seg-btn {runtimeScope === 'custom' ? 'active' : ''}"
+						onclick={() => handleRuntimeScopeChange('custom')}
+						title="Beliebiges individuelles Berechnungs-Enddatum angeben"
+					>
+						Freies Enddatum...
+					</button>
 				</div>
+
+				{#if runtimeScope === 'custom'}
+					<div class="custom-date-picker">
+						<label for="customEndDateInput" class="custom-date-label">Berechnung bis:</label>
+						<input
+							id="customEndDateInput"
+							type="text"
+							placeholder="DD.MM.YYYY"
+							class="custom-date-input"
+							bind:value={customEndDate}
+							onchange={() => triggerRecalculate()}
+							onkeydown={(e) => e.key === 'Enter' && triggerRecalculate()}
+						/>
+						<button
+							type="button"
+							class="btn-apply-date"
+							onclick={() => triggerRecalculate()}
+							title="Enddatum anwenden"
+						>
+							Anwenden
+						</button>
+					</div>
+				{/if}
 			</div>
 
 			<div class="config-item offset-toggle">
@@ -184,6 +226,7 @@
 				selectedScheme={selectedSchemeId}
 				{includeOffset}
 				{runtimeScope}
+				{customEndDate}
 			/>
 		</section>
 
@@ -305,6 +348,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.65rem;
+		flex-wrap: wrap;
 	}
 
 	.config-item label,
@@ -331,6 +375,7 @@
 		border: 1px solid rgba(255, 255, 255, 0.15);
 		border-radius: 6px;
 		padding: 2px;
+		flex-wrap: wrap;
 	}
 
 	.seg-btn {
@@ -343,6 +388,7 @@
 		font-weight: 500;
 		cursor: pointer;
 		transition: all 0.2s ease;
+		white-space: nowrap;
 	}
 
 	.seg-btn:hover {
@@ -353,6 +399,55 @@
 		background: #6366f1;
 		color: #ffffff;
 		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+	}
+
+	.custom-date-picker {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		background: rgba(15, 23, 42, 0.9);
+		border: 1px solid rgba(99, 102, 241, 0.4);
+		padding: 0.2rem 0.5rem;
+		border-radius: 6px;
+		animation: fadeIn 0.2s ease;
+	}
+
+	.custom-date-label {
+		font-size: 0.8rem;
+		color: #a5b4fc;
+		white-space: nowrap;
+	}
+
+	.custom-date-input {
+		background: #1e293b;
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		color: #ffffff;
+		padding: 0.25rem 0.5rem;
+		border-radius: 4px;
+		font-size: 0.825rem;
+		width: 105px;
+		outline: none;
+		text-align: center;
+	}
+
+	.custom-date-input:focus {
+		border-color: #6366f1;
+	}
+
+	.btn-apply-date {
+		background: #6366f1;
+		border: none;
+		color: #ffffff;
+		padding: 0.25rem 0.6rem;
+		border-radius: 4px;
+		font-size: 0.775rem;
+		cursor: pointer;
+		font-weight: 500;
+		transition: background 0.15s ease;
+	}
+
+	.btn-apply-date:hover {
+		background: #4f46e5;
 	}
 
 	.checkbox-label {

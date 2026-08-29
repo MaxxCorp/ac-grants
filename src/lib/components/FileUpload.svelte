@@ -7,6 +7,7 @@
 		selectedScheme = 'sgb16i-berlin',
 		includeOffset = true,
 		runtimeScope = 'exit_date',
+		customEndDate = undefined,
 		restrictToExitDate = true,
 		restrictYear = undefined
 	}: {
@@ -14,6 +15,7 @@
 		selectedScheme?: string;
 		includeOffset?: boolean;
 		runtimeScope?: RuntimeScope;
+		customEndDate?: string;
 		restrictToExitDate?: boolean;
 		restrictYear?: number | undefined;
 	} = $props();
@@ -71,6 +73,7 @@
 						schemeId: selectedScheme,
 						includeOffsetRows: includeOffset,
 						runtimeScope,
+						customEndDate,
 						restrictToExitDate,
 						restrictToYear: restrictYear
 					});

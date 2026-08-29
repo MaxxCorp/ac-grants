@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { parseExcelBuffer } from './excel';
 
 describe('Excel Parser', () => {
-	it('parses Berechnungsblatt Fenske_3.xlsx including July 2024', () => {
+	it.skipIf(!fs.existsSync('Berechnungsblatt Fenske_3.xlsx'))('parses Berechnungsblatt Fenske_3.xlsx including July 2024', () => {
 		const buf = fs.readFileSync('Berechnungsblatt Fenske_3.xlsx');
 		const parsed = parseExcelBuffer(buf);
 
