@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { transformSgb16i, buildCompoundOneLineText, isRecordWithinExitDate, parseDateComponents, getTariffStep } from '#lib/grants/sgb16i';
+import { transformSgb16i, buildCompoundOneLineText, isRecordWithinExitDate, isRecordWithinStartDate, parseDateComponents, getTariffStep } from '#lib/grants/sgb16i';
 import { normalizeTariffStep } from '#lib/server/excel';
 import type { MonthlyRecord, ParticipantInfo } from '#lib/types/grant';
 
 describe('§16i SGB II / ZGS Berlin Transformation Engine', () => {
-	it('should correctly parse date components and filter records within exit date', () => {
+	it('should correctly parse date components and filter records within exit date and start date', () => {
 		expect(parseDateComponents('15.02.2030')).toEqual({ day: 15, month: 2, year: 2030 });
 		expect(parseDateComponents('2030-02-15')).toEqual({ day: 15, month: 2, year: 2030 });
 		expect(parseDateComponents('15/02/2030')).toEqual({ day: 15, month: 2, year: 2030 });
@@ -68,6 +68,13 @@ describe('§16i SGB II / ZGS Berlin Transformation Engine', () => {
 		expect(isRecordWithinExitDate(recordFeb2030Part1, '15.02.2030')).toBe(true);
 		expect(isRecordWithinExitDate(recordFeb2030Part2, '15.02.2030')).toBe(false);
 		expect(isRecordWithinExitDate(recordMarch2030, '15.02.2030')).toBe(false);
+
+		// Test isRecordWithinStartDate
+		expect(isRecordWithinStartDate(record2029, '01.01.2030')).toBe(false);
+		expect(isRecordWithinStartDate(recordFeb2030Part1, '16.02.2030')).toBe(false);
+		expect(isRecordWithinStartDate(recordFeb2030Part2, '16.02.2030')).toBe(true);
+		expect(isRecordWithinStartDate(recordMarch2030, '16.02.2030')).toBe(true);
+		expect(isRecordWithinStartDate(record2029, '01.08.2026')).toBe(true);
 	});
 
 	it('should support standard 60-month full runtime calculation with synthetic data', () => {
@@ -428,6 +435,105 @@ describe('§16i SGB II / ZGS Berlin Transformation Engine', () => {
 		expect(resBack.years).toEqual([2026, 2027, 2028]);
 		expect(resBack.runtimeMonths).toBe(25);
 		expect(resBack.rawMonthlyRecords.length).toBe(60);
+	});
+
+	it('should correctly filter and adapt outputs based on runtimeStartScope and customStartDate', () => {
+		const participant: ParticipantInfo = {
+			name: 'Erika Mustermann',
+			tariffGroup: 'EG1',
+			tariffStep: 'ES1',
+			runtimeStart: '01.08.2026',
+			runtimeEnd: '31.07.2031', // 60 months
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			sachkostenMonthly: 155,
+			childrenCount: 0,
+			healthInsuranceName: 'DAK',
+			defaultAgaRate: 0.2314
+		};
+
+		// 60 monthly records
+		const records: MonthlyRecord[] = [];
+		let currentDate = new Date(2026, 7, 1);
+		for (let i = 0; i < 60; i++) {
+			const y = currentDate.getFullYear();
+			const m = currentDate.getMonth() + 1;
+			const lastDay = new Date(y, m, 0).getDate();
+			const mStr = String(m).padStart(2, '0');
+			const fteSalary = 2600;
+			const partTimeSalary = (fteSalary * 30) / 39;
+			const jcFlatRate = partTimeSalary * 0.19;
+			const jcTotalGross = partTimeSalary + jcFlatRate;
+			const degPct = i < 24 ? 100 : i < 36 ? 90 : i < 48 ? 80 : 70;
+
+			records.push({
+				date: `${y}-${mStr}-${String(lastDay).padStart(2, '0')}`,
+				year: y,
+				month: m,
+				monthUnits: 1.0,
+				startDate: `01.${mStr}.${y}`,
+				endDate: `${String(lastDay).padStart(2, '0')}.${mStr}.${y}`,
+				fteSalary,
+				partTimeSalary,
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: jcFlatRate,
+				jcTotalGross,
+				jcDegressionPct: degPct,
+				jcGrantAmount: (jcTotalGross * degPct) / 100,
+				agaRealRate: 0.2314,
+				agaRealAmount: partTimeSalary * 0.2314,
+				totalEmployerCost: partTimeSalary * 1.2314,
+				landSvShortfall: partTimeSalary * (0.2314 - 0.19),
+				landDegressionAmount: 0,
+				jszAmount: m === 12 ? 1700 : 0,
+				jszAgaAmount: m === 12 ? 1700 * 0.2314 : 0,
+				isJszMonth: m === 12,
+				sachkostenAmount: 155
+			});
+
+			currentDate = new Date(y, m, 1);
+		}
+
+		// 1. Default contract_start: starts at 01.08.2026
+		const resDefault = transformSgb16i(records, participant, {
+			includeOffsetRows: false,
+			runtimeStartScope: 'contract_start',
+			runtimeScope: 'full_5_years'
+		});
+		expect(resDefault.runtimeMonths).toBe(60);
+		expect(resDefault.years).toEqual([2026, 2027, 2028, 2029, 2030, 2031]);
+
+		// 2. Custom start date: 01.08.2028 (Year 3) to 31.07.2029 (12 months slice)
+		const resSlice = transformSgb16i(records, participant, {
+			includeOffsetRows: false,
+			runtimeStartScope: 'custom',
+			customStartDate: '01.08.2028',
+			runtimeScope: 'custom',
+			customEndDate: '31.07.2029'
+		});
+		expect(resSlice.runtimeMonths).toBe(12);
+		expect(resSlice.years).toEqual([2028, 2029]);
+		// Tab 1 Jobcenter: First row starts at 01.08.2028
+		expect(resSlice.tabs[0].rows[0].calculationPeriodText).toBe('01.08.2028-31.07.2029');
+		// Tariff step is computed from original contract start (01.08.2026) -> after 24 months, it is ES2
+		expect(resSlice.tabs[0].rows[0].tariffText).toBe('AWO Berlin EG1/ES2');
+		// Sachkosten for 12 months = 12 * 155 = 1860 €
+		expect(resSlice.tabs[2].grandTotal).toBe(1860);
+		expect(resSlice.tabs[2].rows[0].calculationPeriodText).toBe('01.08.2028 - 31.07.2029');
+		// Overall status remains MATCH
+		expect(resSlice.controls.overallStatus).toBe('MATCH');
+
+		// 3. Custom start date mid-year with partial records
+		const resMidYear = transformSgb16i(records, participant, {
+			includeOffsetRows: false,
+			runtimeStartScope: 'custom',
+			customStartDate: '01.01.2029',
+			runtimeScope: 'foerderperiode' // until 31.12.2029
+		});
+		expect(resMidYear.years).toEqual([2029]);
+		expect(resMidYear.runtimeMonths).toBe(12);
+		expect(resMidYear.tabs[2].grandTotal).toBe(1860);
 	});
 
 	it('should correctly normalize various representations of experience levels from cell C2', () => {

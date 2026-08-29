@@ -120,11 +120,14 @@ export interface ControlCheckResult {
 }
 
 export type RuntimeScope = 'exit_date' | 'foerderperiode' | 'full_5_years' | 'custom';
+export type RuntimeStartScope = 'contract_start' | 'custom';
 
 export interface GrantTransformationOptions {
 	includeOffsetRows: boolean;
 	runtimeScope?: RuntimeScope; // 'exit_date' (cell F2) | 'foerderperiode' (until 31.12.2029) | 'full_5_years' (60 months) | 'custom'
 	customEndDate?: string; // Arbitrary end date for calculation (e.g. '31.03.2029' or '2029-03-31')
+	runtimeStartScope?: RuntimeStartScope; // 'contract_start' (cell F2) | 'custom'
+	customStartDate?: string; // Arbitrary start date for calculation / output generation (e.g. '01.01.2028' or '2028-01-01')
 	restrictToExitDate?: boolean; // Legacy compatibility: true -> 'exit_date', false -> 'full_5_years'
 	restrictToYear?: number; // Optional fallback year restriction
 	customAgaTimeline?: AgaRatePeriod[];

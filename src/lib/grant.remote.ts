@@ -31,6 +31,8 @@ export const recalculateGrant = command(
 			includeOffsetRows: v.boolean(),
 			runtimeScope: v.optional(v.string()),
 			customEndDate: v.optional(v.string()),
+			runtimeStartScope: v.optional(v.string()),
+			customStartDate: v.optional(v.string()),
 			restrictToExitDate: v.optional(v.boolean()),
 			restrictToYear: v.optional(v.number()),
 			customAgaTimeline: v.optional(
@@ -65,10 +67,12 @@ export const processExcelFile = command(
 		includeOffsetRows: v.optional(v.boolean(), true),
 		runtimeScope: v.optional(v.string(), 'exit_date'),
 		customEndDate: v.optional(v.string()),
+		runtimeStartScope: v.optional(v.string(), 'contract_start'),
+		customStartDate: v.optional(v.string()),
 		restrictToExitDate: v.optional(v.boolean(), true),
 		restrictToYear: v.optional(v.number())
 	}),
-	async ({ fileBase64, fileName, schemeId, includeOffsetRows, runtimeScope, customEndDate, restrictToExitDate, restrictToYear }): Promise<GrantTransformationResult> => {
+	async ({ fileBase64, fileName, schemeId, includeOffsetRows, runtimeScope, customEndDate, runtimeStartScope, customStartDate, restrictToExitDate, restrictToYear }): Promise<GrantTransformationResult> => {
 		try {
 			const buffer = Buffer.from(fileBase64, 'base64');
 			const { participant, records } = parseExcelBuffer(buffer);
@@ -78,6 +82,8 @@ export const processExcelFile = command(
 				includeOffsetRows: includeOffsetRows ?? true,
 				runtimeScope: (runtimeScope as any) || (restrictToExitDate === false ? 'full_5_years' : 'exit_date'),
 				customEndDate,
+				runtimeStartScope: (runtimeStartScope as any) || 'contract_start',
+				customStartDate,
 				restrictToExitDate: restrictToExitDate ?? true,
 				restrictToYear
 			});
@@ -95,10 +101,12 @@ export const uploadExcel = form(
 		includeOffsetRows: v.optional(v.string(), 'true'),
 		runtimeScope: v.optional(v.string(), 'exit_date'),
 		customEndDate: v.optional(v.string()),
+		runtimeStartScope: v.optional(v.string(), 'contract_start'),
+		customStartDate: v.optional(v.string()),
 		restrictToExitDate: v.optional(v.string(), 'true'),
 		restrictToYear: v.optional(v.string())
 	}),
-	async ({ excelFile, schemeId, includeOffsetRows, runtimeScope, customEndDate, restrictToExitDate, restrictToYear }): Promise<GrantTransformationResult> => {
+	async ({ excelFile, schemeId, includeOffsetRows, runtimeScope, customEndDate, runtimeStartScope, customStartDate, restrictToExitDate, restrictToYear }): Promise<GrantTransformationResult> => {
 		if (!excelFile || !(excelFile instanceof File)) {
 			throw new Error('Bitte wählen Sie eine gültige Excel-Datei (.xlsx) aus.');
 		}
@@ -112,6 +120,8 @@ export const uploadExcel = form(
 			includeOffsetRows: includeOffsetRows === 'true' || includeOffsetRows === 'on',
 			runtimeScope: (runtimeScope as any) || (restrictToExitDate === 'false' ? 'full_5_years' : 'exit_date'),
 			customEndDate,
+			runtimeStartScope: (runtimeStartScope as any) || 'contract_start',
+			customStartDate,
 			restrictToExitDate: restrictToExitDate !== 'false',
 			restrictToYear: restrictToYear ? parseInt(restrictToYear, 10) : undefined
 		};

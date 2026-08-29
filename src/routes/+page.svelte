@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getAvailableSchemes, recalculateGrant } from '#lib/grant.remote';
-	import type { GrantTransformationResult, AgaRatePeriod, RuntimeScope } from '#lib/types/grant';
+	import type { GrantTransformationResult, AgaRatePeriod, RuntimeScope, RuntimeStartScope } from '#lib/types/grant';
 	import FileUpload from '#lib/components/FileUpload.svelte';
 	import ControlDashboard from '#lib/components/ControlDashboard.svelte';
 	import TargetFormCompanion from '#lib/components/TargetFormCompanion.svelte';
@@ -10,6 +10,8 @@
 	let availableSchemes = $state<any[]>([]);
 	let selectedSchemeId = $state('sgb16i-berlin');
 	let includeOffset = $state(true);
+	let runtimeStartScope = $state<RuntimeStartScope>('contract_start'); // 'contract_start' | 'custom'
+	let customStartDate = $state('');
 	let runtimeScope = $state<RuntimeScope>('exit_date'); // 'exit_date' | 'foerderperiode' | 'full_5_years' | 'custom'
 	let customEndDate = $state('');
 	let currentResult = $state<GrantTransformationResult | null>(null);
@@ -27,6 +29,14 @@
 
 	async function handleResult(res: GrantTransformationResult) {
 		currentResult = res;
+		if (res.options?.runtimeStartScope) {
+			runtimeStartScope = res.options.runtimeStartScope;
+		}
+		if (res.options?.customStartDate) {
+			customStartDate = res.options.customStartDate;
+		} else if (!customStartDate && res.participant?.runtimeStart) {
+			customStartDate = res.participant.runtimeStart;
+		}
 		if (res.options?.runtimeScope) {
 			runtimeScope = res.options.runtimeScope;
 		}
@@ -39,6 +49,16 @@
 
 	async function handleToggleOffset(val: boolean) {
 		includeOffset = val;
+		if (currentResult) {
+			await triggerRecalculate();
+		}
+	}
+
+	async function handleRuntimeStartScopeChange(val: RuntimeStartScope) {
+		runtimeStartScope = val;
+		if (val === 'custom' && !customStartDate && currentResult?.participant?.runtimeStart) {
+			customStartDate = currentResult.participant.runtimeStart;
+		}
 		if (currentResult) {
 			await triggerRecalculate();
 		}
@@ -64,6 +84,8 @@
 					participant: currentResult.participant,
 					options: {
 						includeOffsetRows: includeOffset,
+						runtimeStartScope,
+						customStartDate: runtimeStartScope === 'custom' ? customStartDate : undefined,
 						runtimeScope,
 						customEndDate: runtimeScope === 'custom' ? customEndDate : undefined,
 						customAgaTimeline: newTimeline
@@ -88,6 +110,8 @@
 					participant: currentResult.participant,
 					options: {
 						includeOffsetRows: includeOffset,
+						runtimeStartScope,
+						customStartDate: runtimeStartScope === 'custom' ? customStartDate : undefined,
 						runtimeScope,
 						customEndDate: runtimeScope === 'custom' ? customEndDate : undefined,
 						customAgaTimeline: currentResult.agaTimeline
@@ -145,8 +169,55 @@
 				</select>
 			</div>
 
+			<!-- Start of Output Generation -->
 			<div class="config-item runtime-config">
-				<span class="config-label">Laufzeit-Umfang:</span>
+				<span class="config-label">Ausgabe ab:</span>
+				<div class="segmented-control">
+					<button
+						type="button"
+						class="seg-btn {runtimeStartScope === 'contract_start' ? 'active' : ''}"
+						onclick={() => handleRuntimeStartScopeChange('contract_start')}
+						title="Standard: Ausgabe ab Vertragsbeginn laut Excel Zelle F2 ({currentResult?.participant?.runtimeStart || 'Zelle F2'})"
+					>
+						Ab Vertragsbeginn {currentResult?.participant?.runtimeStart ? `(${currentResult.participant.runtimeStart})` : 'Zelle F2'}
+					</button>
+					<button
+						type="button"
+						class="seg-btn {runtimeStartScope === 'custom' ? 'active' : ''}"
+						onclick={() => handleRuntimeStartScopeChange('custom')}
+						title="Beliebiges individuelles Berechnungs-Startdatum angeben"
+					>
+						Freies Startdatum...
+					</button>
+				</div>
+
+				{#if runtimeStartScope === 'custom'}
+					<div class="custom-date-picker">
+						<label for="customStartDateInput" class="custom-date-label">Start:</label>
+						<input
+							id="customStartDateInput"
+							type="text"
+							placeholder="DD.MM.YYYY"
+							class="custom-date-input"
+							bind:value={customStartDate}
+							onchange={() => triggerRecalculate()}
+							onkeydown={(e) => e.key === 'Enter' && triggerRecalculate()}
+						/>
+						<button
+							type="button"
+							class="btn-apply-date"
+							onclick={() => triggerRecalculate()}
+							title="Startdatum anwenden"
+						>
+							Anwenden
+						</button>
+					</div>
+				{/if}
+			</div>
+
+			<!-- End of Output Generation -->
+			<div class="config-item runtime-config">
+				<span class="config-label">Ausgabe bis:</span>
 				<div class="segmented-control">
 					<button
 						type="button"
@@ -184,7 +255,7 @@
 
 				{#if runtimeScope === 'custom'}
 					<div class="custom-date-picker">
-						<label for="customEndDateInput" class="custom-date-label">Berechnung bis:</label>
+						<label for="customEndDateInput" class="custom-date-label">Ende:</label>
 						<input
 							id="customEndDateInput"
 							type="text"
@@ -225,6 +296,8 @@
 				onResult={handleResult}
 				selectedScheme={selectedSchemeId}
 				{includeOffset}
+				{runtimeStartScope}
+				{customStartDate}
 				{runtimeScope}
 				{customEndDate}
 			/>

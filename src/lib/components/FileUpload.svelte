@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { processExcelFile } from '#lib/grant.remote';
-	import type { GrantTransformationResult, RuntimeScope } from '#lib/types/grant';
+	import type { GrantTransformationResult, RuntimeScope, RuntimeStartScope } from '#lib/types/grant';
 
 	let {
 		onResult,
@@ -8,6 +8,8 @@
 		includeOffset = true,
 		runtimeScope = 'exit_date',
 		customEndDate = undefined,
+		runtimeStartScope = 'contract_start',
+		customStartDate = undefined,
 		restrictToExitDate = true,
 		restrictYear = undefined
 	}: {
@@ -16,6 +18,8 @@
 		includeOffset?: boolean;
 		runtimeScope?: RuntimeScope;
 		customEndDate?: string;
+		runtimeStartScope?: RuntimeStartScope;
+		customStartDate?: string;
 		restrictToExitDate?: boolean;
 		restrictYear?: number | undefined;
 	} = $props();
@@ -74,6 +78,8 @@
 						includeOffsetRows: includeOffset,
 						runtimeScope,
 						customEndDate,
+						runtimeStartScope,
+						customStartDate,
 						restrictToExitDate,
 						restrictToYear: restrictYear
 					});

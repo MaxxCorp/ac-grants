@@ -8,7 +8,8 @@ import type {
 	ControlCheckResult,
 	ControlCheckItem,
 	AgaRatePeriod,
-	RuntimeScope
+	RuntimeScope,
+	RuntimeStartScope
 } from '#lib/types/grant';
 
 function round2(val: number): number {
@@ -203,6 +204,30 @@ export function isRecordWithinExitDate(record: MonthlyRecord, exitDateStr: strin
 	return true;
 }
 
+export function isRecordWithinStartDate(record: MonthlyRecord, startDateStr: string): boolean {
+	const start = parseDateComponents(startDateStr);
+	if (!start) return true;
+
+	if (record.year > start.year) return true;
+	if (record.year < start.year) return false;
+
+	// Same year
+	if (record.month > start.month) return true;
+	if (record.month < start.month) return false;
+
+	// Same year and same month
+	if (record.endDate) {
+		const endComp = parseDateComponents(record.endDate);
+		if (endComp && endComp.year === start.year && endComp.month === start.month) {
+			if (endComp.day < start.day) {
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
 export function calculate5YearEndDate(startDateStr: string): string {
 	const comp = parseDateComponents(startDateStr);
 	if (!comp) return '';
@@ -366,6 +391,8 @@ export function transformSgb16i(
 	const { includeOffsetRows, restrictToYear, customAgaTimeline } = options;
 	const runtimeScope: RuntimeScope =
 		options.runtimeScope || (options.restrictToExitDate === false ? 'full_5_years' : 'exit_date');
+	const runtimeStartScope: RuntimeStartScope =
+		options.runtimeStartScope || (options.customStartDate ? 'custom' : 'contract_start');
 
 	// Ensure dataset covers requested scope if synthetic projection is needed
 	const extendedRaw = ensureRecordsSpanScope(rawRecords, participant, runtimeScope, options.customEndDate);
@@ -410,8 +437,18 @@ export function transformSgb16i(
 		};
 	});
 
-	// Filter active records according to selected runtime scope
+	// Filter active records according to selected runtime scope and start date
 	let records = [...allProcessedRecords];
+
+	const effectiveStartDate =
+		runtimeStartScope === 'custom' && options.customStartDate
+			? options.customStartDate
+			: participant.runtimeStart;
+
+	if (effectiveStartDate) {
+		records = records.filter(r => isRecordWithinStartDate(r, effectiveStartDate));
+	}
+
 	if (runtimeScope === 'exit_date' && participant.runtimeEnd) {
 		records = records.filter(r => isRecordWithinExitDate(r, participant.runtimeEnd));
 	} else if (runtimeScope === 'foerderperiode') {
@@ -1109,7 +1146,9 @@ export function transformSgb16i(
 		agaTimeline: defaultAgaTimeline,
 		options: {
 			...options,
-			runtimeScope
+			runtimeScope,
+			runtimeStartScope,
+			customStartDate: options.customStartDate
 		},
 		rawMonthlyRecords: allProcessedRecords
 	};
