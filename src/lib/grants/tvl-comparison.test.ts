@@ -482,7 +482,23 @@ describe('TV-L Comparison Calculation Engine', () => {
 		const resErr = calculateTvlComparison(errRecords, participant, 2026);
 		expect(resErr.tariffValidation?.isCompliant).toBe(false);
 		expect(resErr.tariffValidation?.discrepancyCount).toBe(1);
-		expect(resErr.tariffValidation?.discrepancies[0].expectedPartTimeSalary).toBe(2139.93);
-		expect(resErr.tariffValidation?.discrepancies[0].recordedPartTimeSalary).toBe(2050.00);
+		expect(resErr.tariffValidation?.discrepancies[0].recordedFteSalary).toBe(2665.00);
+		expect(resErr.tariffValidation?.discrepancies[0].expectedFteSalary).toBe(2781.91);
+		expect(resErr.tariffValidation?.discrepancies[0].diffFteSalary).toBe(-116.91);
+
+		// Case C: Records prior to 09/2025 (e.g. 2023 / 2024) are skipped without false positives
+		const pastRecords: MonthlyRecord[] = [
+			{
+				...compliantRecords[0],
+				year: 2024,
+				month: 5,
+				date: '2024-05-31',
+				fteSalary: 2400.00 // Historical rate before available comparison tables
+			}
+		];
+		const resPast = calculateTvlComparison(pastRecords, participant, 2026);
+		expect(resPast.tariffValidation?.skippedPriorTo2025Count).toBe(1);
+		expect(resPast.tariffValidation?.checkedCount).toBe(0);
+		expect(resPast.tariffValidation?.discrepancyCount).toBe(0);
 	});
 });

@@ -24,12 +24,12 @@ export interface AwoTariffPeriod {
  * (Valid ab 2026/01, 2026/09, 2027/07, 2028/07)
  */
 export const AWO_TARIFF_PERIODS: AwoTariffPeriod[] = [
-	// 1. ab 2026/01
+	// 1. ab 2025/09 (bzw. 2026/01)
 	{
-		id: '2026-01',
-		label: 'ab 2026/01',
-		validFromYear: 2026,
-		validFromMonth: 1,
+		id: '2025-09',
+		label: 'ab 2025/09 (bzw. 2026/01)',
+		validFromYear: 2025,
+		validFromMonth: 9,
 		fullTimeHours: 39.0,
 		scales: {
 			'E15': [5366.66, 5754.49, 5959.43, 6687.37, 7238.59, 7449.57],
@@ -201,6 +201,16 @@ function round2(v: number): number {
 	return Math.round((v + Number.EPSILON) * 100) / 100;
 }
 
+function parseDateDMY(dStr?: string): { day: number; month: number; year: number } | null {
+	if (!dStr) return null;
+	const parts = dStr.split(/[.\-/]/).map((p) => parseInt(p.trim(), 10));
+	if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+		if (parts[2] > 1000) return { day: parts[0], month: parts[1], year: parts[2] };
+		if (parts[0] > 1000) return { day: parts[2], month: parts[1], year: parts[0] };
+	}
+	return null;
+}
+
 /**
  * Normalizes tariff group key (e.g. "EG 2" -> "E2", "S 8b" -> "S08b", "S8b" -> "S08b", "S9" -> "S09").
  */
@@ -216,10 +226,13 @@ export function normalizeAwoGroupKey(rawGroup: string): string {
 
 /**
  * Finds the applicable AWO tariff period for a specific year and month.
+ * Note: Returns null for dates prior to September 2025 (2025-09), since earlier comparison data is not provided.
  */
-export function getApplicableAwoPeriod(year: number, month: number): AwoTariffPeriod {
-	// Look from newest to oldest
+export function getApplicableAwoPeriod(year: number, month: number): AwoTariffPeriod | null {
 	const dateVal = year * 100 + month;
+	if (dateVal < 202509) {
+		return null; // No tariff data available prior to 09/2025
+	}
 	for (let i = AWO_TARIFF_PERIODS.length - 1; i >= 0; i--) {
 		const p = AWO_TARIFF_PERIODS[i];
 		const pVal = p.validFromYear * 100 + p.validFromMonth;
@@ -227,7 +240,48 @@ export function getApplicableAwoPeriod(year: number, month: number): AwoTariffPe
 			return p;
 		}
 	}
-	return AWO_TARIFF_PERIODS[0];
+	return null;
+}
+
+/**
+ * Calculates the participant's experience step for a specific monthly record,
+ * accounting for entry date anniversary milestones according to TV-L / AWO rules.
+ */
+export function determineParticipantStepForRecord(
+	participant: ParticipantInfo,
+	rec: MonthlyRecord
+): number {
+	const initialStepNum = parseInt((participant.tariffStep.match(/\d+/) || ['1'])[0], 10);
+
+	// 1. Check if rec.fteSalary matches an exact step in AWO tariff scale for this period
+	const period = getApplicableAwoPeriod(rec.year, rec.month);
+	if (period) {
+		const groupKey = normalizeAwoGroupKey(participant.tariffGroup);
+		const groupScales = period.scales[groupKey] || Object.entries(period.scales).find(([k]) => k.toLowerCase() === groupKey.toLowerCase())?.[1];
+		if (groupScales) {
+			for (let s = 1; s <= 6; s++) {
+				const val = groupScales[s - 1];
+				if (val !== undefined && Math.abs(rec.fteSalary - val) <= 0.05) {
+					return s;
+				}
+			}
+		}
+	}
+
+	// 2. Fall back to career anniversary progression based on runtimeStart
+	const startParsed = parseDateDMY(participant.runtimeStart);
+	if (!startParsed) return initialStepNum;
+
+	const recordDay = rec.startDate ? (parseDateDMY(rec.startDate)?.day || 1) : 1;
+	const diffMonths = (rec.year - startParsed.year) * 12 + (rec.month - startParsed.month) + (recordDay >= startParsed.day ? 0 : -1);
+	const diffYears = diffMonths / 12;
+
+	if (diffYears >= 15) return 6;
+	if (diffYears >= 10) return 5;
+	if (diffYears >= 6) return 4;
+	if (diffYears >= 3) return 3;
+	if (diffYears >= 1) return 2;
+	return Math.max(1, initialStepNum);
 }
 
 /**
@@ -242,6 +296,8 @@ export function getAwoTariffSalary(
 	fullTimeHours = 39.0
 ): { fteSalary: number; partTimeSalary: number; periodLabel: string } | null {
 	const period = getApplicableAwoPeriod(year, month);
+	if (!period) return null;
+
 	const groupKey = normalizeAwoGroupKey(group);
 	let groupScales = period.scales[groupKey];
 	if (!groupScales) {
@@ -269,11 +325,12 @@ export interface TariffDiscrepancy {
 	year: number;
 	month: number;
 	group: string;
-	step: string;
-	recordedFteSalary: number;
-	expectedFteSalary: number;
+	step: number;
+	recordedFteSalary: number; // Column F in Berechnungsblatt
+	expectedFteSalary: number; // Official AWO Tariftabelle Full-Time
 	recordedPartTimeSalary: number;
 	expectedPartTimeSalary: number;
+	diffFteSalary: number;
 	diffPartTime: number;
 	isDiscrepancy: boolean;
 	explanation: string;
@@ -282,13 +339,15 @@ export interface TariffDiscrepancy {
 export interface TariffValidationReport {
 	isCompliant: boolean;
 	checkedCount: number;
+	skippedPriorTo2025Count: number;
 	discrepancyCount: number;
 	discrepancies: TariffDiscrepancy[];
 	summaryText: string;
 }
 
 /**
- * Validates an array of monthly records from an uploaded Berechnungsblatt against the official AWO tariff tables.
+ * Audits the uploaded Berechnungsblatt against official AWO Berlin Tariftabellen (ab 09/2025).
+ * Validates Column F (Full-Time Salary / VZ-Brutto) directly against the tariff scale.
  */
 export function validateBerechnungsblattTariff(
 	records: MonthlyRecord[],
@@ -296,10 +355,16 @@ export function validateBerechnungsblattTariff(
 ): TariffValidationReport {
 	const discrepancies: TariffDiscrepancy[] = [];
 	let checkedCount = 0;
+	let skippedPriorTo2025Count = 0;
 
 	for (const rec of records) {
-		const stepNum = parseInt((participant.tariffStep.match(/\d+/) || ['1'])[0], 10);
-		// Check if record falls in an anniversary step upgrade
+		// Only check records within available tariff data period (>= 09/2025)
+		if (rec.year * 100 + rec.month < 202509) {
+			skippedPriorTo2025Count++;
+			continue;
+		}
+
+		const stepNum = determineParticipantStepForRecord(participant, rec);
 		const awoTariff = getAwoTariffSalary(
 			participant.tariffGroup,
 			stepNum,
@@ -312,12 +377,13 @@ export function validateBerechnungsblattTariff(
 		if (!awoTariff) continue;
 		checkedCount++;
 
+		// Direct 1:1 comparison with Column F (fteSalary) of Berechnungsblatt
+		const diffFte = round2(rec.fteSalary - awoTariff.fteSalary);
 		const expectedPt = round2(awoTariff.partTimeSalary * (rec.monthUnits || 1.0));
 		const diffPt = round2(rec.partTimeSalary - expectedPt);
-		const fteDiff = round2(rec.fteSalary - awoTariff.fteSalary);
 
-		// Toleranz 0.05 € for rounding variations
-		const isDiscrepancy = Math.abs(diffPt) > 0.05 && Math.abs(fteDiff) > 0.05;
+		// Toleranz 0.05 € for minor rounding variations in manual spreadsheets
+		const isDiscrepancy = Math.abs(diffFte) > 0.05;
 
 		if (isDiscrepancy) {
 			discrepancies.push({
@@ -325,14 +391,15 @@ export function validateBerechnungsblattTariff(
 				year: rec.year,
 				month: rec.month,
 				group: participant.tariffGroup,
-				step: participant.tariffStep,
+				step: stepNum,
 				recordedFteSalary: rec.fteSalary,
 				expectedFteSalary: awoTariff.fteSalary,
 				recordedPartTimeSalary: rec.partTimeSalary,
 				expectedPartTimeSalary: expectedPt,
+				diffFteSalary: diffFte,
 				diffPartTime: diffPt,
 				isDiscrepancy: true,
-				explanation: `Monat ${rec.month}/${rec.year}: Berechnungsblatt = ${rec.partTimeSalary.toFixed(2)} € vs. AWO-Tariftabelle (${awoTariff.periodLabel}) = ${expectedPt.toFixed(2)} € (Diff: ${diffPt > 0 ? '+' : ''}${diffPt.toFixed(2)} €)`
+				explanation: `Monat ${rec.month}/${rec.year} (Stufe ${stepNum}): Spalte F = ${rec.fteSalary.toFixed(2)} € vs. AWO-Tarif = ${awoTariff.fteSalary.toFixed(2)} € (Diff: ${diffFte > 0 ? '+' : ''}${diffFte.toFixed(2)} €)`
 			});
 		}
 	}
@@ -341,10 +408,11 @@ export function validateBerechnungsblattTariff(
 	return {
 		isCompliant,
 		checkedCount,
+		skippedPriorTo2025Count,
 		discrepancyCount: discrepancies.length,
 		discrepancies,
 		summaryText: isCompliant
-			? `Alle ${checkedCount} geprüften Entgelte stimmen mit den offiziellen AWO-Tariftabellen überein.`
-			: `${discrepancies.length} Abweichung(en) zwischen Berechnungsblatt und offiziellen AWO-Tariftabellen gefunden.`
+			? `Alle ${checkedCount} geprüften Monate (ab 09/2025) stimmen in Spalte F exakt mit der AWO-Tariftabelle überein.`
+			: `${discrepancies.length} Abweichung(en) in Spalte F (VZ-Brutto) gegenüber der AWO-Tariftabelle gefunden.`
 	};
 }

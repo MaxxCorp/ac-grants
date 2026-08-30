@@ -300,11 +300,12 @@ export interface TariffDiscrepancy {
 	year: number;
 	month: number;
 	group: string;
-	step: string;
-	recordedFteSalary: number;
-	expectedFteSalary: number;
+	step: number | string;
+	recordedFteSalary: number; // Column F in Berechnungsblatt
+	expectedFteSalary: number; // Official AWO Tariftabelle Full-Time
 	recordedPartTimeSalary: number;
 	expectedPartTimeSalary: number;
+	diffFteSalary: number;
 	diffPartTime: number;
 	isDiscrepancy: boolean;
 	explanation: string;
@@ -313,6 +314,7 @@ export interface TariffDiscrepancy {
 export interface TariffValidationReport {
 	isCompliant: boolean;
 	checkedCount: number;
+	skippedPriorTo2025Count: number;
 	discrepancyCount: number;
 	discrepancies: TariffDiscrepancy[];
 	summaryText: string;
@@ -358,6 +360,7 @@ export interface GrantTransformationResult {
 	options: GrantTransformationOptions;
 	rawMonthlyRecords: MonthlyRecord[];
 	insuranceFunds?: InsuranceFundDetails[];
+	tariffValidation?: TariffValidationReport;
 	tvlComparison?: TvlComparisonResult;
 }
 

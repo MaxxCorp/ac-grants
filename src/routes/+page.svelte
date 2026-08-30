@@ -5,6 +5,7 @@
 	import type { GrantTransformationResult, AgaRatePeriod, RuntimeScope, RuntimeStartScope, MonthlyRecord, ParticipantInfo } from '#lib/types/grant';
 	import FileUpload from '#lib/components/FileUpload.svelte';
 	import ControlDashboard from '#lib/components/ControlDashboard.svelte';
+	import AwoTariffAuditCard from '#lib/components/AwoTariffAuditCard.svelte';
 	import TargetFormCompanion from '#lib/components/TargetFormCompanion.svelte';
 	import AgaTimelineEditor from '#lib/components/AgaTimelineEditor.svelte';
 
@@ -395,6 +396,13 @@
 					participant={currentResult.participant}
 					{includeOffset}
 					onToggleOffset={handleToggleOffset}
+				/>
+
+				<!-- AWO Berlin Tariff Plausibility & Compliance Audit (Spalte F) -->
+				<AwoTariffAuditCard
+					validation={currentResult.tariffValidation}
+					participant={currentResult.participant}
+					records={currentResult.rawMonthlyRecords}
 				/>
 
 				<!-- Time-Varying AGA Rate Matrix Editor -->

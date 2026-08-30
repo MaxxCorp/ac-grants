@@ -1,0 +1,491 @@
+<script lang="ts">
+	import type { TariffValidationReport, ParticipantInfo, MonthlyRecord } from '#lib/types/grant';
+	import { getAwoTariffSalary, determineParticipantStepForRecord } from '#lib/grants/awo-tariff-data';
+
+	let {
+		validation,
+		participant,
+		records
+	}: {
+		validation?: TariffValidationReport;
+		participant: ParticipantInfo;
+		records: MonthlyRecord[];
+	} = $props();
+
+	let showDetails = $state(false);
+	let filterView = $state<'all' | 'discrepancies'>('discrepancies');
+
+	function formatCurrency(val: number): string {
+		return val.toLocaleString('de-DE', {
+			style: 'currency',
+			currency: 'EUR',
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2
+		});
+	}
+
+	// Build a complete audit list of all records >= 09/2025
+	const auditRows = $derived.by(() => {
+		if (!records || records.length === 0) return [];
+		return records
+			.filter(r => r.year * 100 + r.month >= 202509)
+			.map(r => {
+				const step = determineParticipantStepForRecord(participant, r);
+				const awo = getAwoTariffSalary(
+					participant.tariffGroup,
+					step,
+					r.year,
+					r.month,
+					r.weeklyHours || participant.weeklyHours,
+					r.fullTimeHours || participant.fullTimeHours || 39.0
+				);
+				const expectedFte = awo ? awo.fteSalary : 0;
+				const diffFte = Math.round((r.fteSalary - expectedFte + Number.EPSILON) * 100) / 100;
+				const isDiscrepant = Math.abs(diffFte) > 0.05;
+
+				return {
+					date: r.date,
+					year: r.year,
+					month: r.month,
+					step,
+					recordedFte: r.fteSalary,
+					expectedFte,
+					diffFte,
+					isDiscrepant,
+					periodLabel: awo ? awo.periodLabel : '–',
+					recordedPt: r.partTimeSalary,
+					expectedPt: awo ? Math.round(((expectedFte / 39) * (r.weeklyHours || participant.weeklyHours) + Number.EPSILON) * 100) / 100 : 0
+				};
+			});
+	});
+
+	const displayedRows = $derived.by(() => {
+		if (filterView === 'discrepancies') {
+			return auditRows.filter(r => r.isDiscrepant);
+		}
+		return auditRows;
+	});
+</script>
+
+{#if validation}
+	<div class="audit-card {validation.isCompliant ? 'audit-compliant' : 'audit-warning'}">
+		<!-- Header -->
+		<div class="audit-header">
+			<div class="audit-title-area">
+				<div class="status-icon">
+					{#if validation.isCompliant}
+						<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+							<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+							<polyline points="22 4 12 14.01 9 11.01"></polyline>
+						</svg>
+					{:else}
+						<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+							<circle cx="12" cy="12" r="10"></circle>
+							<line x1="12" y1="8" x2="12" y2="12"></line>
+							<line x1="12" y1="16" x2="12.01" y2="16"></line>
+						</svg>
+					{/if}
+				</div>
+
+				<div>
+					<div class="audit-badge-row">
+						<span class="badge {validation.isCompliant ? 'badge-green' : 'badge-amber'}">
+							{validation.isCompliant ? 'AWO-Tariftreue: 100% Konform' : `${validation.discrepancyCount} Tarifabweichung(en) in Spalte F`}
+						</span>
+						<span class="badge-sub">
+							Gegenprüfung Spalte F (VZ-Brutto) mit AWO-Tariftabellen ab 09/2025
+						</span>
+					</div>
+					<h3 class="audit-heading">AWO Berlin Tarif-Plausibilitätsprüfung</h3>
+				</div>
+			</div>
+
+			<div class="header-actions">
+				<button
+					type="button"
+					class="btn-toggle-details"
+					onclick={() => (showDetails = !showDetails)}
+				>
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						{#if showDetails}
+							<polyline points="18 15 12 9 6 15"></polyline>
+						{:else}
+							<polyline points="6 9 12 15 18 9"></polyline>
+						{/if}
+					</svg>
+					{showDetails ? 'Prüftabelle ausblenden' : 'Prüftabelle einblenden'}
+				</button>
+			</div>
+		</div>
+
+		<!-- Metrics Grid -->
+		<div class="audit-metrics-grid">
+			<div class="metric-box">
+				<span class="metric-label">Prüfungsstatus (ab 09/2025)</span>
+				<span class="metric-val {validation.isCompliant ? 'text-emerald' : 'text-amber'}">
+					{validation.isCompliant ? '✓ Fehlerfrei' : `⚠️ ${validation.discrepancyCount} Abweichungen`}
+				</span>
+				<span class="metric-sub">Spalte F stimmt mit Tabelle überein</span>
+			</div>
+
+			<div class="metric-box">
+				<span class="metric-label">Geprüfte Monate (ab 09/2025)</span>
+				<span class="metric-val font-mono">{validation.checkedCount} Monate</span>
+				<span class="metric-sub">09/2025 bis 12/2028</span>
+			</div>
+
+			<div class="metric-box">
+				<span class="metric-label">Monate vor 09/2025</span>
+				<span class="metric-val font-mono">{validation.skippedPriorTo2025Count} Monate</span>
+				<span class="metric-sub">Keine Tariftabelle hinterlegt</span>
+			</div>
+
+			<div class="metric-box">
+				<span class="metric-label">Eingruppierung</span>
+				<span class="metric-val font-mono">{participant.tariffGroup}/{participant.tariffStep}</span>
+				<span class="metric-sub">{participant.weeklyHours}h / 39,0h Teilzeit</span>
+			</div>
+		</div>
+
+		<!-- Detail Table -->
+		{#if showDetails}
+			<div class="table-container">
+				<div class="table-toolbar">
+					<span class="table-title">Monatsweise Detailprüfung Spalte F (VZ-Brutto):</span>
+					<div class="filter-buttons">
+						<button
+							type="button"
+							class="btn-filter {filterView === 'discrepancies' ? 'active' : ''}"
+							onclick={() => (filterView = 'discrepancies')}
+						>
+							Nur Abweichungen ({validation.discrepancyCount})
+						</button>
+						<button
+							type="button"
+							class="btn-filter {filterView === 'all' ? 'active' : ''}"
+							onclick={() => (filterView = 'all')}
+						>
+							Alle Monate ab 09/2025 ({auditRows.length})
+						</button>
+					</div>
+				</div>
+
+				{#if displayedRows.length === 0}
+					<div class="empty-notice">
+						{#if filterView === 'discrepancies'}
+							✓ Keine Abweichungen gefunden! Alle {validation.checkedCount} Monate stimmen exakt mit der AWO-Tariftabelle überein.
+						{:else}
+							Keine Datensätze ab 09/2025 vorhanden.
+						{/if}
+					</div>
+				{:else}
+					<div class="table-wrapper">
+						<table class="audit-table">
+							<thead>
+								<tr>
+									<th>Monat</th>
+									<th>Tarifstufe</th>
+									<th>AWO-Tarifstand</th>
+									<th class="th-num">Berechnungsblatt (Spalte F)</th>
+									<th class="th-num">Offizieller AWO-Tarif</th>
+									<th class="th-num">Differenz VZ</th>
+									<th class="th-center">Status</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each displayedRows as row}
+									<tr class={row.isDiscrepant ? 'row-discrepant' : ''}>
+										<td class="font-mono">{String(row.month).padStart(2, '0')}/{row.year}</td>
+										<td>{participant.tariffGroup}/ES {row.step}</td>
+										<td class="text-muted">{row.periodLabel}</td>
+										<td class="text-right font-mono font-medium">{formatCurrency(row.recordedFte)}</td>
+										<td class="text-right font-mono font-medium">{formatCurrency(row.expectedFte)}</td>
+										<td class="text-right font-mono font-bold {row.diffFte === 0 ? 'text-muted' : row.diffFte > 0 ? 'text-rose' : 'text-emerald'}">
+											{row.diffFte > 0 ? '+' : ''}{formatCurrency(row.diffFte)}
+										</td>
+										<td class="text-center">
+											{#if !row.isDiscrepant}
+												<span class="status-tag tag-match">✓ Exakt</span>
+											{:else}
+												<span class="status-tag tag-diff">⚠️ Abweichung</span>
+											{/if}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			</div>
+		{/if}
+	</div>
+{/if}
+
+<style>
+	.audit-card {
+		background: rgba(15, 23, 42, 0.7);
+		border-radius: 12px;
+		border: 1px solid;
+		backdrop-filter: blur(12px);
+		padding: 1.25rem 1.5rem;
+		margin-bottom: 1.5rem;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+	}
+
+	.audit-card.audit-compliant {
+		border-color: rgba(16, 185, 129, 0.3);
+		background: linear-gradient(135deg, rgba(16, 185, 129, 0.06) 0%, rgba(15, 23, 42, 0.8) 100%);
+	}
+
+	.audit-card.audit-warning {
+		border-color: rgba(245, 158, 11, 0.4);
+		background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%);
+	}
+
+	.audit-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 1rem;
+	}
+
+	.audit-title-area {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.status-icon {
+		width: 42px;
+		height: 42px;
+		border-radius: 10px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.audit-compliant .status-icon {
+		background: rgba(16, 185, 129, 0.15);
+		color: #10b981;
+		border: 1px solid rgba(16, 185, 129, 0.3);
+	}
+
+	.audit-warning .status-icon {
+		background: rgba(245, 158, 11, 0.15);
+		color: #f59e0b;
+		border: 1px solid rgba(245, 158, 11, 0.3);
+	}
+
+	.audit-badge-row {
+		display: flex;
+		align-items: center;
+		gap: 0.65rem;
+		margin-bottom: 0.25rem;
+		flex-wrap: wrap;
+	}
+
+	.badge {
+		font-size: 0.72rem;
+		font-weight: 700;
+		padding: 0.2rem 0.55rem;
+		border-radius: 4px;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+
+	.badge-green {
+		background: rgba(16, 185, 129, 0.2);
+		color: #34d399;
+		border: 1px solid rgba(16, 185, 129, 0.4);
+	}
+
+	.badge-amber {
+		background: rgba(245, 158, 11, 0.2);
+		color: #fbbf24;
+		border: 1px solid rgba(245, 158, 11, 0.4);
+	}
+
+	.badge-sub {
+		font-size: 0.8rem;
+		color: #94a3b8;
+	}
+
+	.audit-heading {
+		font-size: 1.15rem;
+		font-weight: 700;
+		color: #ffffff;
+		margin: 0;
+	}
+
+	.btn-toggle-details {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		background: rgba(30, 41, 59, 0.8);
+		color: #e2e8f0;
+		border: 1px solid rgba(255, 255, 255, 0.15);
+		border-radius: 6px;
+		padding: 0.5rem 0.9rem;
+		font-size: 0.82rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.btn-toggle-details:hover {
+		background: rgba(51, 65, 85, 0.9);
+		border-color: rgba(255, 255, 255, 0.3);
+	}
+
+	.audit-metrics-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+		gap: 0.85rem;
+	}
+
+	.metric-box {
+		background: rgba(15, 23, 42, 0.6);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 8px;
+		padding: 0.75rem 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.metric-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: #64748b;
+		text-transform: uppercase;
+	}
+
+	.metric-val {
+		font-size: 1.05rem;
+		font-weight: 700;
+		color: #f1f5f9;
+	}
+
+	.metric-sub {
+		font-size: 0.72rem;
+		color: #94a3b8;
+	}
+
+	.text-emerald { color: #34d399 !important; }
+	.text-amber { color: #fbbf24 !important; }
+	.text-rose { color: #f87171 !important; }
+	.text-muted { color: #64748b; }
+
+	.table-container {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+		padding-top: 1rem;
+	}
+
+	.table-toolbar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+	}
+
+	.table-title {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: #cbd5e1;
+	}
+
+	.filter-buttons {
+		display: flex;
+		gap: 0.4rem;
+	}
+
+	.btn-filter {
+		background: rgba(30, 41, 59, 0.6);
+		color: #94a3b8;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 4px;
+		padding: 0.3rem 0.65rem;
+		font-size: 0.75rem;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.btn-filter.active {
+		background: rgba(56, 189, 248, 0.15);
+		color: #38bdf8;
+		border-color: rgba(56, 189, 248, 0.4);
+		font-weight: 600;
+	}
+
+	.empty-notice {
+		padding: 1.25rem;
+		background: rgba(16, 185, 129, 0.08);
+		border: 1px dashed rgba(16, 185, 129, 0.3);
+		border-radius: 6px;
+		color: #34d399;
+		font-size: 0.85rem;
+		text-align: center;
+	}
+
+	.table-wrapper {
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 6px;
+		overflow-x: auto;
+	}
+
+	.audit-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.82rem;
+	}
+
+	.audit-table th {
+		background: rgba(15, 23, 42, 0.9);
+		color: #94a3b8;
+		padding: 0.6rem 0.85rem;
+		text-align: left;
+		font-weight: 600;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
+	.audit-table td {
+		padding: 0.55rem 0.85rem;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+		color: #e2e8f0;
+	}
+
+	.audit-table tr.row-discrepant {
+		background: rgba(245, 158, 11, 0.08);
+	}
+
+	.status-tag {
+		display: inline-block;
+		font-size: 0.7rem;
+		font-weight: 700;
+		padding: 0.15rem 0.45rem;
+		border-radius: 4px;
+	}
+
+	.tag-match {
+		background: rgba(16, 185, 129, 0.2);
+		color: #34d399;
+	}
+
+	.tag-diff {
+		background: rgba(245, 158, 11, 0.2);
+		color: #fbbf24;
+	}
+
+	.th-num { text-align: right; }
+	.th-center { text-align: center; }
+	.text-center { text-align: center; }
+</style>
