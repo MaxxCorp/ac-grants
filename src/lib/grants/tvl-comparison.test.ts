@@ -501,4 +501,83 @@ describe('TV-L Comparison Calculation Engine', () => {
 		expect(resPast.tariffValidation?.checkedCount).toBe(0);
 		expect(resPast.tariffValidation?.discrepancyCount).toBe(0);
 	});
+
+	it('uses full-time/part-time monthly gross from AWO tariff data even if Berechnungsblatt has partial month amounts', () => {
+		const participant: ParticipantInfo = {
+			name: 'Herr Robert Hartung',
+			runtimeStart: '16.01.2023',
+			runtimeEnd: '15.01.2028',
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			tariffGroup: 'EG 2',
+			tariffStep: 'ES 2',
+			sachkostenMonthly: 155,
+			childrenCount: 0,
+			healthInsuranceName: 'DAK',
+			defaultAgaRate: 0.2314
+		};
+
+		// Sheet has prorated amounts in column G (e.g. 1035.45 € for 15 days)
+		const recordsWithProratedMonths: MonthlyRecord[] = [
+			{
+				date: '2026-01-15',
+				year: 2026,
+				month: 1,
+				monthUnits: 15 / 31,
+				startDate: '01.01.2026',
+				endDate: '15.01.2026',
+				fteSalary: 2781.91,
+				partTimeSalary: 1035.45, // Prorated 15/31
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: 0,
+				jcTotalGross: 1035.45,
+				jcDegressionPct: 80,
+				jcGrantAmount: 828.36,
+				agaRealRate: 0.2314,
+				agaRealAmount: 239.81,
+				totalEmployerCost: 1275.06,
+				landSvShortfall: 0,
+				landDegressionAmount: 0,
+				jszAmount: 0,
+				jszAgaAmount: 0,
+				sachkostenAmount: 0
+			},
+			{
+				date: '2026-01-31',
+				year: 2026,
+				month: 1,
+				monthUnits: 16 / 31,
+				startDate: '16.01.2026',
+				endDate: '31.01.2026',
+				fteSalary: 2844.85,
+				partTimeSalary: 1129.46, // Prorated 16/31
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: 0,
+				jcTotalGross: 1129.46,
+				jcDegressionPct: 80,
+				jcGrantAmount: 903.57,
+				agaRealRate: 0.2314,
+				agaRealAmount: 261.27,
+				totalEmployerCost: 1390.41,
+				landSvShortfall: 0,
+				landDegressionAmount: 0,
+				jszAmount: 0,
+				jszAgaAmount: 0,
+				sachkostenAmount: 0
+			}
+		];
+
+		const res = calculateTvlComparison(recordsWithProratedMonths, participant, 2026);
+
+		// Must use the full monthly baseline salaries from AWO Berlin Tariftabelle, not the prorated 1035.45 €
+		expect(res.inputs.istJanMarLeft).toBe(2139.93);
+		expect(res.inputs.istAbAprLeft).toBe(2214.93);
+		expect(res.inputs.istJanMarRight).toBe(2188.35);
+		expect(res.inputs.istAbAprRight).toBe(2263.35);
+		expect(res.inputs.hasStepUpgrade).toBe(true);
+		expect(res.inputs.tariffGroupStepLeft).toBe('E2/2');
+		expect(res.inputs.tariffGroupStepRight).toBe('E2/3');
+	});
 });

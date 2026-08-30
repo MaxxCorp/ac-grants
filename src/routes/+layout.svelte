@@ -57,4 +57,15 @@
 	:global(pre) {
 		font-family: 'JetBrains Mono', monospace;
 	}
+
+	:global(select) {
+		background-color: #0f172a !important;
+		color: #f1f5f9 !important;
+	}
+
+	:global(option),
+	:global(optgroup) {
+		background-color: #0f172a !important;
+		color: #f1f5f9 !important;
+	}
 </style>

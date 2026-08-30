@@ -142,6 +142,31 @@
 		}, 1800);
 	}
 
+	// Group available tariffs by Entgeltgruppe for structured optgroups
+	const tariffGroups = $derived.by(() => {
+		const map = new Map<string, string[]>();
+		for (const code of tvl.availableTariffs) {
+			const grp = code.split('/')[0] || 'Sonstige';
+			if (!map.has(grp)) map.set(grp, []);
+			map.get(grp)!.push(code);
+		}
+		return Array.from(map.entries()).map(([group, codes]) => ({ group, codes }));
+	});
+
+	function handleLeftTariffChange(newLeftCode: string) {
+		const parts = newLeftCode.split('/');
+		const grp = parts[0] || 'E2';
+		const step = parts[1] ? parseInt(parts[1], 10) : 1;
+		const nextStep = Math.min(6, step + 1);
+		const suggestedRight = `${grp}/${nextStep}`;
+
+		customInputs = {
+			...customInputs,
+			tariffGroupStepLeft: newLeftCode,
+			tariffGroupStepRight: suggestedRight
+		};
+	}
+
 	function handleDownload() {
 		downloadTvlExcelFile(tvl);
 	}
@@ -176,6 +201,17 @@
 			</div>
 
 			<div class="action-buttons">
+				<button type="button" class="btn-apply-awo" onclick={applyOfficialAwoTariffValues} title="Offizielle AWO Berlin Tarifwerte für Ist-Entgelte übernehmen">
+					{#if copiedField === 'applied-official-tariffs'}
+						✓ AWO-Werte angewendet!
+					{:else}
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+						</svg>
+						AWO-Tarifwerte anwenden
+					{/if}
+				</button>
+
 				<button type="button" class="btn-copy-tsv" onclick={copyInputsTSV}>
 					{#if copiedField === 'all-inputs-tsv'}
 						✓ Eingabefelder kopiert!
@@ -414,10 +450,14 @@
 						id="tvl-tariff-left"
 						class="field-select excel-blue"
 						value={tvl.inputs.tariffGroupStepLeft}
-						onchange={(e) => (customInputs = { ...customInputs, tariffGroupStepLeft: (e.target as HTMLSelectElement).value })}
+						onchange={(e) => handleLeftTariffChange((e.target as HTMLSelectElement).value)}
 					>
-						{#each tvl.availableTariffs as tCode}
-							<option value={tCode}>{tCode}</option>
+						{#each tariffGroups as grp}
+							<optgroup label="Entgeltgruppe {grp.group}">
+								{#each grp.codes as tCode}
+									<option value={tCode}>{tCode}</option>
+								{/each}
+							</optgroup>
 						{/each}
 					</select>
 				</div>
@@ -599,8 +639,12 @@
 							value={tvl.inputs.tariffGroupStepRight}
 							onchange={(e) => (customInputs = { ...customInputs, tariffGroupStepRight: (e.target as HTMLSelectElement).value })}
 						>
-							{#each tvl.availableTariffs as tCode}
-								<option value={tCode}>{tCode}</option>
+							{#each tariffGroups as grp}
+								<optgroup label="Entgeltgruppe {grp.group}">
+									{#each grp.codes as tCode}
+										<option value={tCode}>{tCode}</option>
+									{/each}
+								</optgroup>
 							{/each}
 						</select>
 					</div>
@@ -1002,7 +1046,8 @@
 	}
 
 	.btn-copy-tsv,
-	.btn-download-excel {
+	.btn-download-excel,
+	.btn-apply-awo {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -1012,6 +1057,19 @@
 		font-weight: 600;
 		cursor: pointer;
 		transition: all 0.2s ease;
+	}
+
+	.btn-apply-awo {
+		background: rgba(99, 102, 241, 0.2);
+		color: #a5b4fc;
+		border: 1px solid rgba(99, 102, 241, 0.4);
+	}
+
+	.btn-apply-awo:hover {
+		background: rgba(99, 102, 241, 0.35);
+		color: #ffffff;
+		border-color: rgba(99, 102, 241, 0.6);
+		transform: translateY(-1px);
 	}
 
 	.btn-copy-tsv {
@@ -1263,13 +1321,31 @@
 	.field-input,
 	.field-select,
 	.field-textarea {
-		background: rgba(15, 23, 42, 0.7);
-		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: #0f172a;
+		border: 1px solid rgba(255, 255, 255, 0.15);
 		border-radius: 6px;
 		padding: 0.5rem 0.75rem;
 		font-size: 0.85rem;
-		color: #f1f5f9;
+		color: #f8fafc;
 		transition: all 0.15s ease;
+	}
+
+	.field-select {
+		cursor: pointer;
+		background-color: #0f172a !important;
+		color: #f8fafc !important;
+	}
+
+	.field-select option,
+	.field-select optgroup {
+		background-color: #0f172a !important;
+		color: #f8fafc !important;
+		padding: 0.35rem 0.5rem;
+	}
+
+	.field-select optgroup {
+		font-weight: 700;
+		color: #818cf8 !important;
 	}
 
 	.field-input:focus,
