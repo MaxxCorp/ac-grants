@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
 import { calculateTvlComparison, calculatePeriodMonths } from './tvl-comparison';
 import { getTvlTariffEntry, DEFAULT_INSURANCE_FUNDS } from './tvl-tariff-data';
+import { getAwoTariffSalary } from './awo-tariff-data';
 import { generateTvlComparisonWorkbook } from './tvl-template-exporter';
 import type { MonthlyRecord, ParticipantInfo, InsuranceFundDetails } from '#lib/types/grant';
 
@@ -388,5 +389,100 @@ describe('TV-L Comparison Calculation Engine', () => {
 		expect(result2027.inputs.tariffGroupStepLeft).toBe('E2/3');
 		expect(result2027.inputs.startDateLeft).toBe('01.01.2027');
 		expect(result2027.inputs.endDateLeft).toBe('31.01.2027');
+	});
+
+	it('correctly looks up official AWO Landesverband Berlin e.V. tariff scale values across all 4 periods', () => {
+		// Period 1: ab 2026/01
+		const p1_e2_2 = getAwoTariffSalary('E2', 2, 2026, 1, 30, 39);
+		expect(p1_e2_2?.fteSalary).toBe(2781.91);
+		expect(p1_e2_2?.partTimeSalary).toBe(2139.93);
+
+		const p1_e2_3 = getAwoTariffSalary('E2', 3, 2026, 1, 30, 39);
+		expect(p1_e2_3?.fteSalary).toBe(2844.86);
+		expect(p1_e2_3?.partTimeSalary).toBe(2188.35);
+
+		// Period 2: ab 2026/09
+		const p2_e2_2 = getAwoTariffSalary('E2', 2, 2026, 9, 30, 39);
+		expect(p2_e2_2?.fteSalary).toBe(2879.41);
+		expect(p2_e2_2?.partTimeSalary).toBe(2214.93);
+
+		const p2_e2_3 = getAwoTariffSalary('E2', 3, 2026, 9, 30, 39);
+		expect(p2_e2_3?.fteSalary).toBe(2942.36);
+		expect(p2_e2_3?.partTimeSalary).toBe(2263.35);
+
+		// Period 3: ab 2027/07
+		const p3_e2_3 = getAwoTariffSalary('E2', 3, 2027, 7, 30, 39);
+		expect(p3_e2_3?.fteSalary).toBe(3001.21);
+		expect(p3_e2_3?.partTimeSalary).toBe(2308.62);
+
+		// Period 4: ab 2028/07
+		const p4_e2_3 = getAwoTariffSalary('E2', 3, 2028, 7, 30, 39);
+		expect(p4_e2_3?.fteSalary).toBe(3031.22);
+		expect(p4_e2_3?.partTimeSalary).toBe(2331.71);
+
+		// SuE groups check (e.g. S08b / S8b Stufe 3 in 2026/01)
+		const sue_s8b = getAwoTariffSalary('S8b', 3, 2026, 1, 39, 39);
+		expect(sue_s8b?.fteSalary).toBe(3770.43);
+	});
+
+	it('detects human error / discrepancies in an uploaded Berechnungsblatt against AWO tariff maps', () => {
+		const participant: ParticipantInfo = {
+			name: 'Herr Robert Hartung',
+			runtimeStart: '16.01.2023',
+			runtimeEnd: '15.01.2028',
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			tariffGroup: 'EG 2',
+			tariffStep: 'ES 2',
+			sachkostenMonthly: 155,
+			childrenCount: 0,
+			healthInsuranceName: 'DAK',
+			defaultAgaRate: 0.2314
+		};
+
+		// Case A: Compliant records
+		const compliantRecords: MonthlyRecord[] = [
+			{
+				date: '2026-01-31',
+				year: 2026,
+				month: 1,
+				monthUnits: 1.0,
+				startDate: '01.01.2026',
+				endDate: '31.01.2026',
+				fteSalary: 2781.91,
+				partTimeSalary: 2139.93,
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: 0,
+				jcTotalGross: 2139.93,
+				jcDegressionPct: 80,
+				jcGrantAmount: 1711.94,
+				agaRealRate: 0.2314,
+				agaRealAmount: 495.18,
+				totalEmployerCost: 2635.11,
+				landSvShortfall: 0,
+				landDegressionAmount: 0,
+				jszAmount: 0,
+				jszAgaAmount: 0,
+				sachkostenAmount: 0
+			}
+		];
+		const resCompliant = calculateTvlComparison(compliantRecords, participant, 2026);
+		expect(resCompliant.tariffValidation?.isCompliant).toBe(true);
+		expect(resCompliant.tariffValidation?.discrepancyCount).toBe(0);
+
+		// Case B: Discrepant records (Human error in spreadsheet: entered 2050.00 instead of 2139.93)
+		const errRecords: MonthlyRecord[] = [
+			{
+				...compliantRecords[0],
+				partTimeSalary: 2050.00,
+				fteSalary: 2665.00
+			}
+		];
+		const resErr = calculateTvlComparison(errRecords, participant, 2026);
+		expect(resErr.tariffValidation?.isCompliant).toBe(false);
+		expect(resErr.tariffValidation?.discrepancyCount).toBe(1);
+		expect(resErr.tariffValidation?.discrepancies[0].expectedPartTimeSalary).toBe(2139.93);
+		expect(resErr.tariffValidation?.discrepancies[0].recordedPartTimeSalary).toBe(2050.00);
 	});
 });

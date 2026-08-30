@@ -5,7 +5,8 @@ import type {
 	TvlComparisonInputs,
 	TvlPeriodCalculation,
 	TvlComparisonResult,
-	TvlTariffEntry
+	TvlTariffEntry,
+	TariffValidationReport
 } from '#lib/types/grant';
 import {
 	STATUTORY_SV_RATES,
@@ -14,6 +15,7 @@ import {
 	getAllTvlTariffCodes,
 	normalizeTvlTariffCode
 } from '#lib/grants/tvl-tariff-data';
+import { getAwoTariffSalary, validateBerechnungsblattTariff } from '#lib/grants/awo-tariff-data';
 
 function round2(val: number): number {
 	return Math.round((val + Number.EPSILON) * 100) / 100;
@@ -693,6 +695,35 @@ export function calculateTvlComparison(
 	const totalDifference = round2(totalPersonalkostenIst - totalPersonalkostenTvl);
 	const isBesserstellungsverbotCompliant = totalDifference <= 0.01;
 
+	// AWO Tariff Lookup for Expected Actual Payments (Ist-Zahlungen)
+	const leftStepMatch = inputs.tariffGroupStepLeft.match(/\/(\d+)/);
+	const leftStepNum = leftStepMatch ? parseInt(leftStepMatch[1], 10) : 1;
+	const leftGroup = inputs.tariffGroupStepLeft.split('/')[0] || 'E2';
+
+	const awoPreLeft = getAwoTariffSalary(leftGroup, leftStepNum, year, 1, inputs.weeklyHoursLeft);
+	const awoPostLeft = getAwoTariffSalary(leftGroup, leftStepNum, year, year === 2026 ? 9 : 7, inputs.weeklyHoursLeft);
+
+	const expectedIstJanMarLeft = awoPreLeft ? awoPreLeft.partTimeSalary : istJanMarLeft;
+	const expectedIstAbAprLeft = awoPostLeft ? awoPostLeft.partTimeSalary : istAbAprLeft;
+
+	let expectedIstJanMarRight: number | undefined = undefined;
+	let expectedIstAbAprRight: number | undefined = undefined;
+
+	if (inputs.hasStepUpgrade) {
+		const rightStepMatch = inputs.tariffGroupStepRight.match(/\/(\d+)/);
+		const rightStepNum = rightStepMatch ? parseInt(rightStepMatch[1], 10) : leftStepNum + 1;
+		const rightGroup = inputs.tariffGroupStepRight.split('/')[0] || leftGroup;
+
+		const awoPreRight = getAwoTariffSalary(rightGroup, rightStepNum, year, 1, inputs.weeklyHoursRight);
+		const awoPostRight = getAwoTariffSalary(rightGroup, rightStepNum, year, year === 2026 ? 9 : 7, inputs.weeklyHoursRight);
+
+		expectedIstJanMarRight = awoPreRight ? awoPreRight.partTimeSalary : istJanMarRight;
+		expectedIstAbAprRight = awoPostRight ? awoPostRight.partTimeSalary : istAbAprRight;
+	}
+
+	// Validate all records in Berechnungsblatt against AWO tariff maps
+	const tariffValidation = validateBerechnungsblattTariff(records, participant);
+
 	const availableTariffs = getAllTvlTariffCodes(year);
 
 	return {
@@ -710,6 +741,11 @@ export function calculateTvlComparison(
 		isBesserstellungsverbotCompliant,
 		availableYears: allYears.length > 0 ? allYears : [2026],
 		availableTariffs,
-		availableInsuranceFunds: insuranceFunds
+		availableInsuranceFunds: insuranceFunds,
+		tariffValidation,
+		expectedIstJanMarLeft,
+		expectedIstAbAprLeft,
+		expectedIstJanMarRight,
+		expectedIstAbAprRight
 	};
 }

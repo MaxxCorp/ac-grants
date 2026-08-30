@@ -295,6 +295,29 @@ export interface TvlComparisonInputs {
 	bearbeiterDate?: string;
 }
 
+export interface TariffDiscrepancy {
+	recordDate: string;
+	year: number;
+	month: number;
+	group: string;
+	step: string;
+	recordedFteSalary: number;
+	expectedFteSalary: number;
+	recordedPartTimeSalary: number;
+	expectedPartTimeSalary: number;
+	diffPartTime: number;
+	isDiscrepancy: boolean;
+	explanation: string;
+}
+
+export interface TariffValidationReport {
+	isCompliant: boolean;
+	checkedCount: number;
+	discrepancyCount: number;
+	discrepancies: TariffDiscrepancy[];
+	summaryText: string;
+}
+
 export interface TvlComparisonResult {
 	year: number;
 	inputs: TvlComparisonInputs;
@@ -314,6 +337,13 @@ export interface TvlComparisonResult {
 	availableYears: number[];
 	availableTariffs: string[];
 	availableInsuranceFunds: InsuranceFundDetails[];
+	
+	// AWO Tariff Increase Validation
+	tariffValidation?: TariffValidationReport;
+	expectedIstJanMarLeft?: number;
+	expectedIstAbAprLeft?: number;
+	expectedIstJanMarRight?: number;
+	expectedIstAbAprRight?: number;
 }
 
 export interface GrantTransformationResult {
