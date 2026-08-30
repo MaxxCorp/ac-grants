@@ -16,6 +16,73 @@
 
 	const activeTab = $derived(result.tabs.find(t => t.id === activeTabId) || result.tabs[0]);
 
+	export interface CategoryMeta {
+		id: string;
+		label: string;
+		shortLabel: string;
+		icon: string;
+		color: string;
+	}
+
+	export function getCategoryInfo(category?: string): CategoryMeta {
+		switch (category) {
+			case 'sv_shortfall':
+				return {
+					id: 'sv_shortfall',
+					label: 'SV Fehlbetrag',
+					shortLabel: 'SV',
+					icon: '🛡️',
+					color: '#10b981'
+				};
+			case 'degression':
+				return {
+					id: 'degression',
+					label: 'Degression',
+					shortLabel: 'DEG',
+					icon: '📉',
+					color: '#f59e0b'
+				};
+			case 'jsz':
+				return {
+					id: 'jsz',
+					label: 'Jahressonderzahlung',
+					shortLabel: 'JSZ',
+					icon: '🎁',
+					color: '#a855f7'
+				};
+			case 'offset':
+				return {
+					id: 'offset',
+					label: 'Ausgleichsbetrag',
+					shortLabel: 'DIFF',
+					icon: '⚖️',
+					color: '#0ea5e9'
+				};
+			case 'sachkosten':
+				return {
+					id: 'sachkosten',
+					label: 'Sachkosten',
+					shortLabel: 'SK',
+					icon: '📦',
+					color: '#14b8a6'
+				};
+			case 'wage':
+			default:
+				return {
+					id: 'wage',
+					label: 'Lohnkosten (JC)',
+					shortLabel: 'JC',
+					icon: '💼',
+					color: '#6366f1'
+				};
+		}
+	}
+
+	const activeTabCategories = $derived.by(() => {
+		const cats = new Set(activeTab.rows.map(r => r.category || (r.isOffsetRow ? 'offset' : 'wage')));
+		return Array.from(cats).map(c => getCategoryInfo(c));
+	});
+
 	function formatCurrency(val: number): string {
 		return val.toLocaleString('de-DE', {
 			minimumFractionDigits: 2,
@@ -217,27 +284,43 @@
 	<div class="tab-content">
 		<!-- Quick Legend Toolbar -->
 		<div class="table-legend-bar">
-			<div class="legend-items">
-				<span class="legend-item legend-control">
-					<span class="legend-dot dot-control"></span>
-					<span class="legend-label">Steuerungs- / Parametereingaben</span>
-					<span class="legend-hint">(Arbeitszeit, Anteil %, Monate)</span>
-				</span>
-				<span class="legend-item legend-sum">
-					<span class="legend-dot dot-sum"></span>
-					<span class="legend-label">Gesamtsumme (Zeile)</span>
-					<span class="legend-hint">(Summe Förderposition)</span>
-				</span>
-				<span class="legend-item legend-ctrlsum">
-					<span class="legend-dot dot-ctrlsum"></span>
-					<span class="legend-label">Kontrollsumme</span>
-					<span class="legend-hint">(Rechnerischer Prüfwert)</span>
-				</span>
-				<span class="legend-item legend-data">
-					<span class="legend-dot dot-data"></span>
-					<span class="legend-label">Finanz- & Jahresbeträge</span>
-					<span class="legend-hint">(AG-Brutto mtl., 2026–2031)</span>
-				</span>
+			<div class="legend-sections">
+				{#if activeTabCategories.length > 0}
+					<div class="legend-group">
+						<span class="legend-group-title">Positionskategorien:</span>
+						<div class="legend-items">
+							{#each activeTabCategories as cat}
+								<span class="legend-item legend-cat legend-cat-{cat.id}">
+									<span class="legend-dot dot-cat dot-cat-{cat.id}"></span>
+									<span class="legend-label">{cat.icon} {cat.label}</span>
+								</span>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				<div class="legend-group">
+					<span class="legend-group-title">Felder:</span>
+					<div class="legend-items">
+						<span class="legend-item legend-control">
+							<span class="legend-dot dot-control"></span>
+							<span class="legend-label">Steuerung</span>
+							<span class="legend-hint">(Std., %, Mo.)</span>
+						</span>
+						<span class="legend-item legend-sum">
+							<span class="legend-dot dot-sum"></span>
+							<span class="legend-label">Zeilensumme</span>
+						</span>
+						<span class="legend-item legend-ctrlsum">
+							<span class="legend-dot dot-ctrlsum"></span>
+							<span class="legend-label">Kontrollwert</span>
+						</span>
+						<span class="legend-item legend-data">
+							<span class="legend-dot dot-data"></span>
+							<span class="legend-label">Betragsdaten</span>
+						</span>
+					</div>
+				</div>
 			</div>
 			<div class="legend-right">
 				<span class="legend-tip">💡 Klick auf beliebigen Wert kopiert direkt in die Zwischenablage</span>
@@ -277,6 +360,8 @@
 				</thead>
 				<tbody>
 					{#each activeTab.rows as row, idx (row.id)}
+						{@const rowCategory = row.category || (row.isOffsetRow ? 'offset' : 'wage')}
+						{@const catInfo = getCategoryInfo(rowCategory)}
 						{@const rowExplanation = getRowExplanation(row)}
 						{@const rowCostType = getRowCostType(row)}
 						{@const compoundText = getCompoundOneLine(row)}
@@ -284,9 +369,9 @@
 						{@const isEven = idx % 2 === 0}
 
 						<!-- 1. Numeric Values Data Row -->
-						<tr class="data-row {isEven ? 'row-even' : 'row-odd'} {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
+						<tr class="data-row row-cat-{rowCategory} {isEven ? 'row-even' : 'row-odd'} {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
 							<td class="td-row-num">
-								<span class="row-badge {isLastCopied ? 'badge-highlight' : ''}" title="Förderzeile {row.rowNumber}">
+								<span class="row-badge badge-{rowCategory} {isLastCopied ? 'badge-highlight' : ''}" title="{catInfo.label} - Förderzeile {row.rowNumber}">
 									{#if isLastCopied}
 										<span class="active-dot" title="Zuletzt kopierte Zeile">●</span>
 									{/if}
@@ -420,7 +505,7 @@
 						</tr>
 
 						<!-- Sub-Row 1: Individual Entities (Name, Laufzeit, Tarif, Zeitraum, Erläuterung, Betragstyp einzeln kopierbar) -->
-						<tr class="sub-row-meta {isEven ? 'row-even' : 'row-odd'} {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
+						<tr class="sub-row-meta row-cat-{rowCategory} {isEven ? 'row-even' : 'row-odd'} {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
 							<td colspan={7 + result.years.length} class="meta-td">
 								<div class="meta-content">
 									{#if isLastCopied}
@@ -429,6 +514,12 @@
 											<span>Aktive Zeile</span>
 										</div>
 									{/if}
+
+									<!-- Category Pill -->
+									<span class="category-pill pill-{rowCategory}" title="Kategorie: {catInfo.label}">
+										<span class="pill-icon">{catInfo.icon}</span>
+										<span class="pill-text">{catInfo.label}</span>
+									</span>
 
 									<!-- 1. Name -->
 									<button
@@ -508,24 +599,24 @@
 						</tr>
 
 						<!-- Sub-Row 2: Compound One-Line Text (Name, Laufzeit, Tarif, Zeitraum, Erläuterung, Betragstyp in einer Zeile mit 5 Leerzeichen getrennt) -->
-						<tr class="sub-row-desc {isEven ? 'row-even' : 'row-odd'} {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
+						<tr class="sub-row-desc row-cat-{rowCategory} {isEven ? 'row-even' : 'row-odd'} {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
 							<td colspan={7 + result.years.length} class="desc-td">
 								<div class="desc-container">
 									<div
-										class="desc-display-box {isLastCopied ? 'active-desc-box' : ''}"
+										class="desc-display-box box-{rowCategory} {isLastCopied ? 'active-desc-box' : ''}"
 										onclick={() => copyToClipboard(compoundText, `compound-${row.id}`, row.id)}
 										role="button"
 										tabindex="0"
 										onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') copyToClipboard(compoundText, `compound-${row.id}`, row.id); }}
 										title="Klicken zum Kopieren des vollständigen einzeiligen Textes (5 Leerzeichen getrennt)"
 									>
-										<span class="desc-badge">Komplettzeile:</span>
+										<span class="desc-badge badge-text-{rowCategory}">Komplettzeile:</span>
 										<span class="desc-text font-mono">{compoundText}</span>
 									</div>
 
 									<button
 										type="button"
-										class="desc-copy-action-btn {copiedField === `compound-${row.id}` ? 'action-copied' : ''} {isLastCopied ? 'active-action-btn' : ''}"
+										class="desc-copy-action-btn btn-{rowCategory} {copiedField === `compound-${row.id}` ? 'action-copied' : ''} {isLastCopied ? 'active-action-btn' : ''}"
 										onclick={() => copyToClipboard(compoundText, `compound-${row.id}`, row.id)}
 										title="Kompletten einzeiligen Text kopieren"
 									>
@@ -808,16 +899,38 @@
 		justify-content: space-between;
 		align-items: center;
 		flex-wrap: wrap;
-		gap: 0.75rem;
-		padding: 0.85rem 0.25rem 0.75rem 0.25rem;
+		gap: 1rem;
+		padding: 0.85rem 0.35rem 0.75rem 0.35rem;
 		font-size: 0.8rem;
+	}
+
+	.legend-sections {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 1.5rem;
+	}
+
+	.legend-group {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.65rem;
+		flex-wrap: wrap;
+	}
+
+	.legend-group-title {
+		font-size: 0.75rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: #94a3b8;
 	}
 
 	.legend-items {
 		display: flex;
 		align-items: center;
 		flex-wrap: wrap;
-		gap: 1.25rem;
+		gap: 0.9rem;
 	}
 
 	.legend-item {
@@ -833,6 +946,69 @@
 		display: inline-block;
 	}
 
+	/* Category Dots */
+	.dot-cat {
+		width: 10px;
+		height: 10px;
+		border-radius: 3px;
+		display: inline-block;
+	}
+
+	.dot-cat-sv_shortfall {
+		background: rgba(16, 185, 129, 0.3);
+		border: 1.5px solid #10b981;
+		box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+	}
+	.legend-cat-sv_shortfall .legend-label {
+		color: #6ee7b7;
+	}
+
+	.dot-cat-degression {
+		background: rgba(245, 158, 11, 0.3);
+		border: 1.5px solid #f59e0b;
+		box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+	}
+	.legend-cat-degression .legend-label {
+		color: #fde68a;
+	}
+
+	.dot-cat-jsz {
+		background: rgba(168, 85, 247, 0.3);
+		border: 1.5px solid #a855f7;
+		box-shadow: 0 0 6px rgba(168, 85, 247, 0.4);
+	}
+	.legend-cat-jsz .legend-label {
+		color: #e9d5ff;
+	}
+
+	.dot-cat-offset {
+		background: rgba(14, 165, 233, 0.3);
+		border: 1.5px solid #0ea5e9;
+		box-shadow: 0 0 6px rgba(14, 165, 233, 0.4);
+	}
+	.legend-cat-offset .legend-label {
+		color: #7dd3fc;
+	}
+
+	.dot-cat-wage {
+		background: rgba(99, 102, 241, 0.3);
+		border: 1.5px solid #6366f1;
+		box-shadow: 0 0 6px rgba(99, 102, 241, 0.4);
+	}
+	.legend-cat-wage .legend-label {
+		color: #c7d2fe;
+	}
+
+	.dot-cat-sachkosten {
+		background: rgba(20, 184, 166, 0.3);
+		border: 1.5px solid #14b8a6;
+		box-shadow: 0 0 6px rgba(20, 184, 166, 0.4);
+	}
+	.legend-cat-sachkosten .legend-label {
+		color: #99f6e4;
+	}
+
+	/* Field Dots */
 	.dot-control {
 		background: rgba(14, 165, 233, 0.3);
 		border: 1.5px solid #38bdf8;
@@ -999,18 +1175,100 @@
 		background: rgba(15, 23, 42, 0.55);
 	}
 
-	.data-row:hover,
-	.sub-row-meta:hover,
-	.sub-row-desc:hover {
-		background: rgba(99, 102, 241, 0.12) !important;
+	/* Color-Coded Left Margins & Row Categorization */
+
+	/* 1. SV Fehlbetrag (Emerald / Mint) */
+	.row-cat-sv_shortfall.data-row {
+		border-top: 3px solid rgba(16, 185, 129, 0.5);
+	}
+	.row-cat-sv_shortfall .td-row-num,
+	.row-cat-sv_shortfall.sub-row-meta td,
+	.row-cat-sv_shortfall.sub-row-desc td {
+		border-left: 5px solid #10b981;
+	}
+	.row-cat-sv_shortfall:hover,
+	.row-cat-sv_shortfall.sub-row-meta:hover,
+	.row-cat-sv_shortfall.sub-row-desc:hover {
+		background: rgba(16, 185, 129, 0.1) !important;
+	}
+
+	/* 2. Degression (Amber / Orange) */
+	.row-cat-degression.data-row {
+		border-top: 3px solid rgba(245, 158, 11, 0.5);
+	}
+	.row-cat-degression .td-row-num,
+	.row-cat-degression.sub-row-meta td,
+	.row-cat-degression.sub-row-desc td {
+		border-left: 5px solid #f59e0b;
+	}
+	.row-cat-degression:hover,
+	.row-cat-degression.sub-row-meta:hover,
+	.row-cat-degression.sub-row-desc:hover {
+		background: rgba(245, 158, 11, 0.1) !important;
+	}
+
+	/* 3. Jahressonderzahlung (Purple / Violet) */
+	.row-cat-jsz.data-row {
+		border-top: 3px solid rgba(168, 85, 247, 0.5);
+	}
+	.row-cat-jsz .td-row-num,
+	.row-cat-jsz.sub-row-meta td,
+	.row-cat-jsz.sub-row-desc td {
+		border-left: 5px solid #a855f7;
+	}
+	.row-cat-jsz:hover,
+	.row-cat-jsz.sub-row-meta:hover,
+	.row-cat-jsz.sub-row-desc:hover {
+		background: rgba(168, 85, 247, 0.1) !important;
+	}
+
+	/* 4. Ausgleich / Offset (Sky Blue / Cyan) */
+	.row-cat-offset.data-row {
+		border-top: 3px solid rgba(14, 165, 233, 0.6);
+	}
+	.row-cat-offset .td-row-num,
+	.row-cat-offset.sub-row-meta td,
+	.row-cat-offset.sub-row-desc td {
+		border-left: 5px solid #0ea5e9;
+	}
+	.row-cat-offset:hover,
+	.row-cat-offset.sub-row-meta:hover,
+	.row-cat-offset.sub-row-desc:hover {
+		background: rgba(14, 165, 233, 0.12) !important;
+	}
+
+	/* 5. Lohnkosten (Jobcenter Wage - Indigo) */
+	.row-cat-wage.data-row {
+		border-top: 3px solid rgba(99, 102, 241, 0.5);
+	}
+	.row-cat-wage .td-row-num,
+	.row-cat-wage.sub-row-meta td,
+	.row-cat-wage.sub-row-desc td {
+		border-left: 5px solid #6366f1;
+	}
+	.row-cat-wage:hover,
+	.row-cat-wage.sub-row-meta:hover,
+	.row-cat-wage.sub-row-desc:hover {
+		background: rgba(99, 102, 241, 0.1) !important;
+	}
+
+	/* 6. Sachkosten (Teal) */
+	.row-cat-sachkosten.data-row {
+		border-top: 3px solid rgba(20, 184, 166, 0.5);
+	}
+	.row-cat-sachkosten .td-row-num,
+	.row-cat-sachkosten.sub-row-meta td,
+	.row-cat-sachkosten.sub-row-desc td {
+		border-left: 5px solid #14b8a6;
+	}
+	.row-cat-sachkosten:hover,
+	.row-cat-sachkosten.sub-row-meta:hover,
+	.row-cat-sachkosten.sub-row-desc:hover {
+		background: rgba(20, 184, 166, 0.1) !important;
 	}
 
 	.offset-row {
 		background: rgba(14, 165, 233, 0.08) !important;
-	}
-
-	.offset-row.data-row {
-		border-top: 3px solid rgba(56, 189, 248, 0.6);
 	}
 
 	/* Last Copied Row Highlight Styling */
@@ -1031,6 +1289,7 @@
 		text-align: center;
 		width: 52px;
 		vertical-align: middle;
+		transition: border-left-color 0.2s ease;
 	}
 
 	.row-badge {
@@ -1048,12 +1307,87 @@
 		color: #c7d2fe;
 		font-size: 0.8rem;
 		font-family: monospace;
+		transition: all 0.2s ease;
 	}
 
-	.offset-row .row-badge {
-		background: rgba(14, 165, 233, 0.22);
-		border-color: rgba(56, 189, 248, 0.5);
-		color: #38bdf8;
+	/* Category-Themed Row Badges */
+	.row-badge.badge-sv_shortfall {
+		background: rgba(16, 185, 129, 0.18);
+		border-color: rgba(16, 185, 129, 0.5);
+		color: #6ee7b7;
+	}
+	.row-badge.badge-degression {
+		background: rgba(245, 158, 11, 0.18);
+		border-color: rgba(245, 158, 11, 0.5);
+		color: #fde68a;
+	}
+	.row-badge.badge-jsz {
+		background: rgba(168, 85, 247, 0.18);
+		border-color: rgba(168, 85, 247, 0.5);
+		color: #e9d5ff;
+	}
+	.row-badge.badge-offset {
+		background: rgba(14, 165, 233, 0.18);
+		border-color: rgba(14, 165, 233, 0.5);
+		color: #7dd3fc;
+	}
+	.row-badge.badge-wage {
+		background: rgba(99, 102, 241, 0.18);
+		border-color: rgba(99, 102, 241, 0.5);
+		color: #c7d2fe;
+	}
+	.row-badge.badge-sachkosten {
+		background: rgba(20, 184, 166, 0.18);
+		border-color: rgba(20, 184, 166, 0.5);
+		color: #99f6e4;
+	}
+
+	/* Category Pills in Sub-row Meta */
+	.category-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.22rem 0.55rem;
+		border-radius: 6px;
+		font-size: 0.725rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+	}
+	.category-pill .pill-icon {
+		font-size: 0.8rem;
+		line-height: 1;
+	}
+	.pill-sv_shortfall {
+		background: rgba(16, 185, 129, 0.2);
+		border: 1px solid rgba(16, 185, 129, 0.5);
+		color: #6ee7b7;
+	}
+	.pill-degression {
+		background: rgba(245, 158, 11, 0.2);
+		border: 1px solid rgba(245, 158, 11, 0.5);
+		color: #fde68a;
+	}
+	.pill-jsz {
+		background: rgba(168, 85, 247, 0.2);
+		border: 1px solid rgba(168, 85, 247, 0.5);
+		color: #e9d5ff;
+	}
+	.pill-offset {
+		background: rgba(14, 165, 233, 0.2);
+		border: 1px solid rgba(14, 165, 233, 0.5);
+		color: #7dd3fc;
+	}
+	.pill-wage {
+		background: rgba(99, 102, 241, 0.2);
+		border: 1px solid rgba(99, 102, 241, 0.5);
+		color: #c7d2fe;
+	}
+	.pill-sachkosten {
+		background: rgba(20, 184, 166, 0.2);
+		border: 1px solid rgba(20, 184, 166, 0.5);
+		color: #99f6e4;
 	}
 
 	.badge-highlight {
@@ -1390,6 +1724,127 @@
 		background: rgba(30, 41, 59, 0.98);
 		border-color: #818cf8;
 		box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
+	}
+
+	/* Category-specific description boxes */
+	.desc-display-box.box-sv_shortfall {
+		border-color: rgba(16, 185, 129, 0.4);
+	}
+	.desc-display-box.box-sv_shortfall:hover,
+	.desc-display-box.box-sv_shortfall.active-desc-box {
+		border-color: #10b981;
+		box-shadow: 0 0 12px rgba(16, 185, 129, 0.35);
+	}
+	.desc-badge.badge-text-sv_shortfall {
+		color: #34d399;
+	}
+	.desc-copy-action-btn.btn-sv_shortfall {
+		background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+		box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+	}
+	.desc-copy-action-btn.btn-sv_shortfall:hover {
+		background: linear-gradient(135deg, #047857 0%, #059669 100%);
+		box-shadow: 0 4px 12px rgba(16, 185, 129, 0.45);
+	}
+
+	.desc-display-box.box-degression {
+		border-color: rgba(245, 158, 11, 0.4);
+	}
+	.desc-display-box.box-degression:hover,
+	.desc-display-box.box-degression.active-desc-box {
+		border-color: #f59e0b;
+		box-shadow: 0 0 12px rgba(245, 158, 11, 0.35);
+	}
+	.desc-badge.badge-text-degression {
+		color: #fbbf24;
+	}
+	.desc-copy-action-btn.btn-degression {
+		background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+		box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+	}
+	.desc-copy-action-btn.btn-degression:hover {
+		background: linear-gradient(135deg, #b45309 0%, #d97706 100%);
+		box-shadow: 0 4px 12px rgba(245, 158, 11, 0.45);
+	}
+
+	.desc-display-box.box-jsz {
+		border-color: rgba(168, 85, 247, 0.4);
+	}
+	.desc-display-box.box-jsz:hover,
+	.desc-display-box.box-jsz.active-desc-box {
+		border-color: #a855f7;
+		box-shadow: 0 0 12px rgba(168, 85, 247, 0.35);
+	}
+	.desc-badge.badge-text-jsz {
+		color: #c084fc;
+	}
+	.desc-copy-action-btn.btn-jsz {
+		background: linear-gradient(135deg, #9333ea 0%, #a855f7 100%);
+		box-shadow: 0 2px 8px rgba(168, 85, 247, 0.3);
+	}
+	.desc-copy-action-btn.btn-jsz:hover {
+		background: linear-gradient(135deg, #7e22ce 0%, #9333ea 100%);
+		box-shadow: 0 4px 12px rgba(168, 85, 247, 0.45);
+	}
+
+	.desc-display-box.box-offset {
+		border-color: rgba(14, 165, 233, 0.4);
+	}
+	.desc-display-box.box-offset:hover,
+	.desc-display-box.box-offset.active-desc-box {
+		border-color: #0ea5e9;
+		box-shadow: 0 0 12px rgba(14, 165, 233, 0.35);
+	}
+	.desc-badge.badge-text-offset {
+		color: #38bdf8;
+	}
+	.desc-copy-action-btn.btn-offset {
+		background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%);
+		box-shadow: 0 2px 8px rgba(14, 165, 233, 0.3);
+	}
+	.desc-copy-action-btn.btn-offset:hover {
+		background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%);
+		box-shadow: 0 4px 12px rgba(14, 165, 233, 0.45);
+	}
+
+	.desc-display-box.box-sachkosten {
+		border-color: rgba(20, 184, 166, 0.4);
+	}
+	.desc-display-box.box-sachkosten:hover,
+	.desc-display-box.box-sachkosten.active-desc-box {
+		border-color: #14b8a6;
+		box-shadow: 0 0 12px rgba(20, 184, 166, 0.35);
+	}
+	.desc-badge.badge-text-sachkosten {
+		color: #2dd4bf;
+	}
+	.desc-copy-action-btn.btn-sachkosten {
+		background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%);
+		box-shadow: 0 2px 8px rgba(20, 184, 166, 0.3);
+	}
+	.desc-copy-action-btn.btn-sachkosten:hover {
+		background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%);
+		box-shadow: 0 4px 12px rgba(20, 184, 166, 0.45);
+	}
+
+	.desc-display-box.box-wage {
+		border-color: rgba(99, 102, 241, 0.4);
+	}
+	.desc-display-box.box-wage:hover,
+	.desc-display-box.box-wage.active-desc-box {
+		border-color: #6366f1;
+		box-shadow: 0 0 12px rgba(99, 102, 241, 0.35);
+	}
+	.desc-badge.badge-text-wage {
+		color: #818cf8;
+	}
+	.desc-copy-action-btn.btn-wage {
+		background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+		box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+	}
+	.desc-copy-action-btn.btn-wage:hover {
+		background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%);
+		box-shadow: 0 4px 12px rgba(99, 102, 241, 0.45);
 	}
 
 	.desc-badge {

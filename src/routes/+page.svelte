@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getAvailableSchemes, recalculateGrant } from '#lib/grant.remote';
-	import type { GrantTransformationResult, AgaRatePeriod, RuntimeScope, RuntimeStartScope } from '#lib/types/grant';
+	import { transformSgb16i } from '#lib/grants/sgb16i';
+	import type { GrantTransformationResult, AgaRatePeriod, RuntimeScope, RuntimeStartScope, MonthlyRecord, ParticipantInfo } from '#lib/types/grant';
 	import FileUpload from '#lib/components/FileUpload.svelte';
 	import ControlDashboard from '#lib/components/ControlDashboard.svelte';
 	import TargetFormCompanion from '#lib/components/TargetFormCompanion.svelte';
@@ -16,6 +17,76 @@
 	let customEndDate = $state('');
 	let currentResult = $state<GrantTransformationResult | null>(null);
 	let isRecalculating = $state(false);
+
+	function loadDemoData() {
+		const participant: ParticipantInfo = {
+			name: 'Musterteilnehmer/in',
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			runtimeStart: '01.08.2026',
+			runtimeEnd: '31.07.2031',
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			sachkostenMonthly: 155,
+			childrenCount: 1,
+			healthInsuranceName: 'AOK Nordost (15,9%)',
+			defaultAgaRate: 0.23815
+		};
+
+		const records: MonthlyRecord[] = [];
+		let currentDate = new Date(2026, 7, 1);
+
+		for (let i = 0; i < 60; i++) {
+			const y = currentDate.getFullYear();
+			const m = currentDate.getMonth() + 1;
+			const lastDay = new Date(y, m, 0).getDate();
+			const mStr = String(m).padStart(2, '0');
+
+			const fteSalary = y < 2027 ? 2576.77 : y < 2029 ? 2688.48 : 2774.73;
+			const partTimeSalary = (fteSalary * 30) / 39;
+			const jcFlatRate = partTimeSalary * 0.19;
+			const jcTotalGross = partTimeSalary + jcFlatRate;
+			const degPct = i < 24 ? 100 : i < 36 ? 90 : i < 48 ? 80 : 70;
+
+			records.push({
+				date: `${y}-${mStr}-${String(lastDay).padStart(2, '0')}`,
+				year: y,
+				month: m,
+				monthUnits: 1.0,
+				startDate: `01.${mStr}.${y}`,
+				endDate: `${String(lastDay).padStart(2, '0')}.${mStr}.${y}`,
+				fteSalary,
+				partTimeSalary,
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: jcFlatRate,
+				jcTotalGross,
+				jcDegressionPct: degPct,
+				jcGrantAmount: (jcTotalGross * degPct) / 100,
+				agaRealRate: 0.23815,
+				agaRealAmount: partTimeSalary * 0.23815,
+				totalEmployerCost: partTimeSalary * 1.23815,
+				landSvShortfall: partTimeSalary * (0.23815 - 0.19),
+				landDegressionAmount: (jcTotalGross * (100 - degPct)) / 100,
+				jszAmount: m === 12 ? 1800 : 0,
+				jszAgaAmount: m === 12 ? 1800 * 0.23815 : 0,
+				isJszMonth: m === 12,
+				sachkostenAmount: 155
+			});
+
+			currentDate = new Date(y, m, 1);
+		}
+
+		const res = transformSgb16i(records, participant, {
+			includeOffsetRows: includeOffset,
+			runtimeStartScope,
+			customStartDate: runtimeStartScope === 'custom' ? customStartDate : undefined,
+			runtimeScope,
+			customEndDate: runtimeScope === 'custom' ? customEndDate : undefined
+		});
+
+		handleResult(res);
+	}
 
 	onMount(async () => {
 		try {
@@ -304,6 +375,15 @@
 				{runtimeScope}
 				{customEndDate}
 			/>
+
+			<div class="demo-trigger-wrapper">
+				<button type="button" class="btn-demo-data" onclick={loadDemoData}>
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+					</svg>
+					✨ Standard-Beispieldaten laden (60 Monate Musterberechnung)
+				</button>
+			</div>
 		</section>
 
 		<!-- Active Calculation Results -->
@@ -563,6 +643,34 @@
 	.checkbox-label input {
 		cursor: pointer;
 		accent-color: #6366f1;
+	}
+
+	.demo-trigger-wrapper {
+		display: flex;
+		justify-content: center;
+		margin-top: 1rem;
+	}
+
+	.btn-demo-data {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 1.1rem;
+		background: rgba(99, 102, 241, 0.12);
+		border: 1px dashed rgba(129, 140, 248, 0.4);
+		border-radius: 8px;
+		color: #c7d2fe;
+		font-size: 0.825rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.btn-demo-data:hover {
+		background: rgba(99, 102, 241, 0.25);
+		border-color: #818cf8;
+		color: #ffffff;
+		transform: translateY(-1px);
 	}
 
 	.results-section {
