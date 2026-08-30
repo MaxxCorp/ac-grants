@@ -83,8 +83,6 @@
 		return Array.from(cats).map(c => getCategoryInfo(c));
 	});
 
-	const tableMinWidth = $derived(Math.max(860, 620 + (result.years?.length || 0) * 86));
-
 	function formatCurrency(val: number): string {
 		return val.toLocaleString('de-DE', {
 			minimumFractionDigits: 2,
@@ -330,21 +328,21 @@
 		</div>
 
 		<div class="table-container">
-			<table class="target-table" style="min-width: {tableMinWidth}px;">
+			<table class="target-table">
 				<thead>
 					<tr>
-						<th class="th-action"></th>
+						<th class="th-action" title="Zeilennummer"></th>
 						<th class="th-hours th-control-header" title="Steuerungseingabe: Wochenarbeitszeit / TLN-Nummer">
-							<span class="th-content"><span class="th-tag control-tag">⚙</span>Arbeitszeit|TLN Nr.</span>
+							<span class="th-content"><span class="th-tag control-tag">⚙</span>Std./Wo.</span>
 						</th>
 						<th class="th-amount th-data-header" title="Datenfeld: Monatlicher AG-Bruttobetrag">
-							<span class="th-content">AG Brutto mtl.</span>
+							<span class="th-content">AG Brutto</span>
 						</th>
 						<th class="th-pct th-control-header" title="Steuerungseingabe: Fördersatz in %">
-							<span class="th-content"><span class="th-tag control-tag">⚙</span>Anteil [%]</span>
+							<span class="th-content"><span class="th-tag control-tag">⚙</span>Förder-%</span>
 						</th>
 						<th class="th-months th-control-header" title="Steuerungseingabe: Anzahl der Fördermonate im Berechnungszeitraum">
-							<span class="th-content"><span class="th-tag control-tag">⚙</span>Anzahl Monate</span>
+							<span class="th-content"><span class="th-tag control-tag">⚙</span>Monate</span>
 						</th>
 						<th class="th-sum th-sum-header" title="Gesamtförderbetrag dieser Zeile">
 							<span class="th-content"><span class="th-tag sum-tag">∑</span>Summe</span>
@@ -355,9 +353,9 @@
 							</th>
 						{/each}
 						<th class="th-ctrl th-control-sum-header" title="Kontrollsumme: Quersumme zur mathematischen Konsistenzprüfung">
-							<span class="th-content"><span class="th-tag ctrl-sum-tag">✓</span>Kontrollsumme</span>
+							<span class="th-content"><span class="th-tag ctrl-sum-tag">✓</span>Kontrolle</span>
 						</th>
-						<th class="th-row-action">Aktion</th>
+						<th class="th-row-action" title="Alle Werte dieser Zeile kopieren">Aktion</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -892,7 +890,7 @@
 	}
 
 	.tab-content {
-		padding: 0 1.25rem 1.25rem 1.25rem;
+		padding: 0 0.75rem 1rem 0.75rem;
 	}
 
 	/* Quick Legend Toolbar */
@@ -901,167 +899,9 @@
 		justify-content: space-between;
 		align-items: center;
 		flex-wrap: wrap;
-		gap: 1rem;
-		padding: 0.85rem 0.35rem 0.75rem 0.35rem;
+		gap: 0.85rem;
+		padding: 0.75rem 0.25rem;
 		font-size: 0.8rem;
-	}
-
-	.legend-sections {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: 1.5rem;
-	}
-
-	.legend-group {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.65rem;
-		flex-wrap: wrap;
-	}
-
-	.legend-group-title {
-		font-size: 0.75rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: #94a3b8;
-	}
-
-	.legend-items {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: 0.9rem;
-	}
-
-	.legend-item {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
-	}
-
-	.legend-dot {
-		width: 10px;
-		height: 10px;
-		border-radius: 3px;
-		display: inline-block;
-	}
-
-	/* Category Dots */
-	.dot-cat {
-		width: 10px;
-		height: 10px;
-		border-radius: 3px;
-		display: inline-block;
-	}
-
-	.dot-cat-sv_shortfall {
-		background: rgba(16, 185, 129, 0.3);
-		border: 1.5px solid #10b981;
-		box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
-	}
-	.legend-cat-sv_shortfall .legend-label {
-		color: #6ee7b7;
-	}
-
-	.dot-cat-degression {
-		background: rgba(245, 158, 11, 0.3);
-		border: 1.5px solid #f59e0b;
-		box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
-	}
-	.legend-cat-degression .legend-label {
-		color: #fde68a;
-	}
-
-	.dot-cat-jsz {
-		background: rgba(168, 85, 247, 0.3);
-		border: 1.5px solid #a855f7;
-		box-shadow: 0 0 6px rgba(168, 85, 247, 0.4);
-	}
-	.legend-cat-jsz .legend-label {
-		color: #e9d5ff;
-	}
-
-	.dot-cat-offset {
-		background: rgba(14, 165, 233, 0.3);
-		border: 1.5px solid #0ea5e9;
-		box-shadow: 0 0 6px rgba(14, 165, 233, 0.4);
-	}
-	.legend-cat-offset .legend-label {
-		color: #7dd3fc;
-	}
-
-	.dot-cat-wage {
-		background: rgba(99, 102, 241, 0.3);
-		border: 1.5px solid #6366f1;
-		box-shadow: 0 0 6px rgba(99, 102, 241, 0.4);
-	}
-	.legend-cat-wage .legend-label {
-		color: #c7d2fe;
-	}
-
-	.dot-cat-sachkosten {
-		background: rgba(20, 184, 166, 0.3);
-		border: 1.5px solid #14b8a6;
-		box-shadow: 0 0 6px rgba(20, 184, 166, 0.4);
-	}
-	.legend-cat-sachkosten .legend-label {
-		color: #99f6e4;
-	}
-
-	/* Field Dots */
-	.dot-control {
-		background: rgba(14, 165, 233, 0.3);
-		border: 1.5px solid #38bdf8;
-		box-shadow: 0 0 6px rgba(56, 189, 248, 0.4);
-	}
-
-	.dot-sum {
-		background: rgba(245, 158, 11, 0.3);
-		border: 1.5px solid #fbbf24;
-		box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
-	}
-
-	.dot-ctrlsum {
-		background: rgba(139, 92, 246, 0.3);
-		border: 1.5px solid #a78bfa;
-		box-shadow: 0 0 6px rgba(167, 139, 250, 0.4);
-	}
-
-	.dot-data {
-		background: rgba(30, 41, 59, 0.9);
-		border: 1.5px solid rgba(255, 255, 255, 0.3);
-	}
-
-	.legend-label {
-		font-weight: 600;
-	}
-
-	.legend-control .legend-label {
-		color: #7dd3fc;
-	}
-
-	.legend-sum .legend-label {
-		color: #fde68a;
-	}
-
-	.legend-ctrlsum .legend-label {
-		color: #c084fc;
-	}
-
-	.legend-data .legend-label {
-		color: #e2e8f0;
-	}
-
-	.legend-hint {
-		color: #64748b;
-		font-size: 0.725rem;
-	}
-
-	.legend-tip {
-		color: #94a3b8;
-		font-size: 0.775rem;
 	}
 
 	.overview-table-wrapper {
@@ -1072,7 +912,6 @@
 
 	.overview-table {
 		width: 100%;
-		min-width: 680px;
 		border-collapse: collapse;
 		font-size: 0.825rem;
 	}
@@ -1081,31 +920,10 @@
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		border-radius: 12px;
 		background: rgba(15, 23, 42, 0.7);
-		overflow-x: auto;
-		overflow-y: visible;
+		overflow: visible;
 		width: 100%;
 		max-width: 100%;
 		box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.25);
-		scrollbar-width: thin;
-		scrollbar-color: rgba(99, 102, 241, 0.4) rgba(15, 23, 42, 0.6);
-	}
-
-	.table-container::-webkit-scrollbar {
-		height: 8px;
-	}
-
-	.table-container::-webkit-scrollbar-track {
-		background: rgba(15, 23, 42, 0.6);
-		border-radius: 4px;
-	}
-
-	.table-container::-webkit-scrollbar-thumb {
-		background: rgba(99, 102, 241, 0.4);
-		border-radius: 4px;
-	}
-
-	.table-container::-webkit-scrollbar-thumb:hover {
-		background: rgba(99, 102, 241, 0.7);
 	}
 
 	.target-table {
@@ -1113,19 +931,26 @@
 		border-collapse: separate;
 		border-spacing: 0;
 		font-size: 0.825rem;
+		table-layout: auto;
 	}
 
 	/* Sticky Table Header (sticks directly under sticky .tabs-nav at top: 45px when scrolling) */
+	.target-table thead {
+		position: sticky;
+		top: 45px;
+		z-index: 90;
+	}
+
 	.target-table th {
 		position: sticky;
 		top: 45px;
-		z-index: 80;
+		z-index: 90;
 		background: #111827;
 		background: rgba(17, 24, 39, 0.99);
 		backdrop-filter: blur(16px);
 		-webkit-backdrop-filter: blur(16px);
 		color: #94a3b8;
-		padding: 0.6rem 0.35rem;
+		padding: 0.55rem 0.2rem;
 		font-weight: 600;
 		font-size: 0.75rem;
 		text-align: right;
@@ -1136,58 +961,67 @@
 		white-space: nowrap;
 	}
 
+	.target-table th:first-child {
+		border-left: 5px solid transparent;
+		border-top-left-radius: 11px;
+	}
+
+	.target-table th:last-child {
+		border-top-right-radius: 11px;
+	}
+
 	.target-table th.th-action,
 	.target-table th.th-row-action {
 		text-align: center;
-		padding: 0.6rem 0.25rem;
+		padding: 0.55rem 0.15rem;
 	}
 
 	.target-table th.th-action {
-		width: 44px;
-		min-width: 44px;
+		width: 34px;
+		min-width: 34px;
 	}
 
 	.target-table th.th-hours {
 		text-align: center;
-		width: 76px;
-		min-width: 70px;
+		width: 66px;
+		min-width: 60px;
 	}
 
 	.target-table th.th-amount {
-		width: 96px;
-		min-width: 88px;
+		width: 84px;
+		min-width: 78px;
 	}
 
 	.target-table th.th-pct {
 		text-align: center;
-		width: 72px;
-		min-width: 66px;
+		width: 58px;
+		min-width: 54px;
 	}
 
 	.target-table th.th-months {
 		text-align: center;
-		width: 72px;
-		min-width: 66px;
+		width: 58px;
+		min-width: 54px;
 	}
 
 	.target-table th.th-sum {
-		width: 105px;
-		min-width: 95px;
+		width: 92px;
+		min-width: 86px;
 	}
 
 	.target-table th.th-year {
-		width: 88px;
-		min-width: 80px;
+		width: 80px;
+		min-width: 74px;
 	}
 
 	.target-table th.th-ctrl {
-		width: 105px;
-		min-width: 95px;
+		width: 92px;
+		min-width: 86px;
 	}
 
 	.target-table th.th-row-action {
-		width: 76px;
-		min-width: 70px;
+		width: 66px;
+		min-width: 60px;
 	}
 
 	.th-content {
@@ -1366,9 +1200,9 @@
 	}
 
 	.td-row-num {
-		padding: 0.55rem 0.35rem 0.3rem 0.6rem;
+		padding: 0.45rem 0.15rem 0.25rem 0.25rem;
 		text-align: center;
-		width: 52px;
+		width: 34px;
 		vertical-align: middle;
 		transition: border-left-color 0.2s ease;
 	}
@@ -1377,16 +1211,16 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		gap: 3px;
-		min-width: 32px;
-		height: 24px;
-		padding: 0 6px;
+		gap: 2px;
+		min-width: 24px;
+		height: 20px;
+		padding: 0 3px;
 		border-radius: 6px;
 		background: rgba(99, 102, 241, 0.2);
 		border: 1px solid rgba(129, 140, 248, 0.4);
 		font-weight: 700;
 		color: #c7d2fe;
-		font-size: 0.8rem;
+		font-size: 0.725rem;
 		font-family: monospace;
 		transition: all 0.2s ease;
 	}
@@ -1515,7 +1349,7 @@
 	}
 
 	.td-cell {
-		padding: 0.35rem 0.25rem 0.25rem 0.25rem;
+		padding: 0.35rem 0.18rem 0.25rem 0.18rem;
 		text-align: right;
 		vertical-align: middle;
 	}
@@ -1524,14 +1358,15 @@
 	.copy-cell-btn {
 		width: 100%;
 		border-radius: 6px;
-		padding: 0.32rem 0.35rem;
-		font-size: 0.8rem;
+		padding: 0.28rem 0.22rem;
+		font-size: 0.75rem;
 		text-align: right;
 		cursor: pointer;
 		position: relative;
 		transition: all 0.15s ease;
 		white-space: nowrap;
 		box-sizing: border-box;
+		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 	}
 
 	/* 1. Control / Parameter Inputs (Arbeitszeit, Anteil %, Monate) - Sky/Cyan */
@@ -1640,8 +1475,8 @@
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		border-radius: 6px;
 		color: #cbd5e1;
-		padding: 0.35rem 0.65rem;
-		font-size: 0.75rem;
+		padding: 0.3rem 0.45rem;
+		font-size: 0.725rem;
 		font-weight: 500;
 		cursor: pointer;
 		white-space: nowrap;
