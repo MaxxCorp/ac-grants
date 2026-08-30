@@ -1,9 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import * as XLSX from 'xlsx';
-import { parseExcelBuffer } from './excel';
+import { parseExcelBuffer, parseNumber } from './excel';
 
 describe('Excel Parser', () => {
+	it('parses numbers formatted in German and standard styles correctly without truncating thousands', () => {
+		expect(parseNumber(2781.91)).toBe(2781.91);
+		expect(parseNumber('2781.91')).toBe(2781.91);
+		expect(parseNumber('2.781,91')).toBe(2781.91);
+		expect(parseNumber('2.781,91 €')).toBe(2781.91);
+		expect(parseNumber('2.844,86 €')).toBe(2844.86);
+		expect(parseNumber('2139,93')).toBe(2139.93);
+		expect(parseNumber('15,9 %')).toBe(15.9);
+		expect(parseNumber('1.234.567,89 €')).toBe(1234567.89);
+	});
+
 	it.skipIf(!fs.existsSync('Berechnungsblatt Fenske_3.xlsx'))('parses Berechnungsblatt Fenske_3.xlsx including July 2024', () => {
 		const buf = fs.readFileSync('Berechnungsblatt Fenske_3.xlsx');
 		const parsed = parseExcelBuffer(buf);

@@ -1,13 +1,18 @@
 import * as XLSX from 'xlsx';
 import type { TvlComparisonResult } from '#lib/types/grant';
 
-function parseDateToExcelSerial(dStr: string): number | null {
+function parseDateToExcelSerial(dStr?: string): number | null {
 	if (!dStr) return null;
-	const parts = dStr.split('.');
-	if (parts.length === 3) {
-		const d = parseInt(parts[0], 10);
-		const m = parseInt(parts[1], 10);
-		const y = parseInt(parts[2], 10);
+	const parts = dStr.split(/[.\-/]/).map((p) => parseInt(p.trim(), 10));
+	if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+		let d = parts[0];
+		let m = parts[1];
+		let y = parts[2];
+		if (parts[0] > 1000) {
+			y = parts[0];
+			m = parts[1];
+			d = parts[2];
+		}
 		const dateObj = new Date(Date.UTC(y, m - 1, d));
 		const epoch = new Date(Date.UTC(1899, 11, 30));
 		return Math.round((dateObj.getTime() - epoch.getTime()) / 86400000);

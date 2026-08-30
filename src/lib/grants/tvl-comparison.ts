@@ -21,15 +21,12 @@ function round2(val: number): number {
 	return Math.round((val + Number.EPSILON) * 100) / 100;
 }
 
-function parseDateDMY(dStr: string): { day: number; month: number; year: number } | null {
+function parseDateDMY(dStr?: string): { day: number; month: number; year: number } | null {
 	if (!dStr) return null;
-	const parts = dStr.split('.');
-	if (parts.length === 3) {
-		return {
-			day: parseInt(parts[0], 10),
-			month: parseInt(parts[1], 10),
-			year: parseInt(parts[2], 10)
-		};
+	const parts = dStr.split(/[.\-/]/).map((p) => parseInt(p.trim(), 10));
+	if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+		if (parts[2] > 1000) return { day: parts[0], month: parts[1], year: parts[2] };
+		if (parts[0] > 1000) return { day: parts[2], month: parts[1], year: parts[0] };
 	}
 	return null;
 }

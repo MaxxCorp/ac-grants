@@ -113,10 +113,30 @@ export function normalizeTariffStep(val: unknown): string {
 	return 'ES1';
 }
 
-function parseNumber(val: unknown, defaultVal = 0): number {
+export function parseNumber(val: unknown, defaultVal = 0): number {
 	if (val === null || val === undefined) return defaultVal;
 	if (typeof val === 'number') return isNaN(val) ? defaultVal : val;
-	const s = String(val).replace(/[^0-9.,-]/g, '').replace(',', '.');
+	let s = String(val).trim();
+	if (!s) return defaultVal;
+
+	// Strip currency, spaces, non-numeric characters except . , -
+	s = s.replace(/[^0-9.,-]/g, '');
+	if (!s) return defaultVal;
+
+	// Handle both '.' and ',' (e.g. German "2.781,91" or US "2,781.91")
+	if (s.includes('.') && s.includes(',')) {
+		if (s.indexOf('.') < s.indexOf(',')) {
+			// German style: 2.781,91 -> 2781.91
+			s = s.replace(/\./g, '').replace(',', '.');
+		} else {
+			// US style: 2,781.91 -> 2781.91
+			s = s.replace(/,/g, '');
+		}
+	} else if (s.includes(',')) {
+		// Only comma: 2139,93 -> 2139.93
+		s = s.replace(',', '.');
+	}
+
 	const parsed = parseFloat(s);
 	return isNaN(parsed) ? defaultVal : parsed;
 }
@@ -144,7 +164,23 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 
 	const getCellValue = (colLetter: string, rowNumber: number): unknown => {
 		const cell = sheet[`${colLetter}${rowNumber}`];
-		return cell ? (cell.w !== undefined && cell.w !== '' ? cell.w : cell.v) : undefined;
+		if (!cell) return undefined;
+		if (cell.v !== undefined && cell.v !== null && cell.v !== '') {
+			return cell.v;
+		}
+		return cell.w;
+	};
+
+	const getCellFormattedText = (colLetter: string, rowNumber: number): string => {
+		const cell = sheet[`${colLetter}${rowNumber}`];
+		if (!cell) return '';
+		if (cell.w !== undefined && cell.w !== null && cell.w !== '') {
+			return String(cell.w).trim();
+		}
+		if (cell.v !== undefined && cell.v !== null && cell.v !== '') {
+			return String(cell.v).trim();
+		}
+		return '';
 	};
 
 	// Parse Participant Metadata from Row 2
@@ -156,10 +192,10 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 	const sachkostenMonthly = parseNumber(getCellValue('M', 2), 155);
 	const childrenCount = parseNumber(getCellValue('U', 2), 0);
 	
-	let rawHealthInsurance = String(getCellValue('W', 2) || '').trim();
+	let rawHealthInsurance = getCellFormattedText('W', 2);
 	if (!rawHealthInsurance || rawHealthInsurance.toLowerCase() === 'gkv') {
 		for (const col of ['V', 'X']) {
-			const alt = String(getCellValue(col, 2) || '').trim();
+			const alt = getCellFormattedText(col, 2);
 			if (alt && !alt.match(/^[\d.,%]+$/) && alt.toLowerCase() !== 'gkv') {
 				rawHealthInsurance = alt;
 				break;
