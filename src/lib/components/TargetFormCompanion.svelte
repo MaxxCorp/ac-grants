@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { FormTabDefinition, FormRowItem, GrantTransformationResult } from '#lib/types/grant';
 	import { generateAutomationPayload, generatePlaywrightScript } from '#lib/automation/bridge';
+	import TvlComparisonCompanion from '#lib/components/TvlComparisonCompanion.svelte';
 
 	let {
 		result
@@ -278,12 +279,24 @@
 				{tab.title}
 			</button>
 		{/each}
+
+		<button
+			type="button"
+			class="tab-btn tab-btn-tvl {activeTabId === 'tvl_vergleich' ? 'active' : ''}"
+			onclick={() => (activeTabId = 'tvl_vergleich')}
+		>
+			<span class="tab-icon">⚖️</span>
+			Vergleichsberechnung TV-L
+		</button>
 	</div>
 
 	<!-- Tab Content Area -->
 	<div class="tab-content">
-		<!-- Quick Legend Toolbar -->
-		<div class="table-legend-bar">
+		{#if activeTabId === 'tvl_vergleich'}
+			<TvlComparisonCompanion {result} />
+		{:else}
+			<!-- Quick Legend Toolbar -->
+			<div class="table-legend-bar">
 			<div class="legend-sections">
 				{#if activeTabCategories.length > 0}
 					<div class="legend-group">
@@ -652,6 +665,7 @@
 				</tfoot>
 			</table>
 		</div>
+		{/if}
 	</div>
 </div>
 
@@ -887,6 +901,30 @@
 		color: #ffffff;
 		border-bottom-color: #6366f1;
 		background: rgba(99, 102, 241, 0.12);
+	}
+
+	.tab-btn-tvl {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		background: rgba(14, 165, 233, 0.08);
+		border-left: 1px solid rgba(255, 255, 255, 0.08);
+		color: #38bdf8;
+	}
+
+	.tab-btn-tvl:hover {
+		color: #7dd3fc;
+		background: rgba(14, 165, 233, 0.16);
+	}
+
+	.tab-btn-tvl.active {
+		color: #38bdf8;
+		border-bottom-color: #0ea5e9;
+		background: rgba(14, 165, 233, 0.2);
+	}
+
+	.tab-icon {
+		font-size: 0.95rem;
 	}
 
 	.tab-content {

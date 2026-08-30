@@ -133,6 +133,189 @@ export interface GrantTransformationOptions {
 	customAgaTimeline?: AgaRatePeriod[];
 }
 
+export interface InsuranceFundDetails {
+	name: string;
+	kvRate: number; // e.g. 0.073 (AG Anteil)
+	zusatzbeitragTotal: number; // e.g. 0.032 (3.2%)
+	zusatzbeitragAg: number; // e.g. 0.016 (1.6%)
+	rvRate: number; // e.g. 0.093 (9.3%)
+	avRate: number; // e.g. 0.013 (1.3%)
+	pvRate: number; // e.g. 0.018 (1.8%)
+	u1Rate: number; // e.g. 0.013 (1.3%)
+	u2Rate: number; // e.g. 0.0039 (0.39%)
+	u3Rate: number; // e.g. 0.0015 (0.15%)
+	agaRate: number; // e.g. 0.2314 (Total AG-Anteil)
+}
+
+export interface TvlTariffEntry {
+	code: string; // e.g. 'E2/2', 'E2/3', 'S8b/1'
+	valJanMar: number; // Entgelt Jan bis März (TV-L 39.4h)
+	jszPct: number; // Jahressonderzahlung percentage (e.g. 0.8743)
+	valAbApr: number; // Entgelt ab April (TV-L 39.4h)
+	sueZulage: number; // SuE Zulage aus S-Tabelle (0 for standard E)
+}
+
+export interface TvlPeriodCalculation {
+	tariffCode: string;
+	startDate: string; // DD.MM.YYYY
+	endDate: string; // DD.MM.YYYY
+	weeklyHours: number;
+	totalMonths: number;
+	monthsPreSwitch: number; // bis März (or switch month)
+	monthsPostSwitch: number; // ab April (or switch month)
+	
+	// Entgelte
+	tvl394JanMar: number;
+	tvlUmJanMar: number; // converted to weeklyHours
+	istJanMar: number;
+	
+	tvl394AbApr: number;
+	tvlUmAbApr: number;
+	istAbApr: number;
+	
+	sueZulage394: number;
+	sueZulageUm: number;
+	besitzstand: number;
+	vwl: number;
+	
+	avgMonthlyGross394: number;
+	avgMonthlyGrossUm: number;
+	avgMonthlyGrossIst: number;
+	
+	grossWithoutJsz394: number;
+	grossWithoutJszUm: number;
+	grossWithoutJszIst: number;
+	
+	jszRatePct: number;
+	jsz394: number;
+	jszUm: number;
+	jszIst: number;
+	
+	grossWithJsz394: number;
+	grossWithJszUm: number;
+	grossWithJszIst: number;
+	
+	// Social Security contributions
+	kvAmount394: number;
+	kvAmountUm: number;
+	kvAmountIst: number;
+	
+	kkzAmount394: number;
+	kkzAmountUm: number;
+	kkzAmountIst: number;
+	
+	rvAmount394: number;
+	rvAmountUm: number;
+	rvAmountIst: number;
+	
+	avAmount394: number;
+	avAmountUm: number;
+	avAmountIst: number;
+	
+	pvAmount394: number;
+	pvAmountUm: number;
+	pvAmountIst: number;
+	
+	vorsorgeAmount394: number;
+	vorsorgeAmountUm: number;
+	vorsorgeAmountIst: number;
+	
+	u1Amount394: number;
+	u1AmountUm: number;
+	u1AmountIst: number;
+	
+	u2Amount394: number;
+	u2AmountUm: number;
+	u2AmountIst: number;
+	
+	u3Amount394: number;
+	u3AmountUm: number;
+	u3AmountIst: number;
+	
+	totalAgSv394: number;
+	totalAgSvUm: number;
+	totalAgSvIst: number;
+	
+	personalkostenPeriod394: number;
+	personalkostenPeriodUm: number;
+	personalkostenPeriodIst: number;
+	
+	avgMonthlyAgGrossUm: number;
+	avgMonthlyAgGrossIst: number;
+	deltaIstTvl: number;
+}
+
+export interface TvlComparisonInputs {
+	year: number;
+	traegerName: string;
+	antragsdatum: string;
+	projektnummer: string;
+	participantName: string;
+	qualifikation: string;
+	taetigkeit: string;
+	eintrittsdatum: string;
+	abweichendeTaetigkeit?: string;
+	
+	// Left Section inputs
+	tariffGroupStepLeft: string; // e.g. "E2/2"
+	startDateLeft: string; // e.g. "01.01.2026"
+	endDateLeft: string; // e.g. "15.01.2026"
+	weeklyHoursLeft: number;
+	istJanMarLeft: number;
+	istAbAprLeft: number;
+	besitzstandLeft: number;
+	vwlLeft: number;
+	
+	// Right Section inputs (Unterjähriger Stufenaufstieg)
+	hasStepUpgrade: boolean;
+	tariffGroupStepRight: string; // e.g. "E2/3"
+	startDateRight: string; // e.g. "16.01.2026"
+	endDateRight: string; // e.g. "31.12.2026"
+	weeklyHoursRight: number;
+	istJanMarRight: number;
+	istAbAprRight: number;
+	besitzstandRight: number;
+	vwlRight: number;
+	istJszRight: number;
+	
+	// Social security & insurance fund overrides
+	selectedInsuranceName: string;
+	kvRate: number; // default 0.073
+	kkZusatzRate: number; // default e.g. 0.016
+	rvRate: number; // default 0.093
+	avRate: number; // default 0.013
+	pvRate: number; // default 0.018
+	vorsorgeRate: number; // default 0
+	u1Rate: number; // default 0.013
+	u2Rate: number; // default 0.0039
+	u3Rate: number; // default 0.0015
+	
+	bemerkungen: string;
+	bearbeiterName?: string;
+	bearbeiterDate?: string;
+}
+
+export interface TvlComparisonResult {
+	year: number;
+	inputs: TvlComparisonInputs;
+	periodLeft: TvlPeriodCalculation;
+	periodRight?: TvlPeriodCalculation;
+	
+	totalMonths: number;
+	totalPersonalkosten394: number;
+	totalPersonalkostenTvl: number;
+	totalPersonalkostenIst: number;
+	
+	avgMonthlyAgGrossTvl: number;
+	avgMonthlyAgGrossIst: number;
+	
+	totalDifference: number; // Ist - TVL (negative means compliant)
+	isBesserstellungsverbotCompliant: boolean;
+	availableYears: number[];
+	availableTariffs: string[];
+	availableInsuranceFunds: InsuranceFundDetails[];
+}
+
 export interface GrantTransformationResult {
 	schemeId: string;
 	schemeName: string;
@@ -144,6 +327,8 @@ export interface GrantTransformationResult {
 	agaTimeline: AgaRatePeriod[];
 	options: GrantTransformationOptions;
 	rawMonthlyRecords: MonthlyRecord[];
+	insuranceFunds?: InsuranceFundDetails[];
+	tvlComparison?: TvlComparisonResult;
 }
 
 export interface GrantSchemeDefinition {
@@ -160,3 +345,4 @@ export interface GrantSchemeDefinition {
 		options: GrantTransformationOptions
 	) => GrantTransformationResult;
 }
+

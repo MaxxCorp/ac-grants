@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
-import type { ParticipantInfo, MonthlyRecord, AgaRatePeriod } from '#lib/types/grant';
+import type { ParticipantInfo, MonthlyRecord, AgaRatePeriod, InsuranceFundDetails } from '#lib/types/grant';
+import { DEFAULT_INSURANCE_FUNDS } from '#lib/grants/tvl-tariff-data';
 
 /**
  * Normalizes Excel date representations (serial numbers, Date objects, or date strings).
@@ -124,6 +125,7 @@ export interface ParsedExcelWorkbook {
 	participant: ParticipantInfo;
 	records: MonthlyRecord[];
 	availableInsuranceRates: { name: string; agaRate: number }[];
+	insuranceFunds: InsuranceFundDetails[];
 	years: number[];
 }
 
@@ -142,7 +144,7 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 
 	const getCellValue = (colLetter: string, rowNumber: number): unknown => {
 		const cell = sheet[`${colLetter}${rowNumber}`];
-		return cell ? cell.v : undefined;
+		return cell ? (cell.w !== undefined && cell.w !== '' ? cell.w : cell.v) : undefined;
 	};
 
 	// Parse Participant Metadata from Row 2
@@ -153,7 +155,18 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 	const weeklyHours = parseNumber(getCellValue('J', 2), 30);
 	const sachkostenMonthly = parseNumber(getCellValue('M', 2), 155);
 	const childrenCount = parseNumber(getCellValue('U', 2), 0);
-	const healthInsuranceName = String(getCellValue('W', 2) || 'GKV').trim();
+	
+	let rawHealthInsurance = String(getCellValue('W', 2) || '').trim();
+	if (!rawHealthInsurance || rawHealthInsurance.toLowerCase() === 'gkv') {
+		for (const col of ['V', 'X']) {
+			const alt = String(getCellValue(col, 2) || '').trim();
+			if (alt && !alt.match(/^[\d.,%]+$/) && alt.toLowerCase() !== 'gkv') {
+				rawHealthInsurance = alt;
+				break;
+			}
+		}
+	}
+	const healthInsuranceName = rawHealthInsurance || 'DAK';
 	const defaultAgaRate = parseNumber(getCellValue('Y', 2), 0.2314);
 
 	let runtimeStart = '';
@@ -333,19 +346,8 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 		}
 	}
 
-	// Parse available insurance rates from AGA sheet if present
-	const availableInsuranceRates: { name: string; agaRate: number }[] = [
-		{ name: 'Barmer', agaRate: 0.23815 },
-		{ name: 'AOK BLN-BRB', agaRate: 0.2387 },
-		{ name: 'Techniker', agaRate: 0.22935 },
-		{ name: 'BIG direkt', agaRate: 0.25285 },
-		{ name: 'BKK VBU', agaRate: 0.2448 },
-		{ name: 'DAK', agaRate: 0.2314 },
-		{ name: 'IKK BLN-BRB', agaRate: 0.25415 },
-		{ name: 'KKH', agaRate: 0.2398 },
-		{ name: 'Bahn-BKK', agaRate: 0.25295 },
-		{ name: 'Novitas BKK', agaRate: 0.2425 }
-	];
+	// Parse available insurance funds and rates from AGA sheet if present
+	const insuranceFunds: InsuranceFundDetails[] = JSON.parse(JSON.stringify(DEFAULT_INSURANCE_FUNDS));
 
 	const agaSheetName = workbook.SheetNames.find(n => n.toLowerCase().includes('aga'));
 	if (agaSheetName && workbook.Sheets[agaSheetName]) {
@@ -353,29 +355,82 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 		// Read rows 5 to 16
 		for (let r = 5; r <= 16; r++) {
 			const insNameCell = agaSheet[`A${r}`];
+			const kvCell = agaSheet[`C${r}`];
+			const zusatzCell = agaSheet[`D${r}`];
+			const rvCell = agaSheet[`E${r}`];
+			const avCell = agaSheet[`F${r}`];
+			const u1Cell = agaSheet[`I${r}`];
+			const u2Cell = agaSheet[`K${r}`];
+			const u3Cell = agaSheet[`L${r}`];
 			const agRateCell = agaSheet[`O${r}`] || agaSheet[`R${r}`];
-			if (insNameCell && agRateCell) {
+
+			if (insNameCell && insNameCell.v) {
 				const name = String(insNameCell.v).trim();
-				let rate = parseNumber(agRateCell.v, 0);
-				if (rate > 1) rate = rate / 100;
-				if (name && rate > 0) {
-					const existing = availableInsuranceRates.find(i => i.name.toLowerCase() === name.toLowerCase());
-					if (existing) {
-						existing.agaRate = rate;
-					} else {
-						availableInsuranceRates.push({ name, agaRate: rate });
-					}
+				if (!name) continue;
+
+				let totalRate = parseNumber(agRateCell ? agRateCell.v : undefined, 0);
+				if (totalRate > 1) totalRate = totalRate / 100;
+
+				let kv = parseNumber(kvCell ? kvCell.v : undefined, 14.6);
+				if (kv > 0.2) kv = kv / 100;
+				const kvRate = kv / 2; // AG Anteil
+
+				let zusatz = parseNumber(zusatzCell ? zusatzCell.v : undefined, 3.2);
+				if (zusatz > 0.1) zusatz = zusatz / 100;
+				const zusatzbeitragAg = zusatz / 2;
+
+				let rv = parseNumber(rvCell ? rvCell.v : undefined, 18.6);
+				if (rv > 0.2) rv = rv / 100;
+				const rvRate = rv / 2;
+
+				let av = parseNumber(avCell ? avCell.v : undefined, 2.6);
+				if (av > 0.1) av = av / 100;
+				const avRate = av / 2;
+
+				let u1 = parseNumber(u1Cell ? u1Cell.v : undefined, 1.3);
+				if (u1 > 0.05) u1 = u1 / 100;
+
+				let u2 = parseNumber(u2Cell ? u2Cell.v : undefined, 0.39);
+				if (u2 > 0.005) u2 = u2 / 100;
+
+				let u3 = parseNumber(u3Cell ? u3Cell.v : undefined, 0.15);
+				if (u3 > 0.002) u3 = u3 / 100;
+
+				const pvRate = 0.018;
+
+				const existing = insuranceFunds.find(i => i.name.toLowerCase() === name.toLowerCase());
+				const fundObj: InsuranceFundDetails = {
+					name,
+					kvRate,
+					zusatzbeitragTotal: zusatz,
+					zusatzbeitragAg,
+					rvRate,
+					avRate,
+					pvRate,
+					u1Rate: u1,
+					u2Rate: u2,
+					u3Rate: u3,
+					agaRate: totalRate > 0 ? totalRate : (existing ? existing.agaRate : 0.2314)
+				};
+
+				if (existing) {
+					Object.assign(existing, fundObj);
+				} else {
+					insuranceFunds.push(fundObj);
 				}
 			}
 		}
 	}
 
+	const availableInsuranceRates = insuranceFunds.map(f => ({ name: f.name, agaRate: f.agaRate }));
 	const years = Array.from(new Set(records.map(r => r.year))).sort((a, b) => a - b);
 
 	return {
 		participant,
 		records,
 		availableInsuranceRates,
+		insuranceFunds,
 		years
 	};
 }
+

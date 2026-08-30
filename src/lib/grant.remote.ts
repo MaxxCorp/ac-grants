@@ -75,10 +75,11 @@ export const processExcelFile = command(
 	async ({ fileBase64, fileName, schemeId, includeOffsetRows, runtimeScope, customEndDate, runtimeStartScope, customStartDate, restrictToExitDate, restrictToYear }): Promise<GrantTransformationResult> => {
 		try {
 			const buffer = Buffer.from(fileBase64, 'base64');
-			const { participant, records } = parseExcelBuffer(buffer);
+			const { participant, records, insuranceFunds } = parseExcelBuffer(buffer);
+			(participant as any).insuranceFunds = insuranceFunds;
 			const scheme = getGrantScheme(schemeId);
 
-			return scheme.transform(records, participant, {
+			const result = scheme.transform(records, participant, {
 				includeOffsetRows: includeOffsetRows ?? true,
 				runtimeScope: (runtimeScope as any) || (restrictToExitDate === false ? 'full_5_years' : 'exit_date'),
 				customEndDate,
@@ -87,6 +88,8 @@ export const processExcelFile = command(
 				restrictToExitDate: restrictToExitDate ?? true,
 				restrictToYear
 			});
+			result.insuranceFunds = insuranceFunds;
+			return result;
 		} catch (err: any) {
 			throw new Error(`Fehler beim Parsen der Excel-Datei "${fileName}": ${err?.message || err}`);
 		}
@@ -113,7 +116,8 @@ export const uploadExcel = form(
 
 		const arrayBuffer = await excelFile.arrayBuffer();
 		const buffer = Buffer.from(arrayBuffer);
-		const { participant, records } = parseExcelBuffer(buffer);
+		const { participant, records, insuranceFunds } = parseExcelBuffer(buffer);
+		(participant as any).insuranceFunds = insuranceFunds;
 
 		const scheme = getGrantScheme(schemeId);
 		const options: GrantTransformationOptions = {
@@ -126,6 +130,8 @@ export const uploadExcel = form(
 			restrictToYear: restrictToYear ? parseInt(restrictToYear, 10) : undefined
 		};
 
-		return scheme.transform(records, participant, options);
+		const result = scheme.transform(records, participant, options);
+		result.insuranceFunds = insuranceFunds;
+		return result;
 	}
 );

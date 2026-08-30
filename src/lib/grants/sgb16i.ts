@@ -11,6 +11,7 @@ import type {
 	RuntimeScope,
 	RuntimeStartScope
 } from '#lib/types/grant';
+import { calculateTvlComparison } from './tvl-comparison';
 
 function round2(val: number): number {
 	return Math.round((val + Number.EPSILON) * 100) / 100;
@@ -1135,6 +1136,15 @@ export function transformSgb16i(
 		}
 	];
 
+	// Generate TV-L Comparison calculation
+	const tvlComparison = calculateTvlComparison(
+		allProcessedRecords,
+		participant,
+		years.includes(2026) ? 2026 : (years[years.length - 1] || 2026),
+		undefined,
+		(participant as any).insuranceFunds
+	);
+
 	return {
 		schemeId: 'sgb16i-berlin',
 		schemeName: '§ 16i SGB II / ZGS Berlin (AWO Tarifeinigung 05.05.2026)',
@@ -1150,6 +1160,8 @@ export function transformSgb16i(
 			runtimeStartScope,
 			customStartDate: options.customStartDate
 		},
-		rawMonthlyRecords: allProcessedRecords
+		rawMonthlyRecords: allProcessedRecords,
+		insuranceFunds: (participant as any).insuranceFunds,
+		tvlComparison
 	};
 }
