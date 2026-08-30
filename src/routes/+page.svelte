@@ -413,9 +413,17 @@
 
 <style>
 	.page-container {
-		max-width: 1380px;
+		width: 100%;
+		max-width: 1560px;
 		margin: 0 auto;
-		padding: 2rem 1.5rem 4rem 1.5rem;
+		padding: 1.5rem 1.25rem 4rem 1.25rem;
+		box-sizing: border-box;
+	}
+
+	@media (min-width: 1680px) {
+		.page-container {
+			max-width: 1680px;
+		}
 	}
 
 	.app-header {

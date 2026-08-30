@@ -83,6 +83,8 @@
 		return Array.from(cats).map(c => getCategoryInfo(c));
 	});
 
+	const tableMinWidth = $derived(Math.max(860, 620 + (result.years?.length || 0) * 86));
+
 	function formatCurrency(val: number): string {
 		return val.toLocaleString('de-DE', {
 			minimumFractionDigits: 2,
@@ -328,7 +330,7 @@
 		</div>
 
 		<div class="table-container">
-			<table class="target-table">
+			<table class="target-table" style="min-width: {tableMinWidth}px;">
 				<thead>
 					<tr>
 						<th class="th-action"></th>
@@ -1062,21 +1064,55 @@
 		font-size: 0.775rem;
 	}
 
+	.overview-table-wrapper {
+		overflow-x: auto;
+		scrollbar-width: thin;
+		scrollbar-color: rgba(99, 102, 241, 0.4) rgba(15, 23, 42, 0.6);
+	}
+
+	.overview-table {
+		width: 100%;
+		min-width: 680px;
+		border-collapse: collapse;
+		font-size: 0.825rem;
+	}
+
 	.table-container {
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		border-radius: 12px;
 		background: rgba(15, 23, 42, 0.7);
-		overflow: visible;
+		overflow-x: auto;
+		overflow-y: visible;
+		width: 100%;
 		max-width: 100%;
 		box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.25);
+		scrollbar-width: thin;
+		scrollbar-color: rgba(99, 102, 241, 0.4) rgba(15, 23, 42, 0.6);
+	}
+
+	.table-container::-webkit-scrollbar {
+		height: 8px;
+	}
+
+	.table-container::-webkit-scrollbar-track {
+		background: rgba(15, 23, 42, 0.6);
+		border-radius: 4px;
+	}
+
+	.table-container::-webkit-scrollbar-thumb {
+		background: rgba(99, 102, 241, 0.4);
+		border-radius: 4px;
+	}
+
+	.table-container::-webkit-scrollbar-thumb:hover {
+		background: rgba(99, 102, 241, 0.7);
 	}
 
 	.target-table {
 		width: 100%;
-		min-width: 1180px;
 		border-collapse: separate;
 		border-spacing: 0;
-		font-size: 0.85rem;
+		font-size: 0.825rem;
 	}
 
 	/* Sticky Table Header (sticks directly under sticky .tabs-nav at top: 45px when scrolling) */
@@ -1089,24 +1125,69 @@
 		backdrop-filter: blur(16px);
 		-webkit-backdrop-filter: blur(16px);
 		color: #94a3b8;
-		padding: 0.65rem 0.4rem;
+		padding: 0.6rem 0.35rem;
 		font-weight: 600;
-		font-size: 0.775rem;
+		font-size: 0.75rem;
 		text-align: right;
 		border-top: 1px solid rgba(255, 255, 255, 0.1);
 		border-bottom: 2px solid rgba(99, 102, 241, 0.5);
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 		user-select: none;
+		white-space: nowrap;
 	}
 
 	.target-table th.th-action,
 	.target-table th.th-row-action {
 		text-align: center;
-		padding: 0.65rem 0.35rem;
+		padding: 0.6rem 0.25rem;
+	}
+
+	.target-table th.th-action {
+		width: 44px;
+		min-width: 44px;
 	}
 
 	.target-table th.th-hours {
 		text-align: center;
+		width: 76px;
+		min-width: 70px;
+	}
+
+	.target-table th.th-amount {
+		width: 96px;
+		min-width: 88px;
+	}
+
+	.target-table th.th-pct {
+		text-align: center;
+		width: 72px;
+		min-width: 66px;
+	}
+
+	.target-table th.th-months {
+		text-align: center;
+		width: 72px;
+		min-width: 66px;
+	}
+
+	.target-table th.th-sum {
+		width: 105px;
+		min-width: 95px;
+	}
+
+	.target-table th.th-year {
+		width: 88px;
+		min-width: 80px;
+	}
+
+	.target-table th.th-ctrl {
+		width: 105px;
+		min-width: 95px;
+	}
+
+	.target-table th.th-row-action {
+		width: 76px;
+		min-width: 70px;
 	}
 
 	.th-content {
@@ -1434,7 +1515,7 @@
 	}
 
 	.td-cell {
-		padding: 0.4rem 0.3rem 0.25rem 0.3rem;
+		padding: 0.35rem 0.25rem 0.25rem 0.25rem;
 		text-align: right;
 		vertical-align: middle;
 	}
@@ -1443,13 +1524,14 @@
 	.copy-cell-btn {
 		width: 100%;
 		border-radius: 6px;
-		padding: 0.35rem 0.4rem;
-		font-size: 0.825rem;
+		padding: 0.32rem 0.35rem;
+		font-size: 0.8rem;
 		text-align: right;
 		cursor: pointer;
 		position: relative;
 		transition: all 0.15s ease;
 		white-space: nowrap;
+		box-sizing: border-box;
 	}
 
 	/* 1. Control / Parameter Inputs (Arbeitszeit, Anteil %, Monate) - Sky/Cyan */
