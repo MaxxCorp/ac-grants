@@ -12,7 +12,7 @@ import type {
 	RuntimeStartScope
 } from '#lib/types/grant';
 import { calculateTvlComparison } from './tvl-comparison';
-import { validateBerechnungsblattTariff, calculateTariffStepAtDate } from './awo-tariff-data';
+import { validateBerechnungsblattTariff, calculateTariffStepAtDate, determineParticipantStepForRecord, isAwoTariffIncreaseMonth } from './awo-tariff-data';
 
 function round2(val: number): number {
 	return Math.round((val + Number.EPSILON) * 100) / 100;
@@ -69,39 +69,36 @@ export function buildCompoundOneLineText(
 }
 
 /**
- * Returns the tariff step string (ES1..ES6) based on contract duration elapsed from runtimeStart
- * and starting experience level (from Cell C2, default ES1).
- * In the AWO Tarif:
- * - In ES1: 1 year (12 months) to reach ES2
- * - In ES2: 2 years (24 months) to reach ES3
- * - In ES3: 3 years (36 months) to reach ES4
- * - In ES4: 4 years (48 months) to reach ES5
- * - In ES5: 5 years (60 months) to reach ES6
+ * Returns the tariff step string (ES1..ES6) for a monthly record.
+ * Uses official AWO tariff scales (sept 2025 - july 2028) whenever available,
+ * falling back to career anniversary progression based on runtimeStart.
  */
 export function getTariffStep(
 	record: MonthlyRecord,
-	runtimeStart?: string,
-	initialTariffStep: string = 'ES1'
+	participantOrRuntimeStart?: ParticipantInfo | string,
+	initialTariffStep: string = 'ES1',
+	tariffGroup: string = 'EG1'
 ): string {
-	let initialStepNum = 1;
-	const match = String(initialTariffStep).match(/\d+/);
-	if (match) {
-		initialStepNum = Math.max(1, Math.min(6, parseInt(match[0], 10)));
+	let participant: ParticipantInfo;
+	if (typeof participantOrRuntimeStart === 'object' && participantOrRuntimeStart !== null) {
+		participant = participantOrRuntimeStart;
+	} else {
+		participant = {
+			name: '',
+			tariffGroup: tariffGroup || 'EG1',
+			tariffStep: initialTariffStep || 'ES1',
+			runtimeStart: typeof participantOrRuntimeStart === 'string' ? participantOrRuntimeStart : '',
+			runtimeEnd: '',
+			weeklyHours: record.weeklyHours || 30,
+			fullTimeHours: record.fullTimeHours || 39,
+			sachkostenMonthly: 155,
+			childrenCount: 0,
+			healthInsuranceName: 'DAK',
+			defaultAgaRate: record.agaRealRate || 0.2314
+		};
 	}
-
-	if (runtimeStart) {
-		const comp = parseDateComponents(runtimeStart);
-		if (comp) {
-			const recDay = record.startDate ? (parseDateComponents(record.startDate)?.day ?? comp.day) : comp.day;
-			const step = calculateTariffStepAtDate({ day: recDay, month: record.month, year: record.year }, comp, initialStepNum);
-			return `ES${step}`;
-		}
-	}
-
-	const fallbackDate = { day: 1, month: 8, year: 2026 };
-	const recDay = record.startDate ? (parseDateComponents(record.startDate)?.day ?? 1) : 1;
-	const step = calculateTariffStepAtDate({ day: recDay, month: record.month, year: record.year }, fallbackDate, initialStepNum);
-	return `ES${step}`;
+	const stepNum = determineParticipantStepForRecord(participant, record);
+	return `ES${stepNum}`;
 }
 
 /**
@@ -567,7 +564,7 @@ export function transformSgb16i(
 		const startDateText = getPeriodStartDate(currentJcGroup);
 		const endDateText = getPeriodEndDate(currentJcGroup);
 		const calculationPeriodText = `${startDateText}-${endDateText}`;
-		const tariffStep = getTariffStep(first, participant.runtimeStart, participant.tariffStep);
+		const tariffStep = getTariffStep(first, participant);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
 		const runtimeText = contractRuntimeText;
 
@@ -577,23 +574,32 @@ export function transformSgb16i(
 
 		if (previousJcGroup) {
 			const prevFirst = previousJcGroup[0];
-			const prevStep = getTariffStep(prevFirst, participant.runtimeStart, participant.tariffStep);
+			const prevStep = getTariffStep(prevFirst, participant);
 			const currStep = tariffStep;
 			const stepChanged = prevStep !== currStep;
 			const degressionChanged = prevFirst.jcDegressionPct !== percentage;
-			const tariffIncreased = !stepChanged && first.fteSalary > prevFirst.fteSalary;
+			const isKnownTariffIncrease = isAwoTariffIncreaseMonth(first.year, first.month);
+			const salaryIncreased = first.fteSalary > prevFirst.fteSalary;
 
 			if (stepChanged && degressionChanged) {
 				explanationText = `Stufenaufstieg ${prevStep}->${currStep}, Degression auf ${percentage}% zum ${startDateText}`;
 			} else if (degressionChanged) {
 				explanationText = `Degression auf ${percentage}% ab ${startDateText}`;
 			} else if (stepChanged) {
-				explanationText = `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
-			} else if (tariffIncreased) {
-				if (first.year === 2026 && first.month === 9 && first.startDate?.startsWith('01.09.')) {
-					explanationText = 'Tariferhöhung zum 01.09.2026 (% Erhöhung ist kleiner als Sockelbetrag)';
+				if (isKnownTariffIncrease) {
+					explanationText = `Stufenaufstieg ${prevStep}->${currStep} und Tariferhöhung zum ${startDateText}`;
 				} else {
-					explanationText = `Tariferhöhung zum ${startDateText}`;
+					explanationText = `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
+				}
+			} else if (salaryIncreased) {
+				if (isKnownTariffIncrease) {
+					if (first.year === 2026 && first.month === 9 && first.startDate?.startsWith('01.09.')) {
+						explanationText = 'Tariferhöhung zum 01.09.2026 (% Erhöhung ist kleiner als Sockelbetrag)';
+					} else {
+						explanationText = `Tariferhöhung zum ${startDateText}`;
+					}
+				} else {
+					explanationText = `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
 				}
 			}
 		}
@@ -643,7 +649,7 @@ export function transformSgb16i(
 			const prev = currentJcGroup[currentJcGroup.length - 1];
 			const sameFte = Math.abs(prev.fteSalary - r.fteSalary) < 0.01;
 			const sameDegression = prev.jcDegressionPct === r.jcDegressionPct;
-			const sameTariffStep = getTariffStep(prev, participant.runtimeStart, participant.tariffStep) === getTariffStep(r, participant.runtimeStart, participant.tariffStep);
+			const sameTariffStep = getTariffStep(prev, participant) === getTariffStep(r, participant);
 
 			if (sameFte && sameDegression && sameTariffStep) {
 				currentJcGroup.push(r);
@@ -748,7 +754,7 @@ export function transformSgb16i(
 		const totalSum = Object.values(yearlyAmounts).reduce((a, b) => round2(a + b), 0);
 		const startDateText = getPeriodStartDate(currentSvGroup);
 		const endDateText = getPeriodEndDate(currentSvGroup);
-		const tariffStep = getTariffStep(first, participant.runtimeStart, participant.tariffStep);
+		const tariffStep = getTariffStep(first, participant);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
 		const runtimeText = contractRuntimeText;
 		const calculationPeriodText = `${startDateText}-${endDateText}`;
@@ -759,15 +765,24 @@ export function transformSgb16i(
 
 		if (previousSvGroup) {
 			const prevFirst = previousSvGroup[0];
-			const prevStep = getTariffStep(prevFirst, participant.runtimeStart, participant.tariffStep);
+			const prevStep = getTariffStep(prevFirst, participant);
 			const currStep = tariffStep;
 			const stepChanged = prevStep !== currStep;
-			const tariffIncreased = !stepChanged && first.fteSalary > prevFirst.fteSalary;
+			const isKnownTariffIncrease = isAwoTariffIncreaseMonth(first.year, first.month);
+			const salaryIncreased = first.fteSalary > prevFirst.fteSalary;
 
 			if (stepChanged) {
-				explanationText = `ES Wechsel ${prevStep}->${currStep} zum ${startDateText}`;
-			} else if (tariffIncreased) {
-				explanationText = `Tariferhöhung zum ${startDateText}`;
+				if (isKnownTariffIncrease) {
+					explanationText = `ES Wechsel ${prevStep}->${currStep} und Tariferhöhung zum ${startDateText}`;
+				} else {
+					explanationText = `ES Wechsel ${prevStep}->${currStep} zum ${startDateText}`;
+				}
+			} else if (salaryIncreased) {
+				if (isKnownTariffIncrease) {
+					explanationText = `Tariferhöhung zum ${startDateText}`;
+				} else {
+					explanationText = `ES Wechsel ${prevStep}->${currStep} zum ${startDateText}`;
+				}
 			}
 		}
 
@@ -814,7 +829,7 @@ export function transformSgb16i(
 			const currShortfall = r.fullMonthlySvShortfall || r.landSvShortfall / (r.monthUnits || 1.0);
 			const sameSv = Math.abs(prevShortfall - currShortfall) < 0.01;
 			const sameAga = Math.abs(prev.agaRealRate - r.agaRealRate) < 0.00001;
-			const sameStep = getTariffStep(prev, participant.runtimeStart, participant.tariffStep) === getTariffStep(r, participant.runtimeStart, participant.tariffStep);
+			const sameStep = getTariffStep(prev, participant) === getTariffStep(r, participant);
 
 			if (sameSv && sameAga && sameStep) {
 				currentSvGroup.push(r);
@@ -854,27 +869,36 @@ export function transformSgb16i(
 		const startDateText = getPeriodStartDate(currentDegGroup);
 		const endDateText = getPeriodEndDate(currentDegGroup);
 		const calculationPeriodText = `${startDateText}-${endDateText}`;
-		const tariffStep = getTariffStep(first, participant.runtimeStart, participant.tariffStep);
+		const tariffStep = getTariffStep(first, participant);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
 		const runtimeText = contractRuntimeText;
 
 		let explanationText = '';
 		if (previousDegGroup) {
 			const prevFirst = previousDegGroup[0];
-			const prevStep = getTariffStep(prevFirst, participant.runtimeStart, participant.tariffStep);
+			const prevStep = getTariffStep(prevFirst, participant);
 			const currStep = tariffStep;
 			const stepChanged = prevStep !== currStep;
 			const degressionChanged = prevFirst.jcDegressionPct !== first.jcDegressionPct;
-			const tariffIncreased = !stepChanged && first.fteSalary > prevFirst.fteSalary;
+			const isKnownTariffIncrease = isAwoTariffIncreaseMonth(first.year, first.month);
+			const salaryIncreased = first.fteSalary > prevFirst.fteSalary;
 
 			if (degressionChanged && stepChanged) {
 				explanationText = `Stufenaufstieg ${prevStep}->${currStep}, Degression auf ${first.jcDegressionPct}% zum ${startDateText}`;
 			} else if (degressionChanged) {
 				explanationText = `Degression auf ${first.jcDegressionPct}% ab ${startDateText}`;
 			} else if (stepChanged) {
-				explanationText = `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
-			} else if (tariffIncreased) {
-				explanationText = `Tariferhöhung zum ${startDateText}`;
+				if (isKnownTariffIncrease) {
+					explanationText = `Stufenaufstieg ${prevStep}->${currStep} und Tariferhöhung zum ${startDateText}`;
+				} else {
+					explanationText = `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
+				}
+			} else if (salaryIncreased) {
+				if (isKnownTariffIncrease) {
+					explanationText = `Tariferhöhung zum ${startDateText}`;
+				} else {
+					explanationText = `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
+				}
 			}
 		} else {
 			explanationText = `Degression auf ${first.jcDegressionPct}% ab ${startDateText}`;
@@ -922,7 +946,7 @@ export function transformSgb16i(
 			const prev = currentDegGroup[currentDegGroup.length - 1];
 			const sameFte = Math.abs(prev.fteSalary - r.fteSalary) < 0.01;
 			const sameDeg = prev.jcDegressionPct === r.jcDegressionPct;
-			const sameStep = getTariffStep(prev, participant.runtimeStart, participant.tariffStep) === getTariffStep(r, participant.runtimeStart, participant.tariffStep);
+			const sameStep = getTariffStep(prev, participant) === getTariffStep(r, participant);
 
 			if (sameFte && sameDeg && sameStep) {
 				currentDegGroup.push(r);
@@ -955,7 +979,7 @@ export function transformSgb16i(
 
 			const costTypeText = `Jahressonderzahlung ${y}`;
 			const runtimeText = contractRuntimeText;
-			const tariffText = `AWO Berlin ${participant.tariffGroup}/${getTariffStep(jszRecord, participant.runtimeStart, participant.tariffStep)}`;
+			const tariffText = `AWO Berlin ${participant.tariffGroup}/${getTariffStep(jszRecord, participant)}`;
 			const calculationPeriodText = `01.01.${y}-31.12.${y}`;
 
 			const compoundOneLineText = buildCompoundOneLineText(

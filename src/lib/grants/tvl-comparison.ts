@@ -551,7 +551,14 @@ export function calculateTvlComparison(
 	let defaultEndRight = `31.12.${year}`;
 
 	if (hasStepUpgrade) {
-		if (entryParsed) {
+		if (recordStepUpgradeDetected && recordSplitIdx >= 0) {
+			const preRec = yearRecords[recordSplitIdx - 1];
+			const postRec = yearRecords[recordSplitIdx];
+			defaultStartLeft = yearRecords[0]?.startDate || `01.01.${year}`;
+			defaultEndLeft = preRec?.endDate || `15.01.${year}`;
+			defaultStartRight = postRec?.startDate || `16.01.${year}`;
+			defaultEndRight = yearRecords[yearRecords.length - 1]?.endDate || `31.12.${year}`;
+		} else if (entryParsed) {
 			const annDay = entryParsed.day;
 			const annMonth = entryParsed.month;
 			defaultStartLeft = `01.01.${year}`;
@@ -564,13 +571,6 @@ export function calculateTvlComparison(
 				defaultEndLeft = `${String(dim).padStart(2, '0')}.${String(prevMonth).padStart(2, '0')}.${year}`;
 			}
 			defaultStartRight = `${String(annDay).padStart(2, '0')}.${String(annMonth).padStart(2, '0')}.${year}`;
-			defaultEndRight = yearRecords[yearRecords.length - 1]?.endDate || `31.12.${year}`;
-		} else if (recordSplitIdx >= 0) {
-			const preRec = yearRecords[recordSplitIdx - 1];
-			const postRec = yearRecords[recordSplitIdx];
-			defaultStartLeft = yearRecords[0]?.startDate || `01.01.${year}`;
-			defaultEndLeft = preRec?.endDate || `15.01.${year}`;
-			defaultStartRight = postRec?.startDate || `16.01.${year}`;
 			defaultEndRight = yearRecords[yearRecords.length - 1]?.endDate || `31.12.${year}`;
 		}
 	} else {

@@ -244,6 +244,14 @@ export function getApplicableAwoPeriod(year: number, month: number): AwoTariffPe
 }
 
 /**
+ * Checks if a given year and month represents an official tariff increase (Tariferhöhung)
+ * in the AWO collective agreement data (covering periods ab 09/2025, 09/2026, 07/2027, 07/2028).
+ */
+export function isAwoTariffIncreaseMonth(year: number, month: number): boolean {
+	return AWO_TARIFF_PERIODS.some((p) => p.validFromYear === year && p.validFromMonth === month);
+}
+
+/**
  * Calculates the experience level (Stufe 1..6) at a specific date based on contract entry date
  * and initial starting experience level (default ES1).
  * In TV-L / TVöD / AWO collective bargaining agreements:
@@ -286,20 +294,21 @@ export function calculateTariffStepAtDate(
 
 /**
  * Calculates the participant's experience step for a specific monthly record,
- * accounting for entry date anniversary milestones according to TV-L / AWO rules.
+ * accounting for official AWO tariff scales (sept 2025 - july 2028) and anniversary milestones.
  */
 export function determineParticipantStepForRecord(
 	participant: ParticipantInfo,
 	rec: MonthlyRecord
 ): number {
-	const initialStepNum = parseInt((participant.tariffStep.match(/\d+/) || ['1'])[0], 10) || 1;
+	const initialStepNum = parseInt((participant.tariffStep?.match(/\d+/) || ['1'])[0], 10) || 1;
 
-	// 1. Check if rec.fteSalary matches an exact step in AWO tariff scale for this period
+	// 1. Check if rec.fteSalary matches a step in AWO tariff scale for this period
 	const period = getApplicableAwoPeriod(rec.year, rec.month);
 	if (period) {
-		const groupKey = normalizeAwoGroupKey(participant.tariffGroup);
+		const groupKey = normalizeAwoGroupKey(participant.tariffGroup || 'EG1');
 		const groupScales = period.scales[groupKey] || Object.entries(period.scales).find(([k]) => k.toLowerCase() === groupKey.toLowerCase())?.[1];
-		if (groupScales) {
+		if (groupScales && rec.fteSalary && rec.fteSalary > 0) {
+			// Exact match (tolerance 0.05 €)
 			for (let s = 1; s <= 6; s++) {
 				const val = groupScales[s - 1];
 				if (val !== undefined && Math.abs(rec.fteSalary - val) <= 0.05) {

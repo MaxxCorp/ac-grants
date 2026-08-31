@@ -88,5 +88,67 @@ describe('Excel Parser', () => {
 		expect(result.controls.overallStatus).toBe('MATCH');
 		expect(result.controls.totalDelta).toBe(0);
 	});
+
+	it.skipIf(!fs.existsSync('sample_data/Berechnungsblatt Kersten.xlsx'))('parses sample_data/Berechnungsblatt Kersten.xlsx and detects Erfahrungsstufenwechsel on 01.06.2026', async () => {
+		const { transformSgb16i } = await import('#lib/grants/sgb16i');
+		const buf = fs.readFileSync('sample_data/Berechnungsblatt Kersten.xlsx');
+		const parsed = parseExcelBuffer(buf);
+
+		expect(parsed.participant.name).toBe('Herr Dennis Kersten');
+		expect(parsed.participant.tariffGroup).toBe('EG2');
+		expect(parsed.participant.tariffStep).toBe('ES1');
+		expect(parsed.participant.runtimeStart).toBe('16.06.2025');
+		expect(parsed.participant.runtimeEnd).toBe('15.06.2027');
+
+		const result = transformSgb16i(parsed.records, parsed.participant, {
+			includeOffsetRows: true
+		});
+
+		console.log('--- Jobcenter Rows ---');
+		result.tabs[0].rows.forEach(row => {
+			console.log(`JC Row ${row.rowNumber}: ${row.calculationPeriodText} | ${row.tariffText} | ${row.monthlyAmount} * ${row.percentage}% * ${row.monthCount} = ${row.totalSum} | Expl: "${row.explanationText}" | Comp: "${row.compoundOneLineText}"`);
+		});
+
+		console.log('--- Landesmittel Rows ---');
+		result.tabs[1].rows.forEach(row => {
+			console.log(`Land Row ${row.rowNumber} (${row.category}): ${row.calculationPeriodText} | ${row.tariffText} | ${row.monthlyAmount} * ${row.percentage}% * ${row.monthCount} = ${row.totalSum} | Expl: "${row.explanationText}" | Comp: "${row.compoundOneLineText}"`);
+		});
+
+		// Check Jobcenter rows
+		// Row 1: 16.06.2025-31.08.2025 (2.5 months in EG2/ES1)
+		expect(result.tabs[0].rows[0].calculationPeriodText).toBe('16.06.2025-31.08.2025');
+		expect(result.tabs[0].rows[0].tariffText).toBe('AWO Berlin EG2/ES1');
+		expect(result.tabs[0].rows[0].monthCount).toBe(2.5);
+
+		// Row 2: 01.09.2025-31.05.2026 (9.0 months in EG2/ES1, Tariferhöhung zum 01.09.2025)
+		expect(result.tabs[0].rows[1].calculationPeriodText).toBe('01.09.2025-31.05.2026');
+		expect(result.tabs[0].rows[1].tariffText).toBe('AWO Berlin EG2/ES1');
+		expect(result.tabs[0].rows[1].explanationText).toBe('Tariferhöhung zum 01.09.2025');
+
+		// Row 3: 01.06.2026-31.08.2026 (3.0 months in EG2/ES2, Stufenaufstieg ES1->ES2 zum 01.06.2026)
+		expect(result.tabs[0].rows[2].calculationPeriodText).toBe('01.06.2026-31.08.2026');
+		expect(result.tabs[0].rows[2].tariffText).toBe('AWO Berlin EG2/ES2');
+		expect(result.tabs[0].rows[2].monthCount).toBe(3);
+		expect(result.tabs[0].rows[2].explanationText).toBe('Stufenaufstieg ES1->ES2 zum 01.06.2026');
+
+		// Row 4: 01.09.2026-15.06.2027 (9.5 months in EG2/ES2, Tariferhöhung zum 01.09.2026)
+		expect(result.tabs[0].rows[3].calculationPeriodText).toBe('01.09.2026-15.06.2027');
+		expect(result.tabs[0].rows[3].tariffText).toBe('AWO Berlin EG2/ES2');
+		expect(result.tabs[0].rows[3].explanationText).toBe('Tariferhöhung zum 01.09.2026 (% Erhöhung ist kleiner als Sockelbetrag)');
+
+		// Tab 2 Landesmittel SV shortfall rows
+		expect(result.tabs[1].rows[0].calculationPeriodText).toBe('16.06.2025-31.08.2025');
+		expect(result.tabs[1].rows[1].calculationPeriodText).toBe('01.09.2025-31.05.2026');
+		expect(result.tabs[1].rows[1].explanationText).toBe('Tariferhöhung zum 01.09.2025');
+		expect(result.tabs[1].rows[2].calculationPeriodText).toBe('01.06.2026-31.08.2026');
+		expect(result.tabs[1].rows[2].explanationText).toBe('ES Wechsel ES1->ES2 zum 01.06.2026');
+		expect(result.tabs[1].rows[3].calculationPeriodText).toBe('01.09.2026-15.06.2027');
+		expect(result.tabs[1].rows[3].explanationText).toBe('Tariferhöhung zum 01.09.2026');
+
+		// Controls MATCH
+		expect(result.controls.overallStatus).toBe('MATCH');
+		expect(result.controls.totalDelta).toBe(0);
+	});
 });
+
 
