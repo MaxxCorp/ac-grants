@@ -12,7 +12,7 @@ import type {
 	RuntimeStartScope
 } from '#lib/types/grant';
 import { calculateTvlComparison } from './tvl-comparison';
-import { validateBerechnungsblattTariff } from './awo-tariff-data';
+import { validateBerechnungsblattTariff, calculateTariffStepAtDate } from './awo-tariff-data';
 
 function round2(val: number): number {
 	return Math.round((val + Number.EPSILON) * 100) / 100;
@@ -89,41 +89,19 @@ export function getTariffStep(
 		initialStepNum = Math.max(1, Math.min(6, parseInt(match[0], 10)));
 	}
 
-	let elapsedMonths = 0;
 	if (runtimeStart) {
 		const comp = parseDateComponents(runtimeStart);
 		if (comp) {
-			elapsedMonths = (record.year - comp.year) * 12 + (record.month - comp.month);
-		} else {
-			const parts = runtimeStart.split('.');
-			if (parts.length === 3) {
-				const startY = parseInt(parts[2], 10);
-				const startM = parseInt(parts[1], 10);
-				elapsedMonths = (record.year - startY) * 12 + (record.month - startM);
-			}
-		}
-	} else {
-		elapsedMonths = (record.year - 2026) * 12 + (record.month - 8);
-	}
-
-	if (elapsedMonths < 0) {
-		return `ES${initialStepNum}`;
-	}
-
-	let currentStep = initialStepNum;
-	let remainingMonths = elapsedMonths;
-
-	while (currentStep < 6) {
-		const requiredMonthsInStep = currentStep * 12;
-		if (remainingMonths >= requiredMonthsInStep) {
-			remainingMonths -= requiredMonthsInStep;
-			currentStep += 1;
-		} else {
-			break;
+			const recDay = record.startDate ? (parseDateComponents(record.startDate)?.day ?? comp.day) : comp.day;
+			const step = calculateTariffStepAtDate({ day: recDay, month: record.month, year: record.year }, comp, initialStepNum);
+			return `ES${step}`;
 		}
 	}
 
-	return `ES${currentStep}`;
+	const fallbackDate = { day: 1, month: 8, year: 2026 };
+	const recDay = record.startDate ? (parseDateComponents(record.startDate)?.day ?? 1) : 1;
+	const step = calculateTariffStepAtDate({ day: recDay, month: record.month, year: record.year }, fallbackDate, initialStepNum);
+	return `ES${step}`;
 }
 
 /**
@@ -228,6 +206,82 @@ export function isRecordWithinStartDate(record: MonthlyRecord, startDateStr: str
 	}
 
 	return true;
+}
+
+export function calculateMonthUnits(startDay: number, endDay: number, daysInMonth: number): number {
+	if (startDay === 1 && endDay === daysInMonth) return 1.0;
+	if ((startDay === 15 || startDay === 16) && endDay === daysInMonth) return 0.5;
+	if (startDay === 1 && (endDay === 14 || endDay === 15)) return 0.5;
+	return round2((endDay - startDay + 1) / daysInMonth);
+}
+
+export function clipRecordDateRange<T extends MonthlyRecord>(
+	record: T,
+	effectiveStartDate?: string,
+	effectiveEndDate?: string,
+	sachkostenMonthly?: number
+): T {
+	let { startDate, endDate, year, month } = record;
+	const daysInMonth = new Date(year, month, 0).getDate();
+	const mStr = String(month).padStart(2, '0');
+
+	const startComp = parseDateComponents(startDate || `01.${mStr}.${year}`);
+	const endComp = parseDateComponents(endDate || `${String(daysInMonth).padStart(2, '0')}.${mStr}.${year}`);
+	let startDay = startComp?.day ?? 1;
+	let endDay = endComp?.day ?? daysInMonth;
+
+	if (effectiveStartDate) {
+		const effStart = parseDateComponents(effectiveStartDate);
+		if (effStart && effStart.year === year && effStart.month === month) {
+			if (effStart.day > startDay) {
+				startDay = effStart.day;
+				startDate = `${String(startDay).padStart(2, '0')}.${mStr}.${year}`;
+			}
+		}
+	}
+
+	if (effectiveEndDate) {
+		const effEnd = parseDateComponents(effectiveEndDate);
+		if (effEnd && effEnd.year === year && effEnd.month === month) {
+			if (effEnd.day < endDay) {
+				endDay = effEnd.day;
+				endDate = `${String(endDay).padStart(2, '0')}.${mStr}.${year}`;
+			}
+		}
+	}
+
+	const newUnits = calculateMonthUnits(startDay, endDay, daysInMonth);
+	if (newUnits === record.monthUnits && startDate === record.startDate && endDate === record.endDate) {
+		return record;
+	}
+
+	const fullMonthlyPartTime = record.fullMonthlyPartTime || (record.fteSalary * record.weeklyHours) / 39;
+	const partTimeSalary = round2(fullMonthlyPartTime * newUnits);
+	const agaRealAmount = round2(partTimeSalary * record.agaRealRate);
+	const totalEmployerCost = round2(partTimeSalary + agaRealAmount);
+	const jcFlatRateAmount = round2(partTimeSalary * 0.19);
+	const jcTotalGross = round2(partTimeSalary + jcFlatRateAmount);
+	const jcGrantAmount = round2((jcTotalGross * record.jcDegressionPct) / 100);
+	const landSvShortfall = round2(partTimeSalary * (record.agaRealRate - 0.19));
+	const landDegressionAmount = round2((jcTotalGross * (100 - record.jcDegressionPct)) / 100);
+	const skRate = sachkostenMonthly !== undefined ? sachkostenMonthly : (record.sachkostenAmount || 155);
+	const sachkostenAmount = round2(skRate * newUnits);
+
+	return {
+		...record,
+		startDate,
+		endDate,
+		monthUnits: newUnits,
+		partTimeSalary,
+		jcFlatRateAmount,
+		jcTotalGross,
+		jcGrantAmount,
+		agaRealAmount,
+		totalEmployerCost,
+		landSvShortfall,
+		landDegressionAmount,
+		sachkostenAmount
+	};
 }
 
 export function calculate5YearEndDate(startDateStr: string): string {
@@ -447,21 +501,29 @@ export function transformSgb16i(
 			? options.customStartDate
 			: participant.runtimeStart;
 
+	let effectiveEndDate: string | undefined = undefined;
+	if (runtimeScope === 'exit_date' && participant.runtimeEnd) {
+		effectiveEndDate = participant.runtimeEnd;
+	} else if (runtimeScope === 'foerderperiode') {
+		effectiveEndDate = '31.12.2029';
+	} else if (runtimeScope === 'custom' && options.customEndDate) {
+		effectiveEndDate = options.customEndDate;
+	}
+
 	if (effectiveStartDate) {
 		records = records.filter(r => isRecordWithinStartDate(r, effectiveStartDate));
 	}
 
-	if (runtimeScope === 'exit_date' && participant.runtimeEnd) {
-		records = records.filter(r => isRecordWithinExitDate(r, participant.runtimeEnd));
-	} else if (runtimeScope === 'foerderperiode') {
-		records = records.filter(r => isRecordWithinExitDate(r, '31.12.2029'));
-	} else if (runtimeScope === 'custom' && options.customEndDate) {
-		records = records.filter(r => isRecordWithinExitDate(r, options.customEndDate!));
+	if (effectiveEndDate) {
+		records = records.filter(r => isRecordWithinExitDate(r, effectiveEndDate));
 	} else if (options.restrictToYear && options.restrictToYear > 0) {
 		const yr = options.restrictToYear;
 		records = records.filter(r => r.year <= yr);
 	}
 	// 'full_5_years' uses all records (which spans up to 60 months)
+
+	// Dynamically clip boundaries (first and last month) to effectiveStartDate and effectiveEndDate
+	records = records.map(r => clipRecordDateRange(r, effectiveStartDate, effectiveEndDate, participant.sachkostenMonthly));
 
 	// In the ZGS form, the contract runtime in Cell F2 is the fixed Laufzeit for individual lines
 	const contractRuntimeText = participant.runtimeEnd
@@ -879,14 +941,15 @@ export function transformSgb16i(
 		if (jszRecord) {
 			const totalJszWithAga = round2(jszRecord.jszAmount + jszRecord.jszAgaAmount);
 			const rowNumber = landRows.length + 1;
-			const monthCountInYear = round2(monthsInYear.reduce((sum, r) => sum + (r.monthUnits || 1.0), 0));
+			const allMonthsInYear = allProcessedRecords.filter(r => r.year === y);
+			const totalEmploymentMonthsInYear = round2(allMonthsInYear.reduce((sum, r) => sum + (r.monthUnits || 1.0), 0));
 
 			const yearlyAmounts: Record<number, number> = {};
 			for (const yr of years) yearlyAmounts[yr] = yr === y ? totalJszWithAga : 0;
 
 			let explanationText = `85% vom Septembergehalt, wenn beschäftigt am 1.12.`;
-			if (monthCountInYear < 12) {
-				const countStr = monthCountInYear % 1 === 0 ? String(monthCountInYear) : monthCountInYear.toFixed(1).replace('.', ',');
+			if (totalEmploymentMonthsInYear < 12) {
+				const countStr = totalEmploymentMonthsInYear % 1 === 0 ? String(totalEmploymentMonthsInYear) : totalEmploymentMonthsInYear.toFixed(1).replace('.', ',');
 				explanationText = `anteilig für ${countStr} Monate, 85% vom Septembergehalt, wenn beschäftigt am 1.12.`;
 			}
 

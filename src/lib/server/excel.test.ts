@@ -47,4 +47,46 @@ describe('Excel Parser', () => {
 		});
 		expect(jszRecords.length).toBe(4);
 	});
+
+	it.skipIf(!fs.existsSync('sample_data/Berechnungsblatt Fr. Manuela Beier.xlsx'))('parses sample_data/Berechnungsblatt Fr. Manuela Beier.xlsx and calculates custom start date 16.12.2024 correctly', async () => {
+		const { transformSgb16i } = await import('#lib/grants/sgb16i');
+		const buf = fs.readFileSync('sample_data/Berechnungsblatt Fr. Manuela Beier.xlsx');
+		const parsed = parseExcelBuffer(buf);
+
+		expect(parsed.participant.name).toBe('Frau Manuela Beier');
+		expect(parsed.participant.tariffGroup).toBe('EG2');
+		expect(parsed.participant.tariffStep).toBe('ES1');
+		expect(parsed.participant.runtimeStart).toBe('01.07.2023');
+		expect(parsed.participant.runtimeEnd).toBe('15.11.2027');
+
+		// Transform with custom start date 16.12.2024
+		const result = transformSgb16i(parsed.records, parsed.participant, {
+			includeOffsetRows: true,
+			runtimeStartScope: 'custom',
+			customStartDate: '16.12.2024',
+			runtimeScope: 'exit_date'
+		});
+
+		// 16.12.2024 to 15.11.2027 = 35.0 months
+		expect(result.runtimeMonths).toBe(35);
+		expect(result.years).toEqual([2024, 2025, 2026, 2027]);
+
+		// Tab 0 Jobcenter row 1 starts on 16.12.2024 with 2.5 months
+		expect(result.tabs[0].rows[0].calculationPeriodText).toBe('16.12.2024-28.02.2025');
+		expect(result.tabs[0].rows[0].monthCount).toBe(2.5);
+
+		// Tab 1 Landesmittel row 1 starts on 16.12.2024 with 2.5 months
+		expect(result.tabs[1].rows[0].calculationPeriodText).toBe('16.12.2024-28.02.2025');
+		expect(result.tabs[1].rows[0].monthCount).toBe(2.5);
+
+		// Tab 2 Sachkosten: 35.0 months * 221 € = 7,735.00 €
+		expect(result.tabs[2].rows[0].calculationPeriodText).toBe('16.12.2024 - 15.11.2027');
+		expect(result.tabs[2].rows[0].monthCount).toBe(35);
+		expect(result.tabs[2].grandTotal).toBe(7735);
+
+		// Overall controls MATCH
+		expect(result.controls.overallStatus).toBe('MATCH');
+		expect(result.controls.totalDelta).toBe(0);
+	});
 });
+

@@ -1,12 +1,44 @@
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
-import { calculateTvlComparison, calculatePeriodMonths } from './tvl-comparison';
+import { calculateTvlComparison, calculatePeriodMonths, calculateTariffStepAtDate } from './tvl-comparison';
 import { getTvlTariffEntry, DEFAULT_INSURANCE_FUNDS } from './tvl-tariff-data';
 import { getAwoTariffSalary } from './awo-tariff-data';
 import { generateTvlComparisonWorkbook } from './tvl-template-exporter';
 import type { MonthlyRecord, ParticipantInfo, InsuranceFundDetails } from '#lib/types/grant';
 
 describe('TV-L Comparison Calculation Engine', () => {
+	it('calculates experience step at date accurately based on the sequential duration rule (ES s requires s years)', () => {
+		// Scenario A: Starting at ES1 on 01.01.2020
+		const startA = { day: 1, month: 1, year: 2020 };
+		expect(calculateTariffStepAtDate({ day: 1, month: 1, year: 2020 }, startA, 1)).toBe(1);
+		expect(calculateTariffStepAtDate({ day: 31, month: 12, year: 2020 }, startA, 1)).toBe(1);
+		// After 1 yr in ES1 -> ES2 on 01.01.2021
+		expect(calculateTariffStepAtDate({ day: 1, month: 1, year: 2021 }, startA, 1)).toBe(2);
+		expect(calculateTariffStepAtDate({ day: 31, month: 12, year: 2022 }, startA, 1)).toBe(2);
+		// After 2 yrs in ES2 -> ES3 on 01.01.2023
+		expect(calculateTariffStepAtDate({ day: 1, month: 1, year: 2023 }, startA, 1)).toBe(3);
+		expect(calculateTariffStepAtDate({ day: 31, month: 12, year: 2025 }, startA, 1)).toBe(3);
+		// After 3 yrs in ES3 -> ES4 on 01.01.2026
+		expect(calculateTariffStepAtDate({ day: 1, month: 1, year: 2026 }, startA, 1)).toBe(4);
+		expect(calculateTariffStepAtDate({ day: 31, month: 12, year: 2029 }, startA, 1)).toBe(4);
+		// After 4 yrs in ES4 -> ES5 on 01.01.2030
+		expect(calculateTariffStepAtDate({ day: 1, month: 1, year: 2030 }, startA, 1)).toBe(5);
+		expect(calculateTariffStepAtDate({ day: 31, month: 12, year: 2034 }, startA, 1)).toBe(5);
+		// After 5 yrs in ES5 -> ES6 on 01.01.2035
+		expect(calculateTariffStepAtDate({ day: 1, month: 1, year: 2035 }, startA, 1)).toBe(6);
+
+		// Scenario B: Starting at ES2 on 16.11.2022 (e.g. recognized prior experience)
+		const startB = { day: 16, month: 11, year: 2022 };
+		expect(calculateTariffStepAtDate({ day: 15, month: 11, year: 2024 }, startB, 2)).toBe(2); // 2 years in ES2
+		expect(calculateTariffStepAtDate({ day: 16, month: 11, year: 2024 }, startB, 2)).toBe(3); // Advances to ES3 on 16.11.2024
+		expect(calculateTariffStepAtDate({ day: 15, month: 11, year: 2027 }, startB, 2)).toBe(3); // 3 years in ES3
+		expect(calculateTariffStepAtDate({ day: 16, month: 11, year: 2027 }, startB, 2)).toBe(4); // Advances to ES4 on 16.11.2027
+
+		// Scenario C: Starting at ES3 on 01.08.2023
+		const startC = { day: 1, month: 8, year: 2023 };
+		expect(calculateTariffStepAtDate({ day: 31, month: 7, year: 2026 }, startC, 3)).toBe(3); // 3 years in ES3
+		expect(calculateTariffStepAtDate({ day: 1, month: 8, year: 2026 }, startC, 3)).toBe(4); // Advances to ES4 on 01.08.2026
+	});
 	it('calculates period months accurately according to TV-L rules', () => {
 		// Left period: 01.01.2026 to 15.01.2026
 		const left = calculatePeriodMonths('01.01.2026', '15.01.2026', 4);
@@ -43,7 +75,7 @@ describe('TV-L Comparison Calculation Engine', () => {
 			weeklyHours: 30,
 			fullTimeHours: 39,
 			tariffGroup: 'EG 2',
-			tariffStep: 'ES 2',
+			tariffStep: 'ES 1',
 			sachkostenMonthly: 155,
 			childrenCount: 0,
 			healthInsuranceName: 'DAK (15,9%)',
@@ -223,6 +255,214 @@ describe('TV-L Comparison Calculation Engine', () => {
 		expect(expSheet['V21']?.v).toBe(1923.85);
 	});
 
+	it('reproduces Marina Schuhmacher 2026 TV-L comparison sheet exactly with no Stufenaufstieg in 2026', () => {
+		const participant: ParticipantInfo = {
+			name: 'Schuhmacher / Barbara',
+			runtimeStart: '16.11.2022',
+			runtimeEnd: '15.11.2027',
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			tariffGroup: 'E2',
+			tariffStep: 'ES 1', // Starts 16.11.2022 at ES1 -> 16.11.2023 ES2 -> 16.11.2025 ES3 -> stays in ES3 until 15.11.2028
+			sachkostenMonthly: 221,
+			childrenCount: 2,
+			healthInsuranceName: 'AOK Nordost',
+			defaultAgaRate: 0.2387
+		};
+
+		const insuranceFunds: InsuranceFundDetails[] = [
+			{
+				name: 'AOK BLN-BRB',
+				kvRate: 0.073,
+				zusatzbeitragTotal: 0.027,
+				zusatzbeitragAg: 0.0135,
+				rvRate: 0.093,
+				avRate: 0.013,
+				pvRate: 0.018,
+				u1Rate: 0.013,
+				u2Rate: 0.0044,
+				u3Rate: 0.0015,
+				agaRate: 0.2294
+			},
+			...DEFAULT_INSURANCE_FUNDS
+		];
+
+		// 12 monthly records for 2026 (Jan-Aug: 2188.35 / Sep-Dec: 2263.35 / Nov split due to Degression 80->70% with same FTE salary 2942.36)
+		const records2026: MonthlyRecord[] = [
+			// Jan - Aug 2026 (8 months in E2/3, 2188.35)
+			...[1, 2, 3, 4, 5, 6, 7, 8].map(m => {
+				const lastDay = new Date(2026, m, 0).getDate();
+				return {
+					date: `2026-${String(m).padStart(2, '0')}-${lastDay}`,
+					year: 2026,
+					month: m,
+					monthUnits: 1.0,
+					startDate: `01.${String(m).padStart(2, '0')}.2026`,
+					endDate: `${lastDay}.${String(m).padStart(2, '0')}.2026`,
+					fteSalary: 2844.86,
+					partTimeSalary: 2188.35,
+					weeklyHours: 30,
+					fullTimeHours: 39,
+					jcFlatRateAmount: 415.79,
+					jcTotalGross: 2604.14,
+					jcDegressionPct: 80,
+					jcGrantAmount: 2083.31,
+					agaRealRate: 0.2387,
+					agaRealAmount: 522.36,
+					totalEmployerCost: 2710.71,
+					landSvShortfall: 106.57,
+					landDegressionAmount: 520.83,
+					jszAmount: 0,
+					jszAgaAmount: 0,
+					sachkostenAmount: 221.00
+				};
+			}),
+			// Sep - Oct 2026 (2 months at 2263.35, Tariferhöhung zum 01.09)
+			...[9, 10].map(m => {
+				const lastDay = new Date(2026, m, 0).getDate();
+				return {
+					date: `2026-${String(m).padStart(2, '0')}-${lastDay}`,
+					year: 2026,
+					month: m,
+					monthUnits: 1.0,
+					startDate: `01.${String(m).padStart(2, '0')}.2026`,
+					endDate: `${lastDay}.${String(m).padStart(2, '0')}.2026`,
+					fteSalary: 2942.36,
+					partTimeSalary: 2263.35,
+					weeklyHours: 30,
+					fullTimeHours: 39,
+					jcFlatRateAmount: 430.04,
+					jcTotalGross: 2693.39,
+					jcDegressionPct: 80,
+					jcGrantAmount: 2154.71,
+					agaRealRate: 0.2387,
+					agaRealAmount: 540.26,
+					totalEmployerCost: 2803.62,
+					landSvShortfall: 110.23,
+					landDegressionAmount: 538.68,
+					jszAmount: 0,
+					jszAgaAmount: 0,
+					sachkostenAmount: 221.00
+				};
+			}),
+			// Nov 2026 Part 1 (01.11 - 15.11, Degression 80%, FTE 2942.36)
+			{
+				date: '2026-11-15',
+				year: 2026,
+				month: 11,
+				monthUnits: 0.5,
+				startDate: '01.11.2026',
+				endDate: '15.11.2026',
+				fteSalary: 2942.36,
+				partTimeSalary: 1131.68,
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: 215.02,
+				jcTotalGross: 1346.70,
+				jcDegressionPct: 80,
+				jcGrantAmount: 1077.36,
+				agaRealRate: 0.2387,
+				agaRealAmount: 270.13,
+				totalEmployerCost: 1401.81,
+				landSvShortfall: 55.11,
+				landDegressionAmount: 269.34,
+				jszAmount: 0,
+				jszAgaAmount: 0,
+				sachkostenAmount: 110.50
+			},
+			// Nov 2026 Part 2 (16.11 - 30.11, Degression 70%, same FTE 2942.36)
+			{
+				date: '2026-11-30',
+				year: 2026,
+				month: 11,
+				monthUnits: 0.5,
+				startDate: '16.11.2026',
+				endDate: '30.11.2026',
+				fteSalary: 2942.36,
+				partTimeSalary: 1131.68,
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: 215.02,
+				jcTotalGross: 1346.70,
+				jcDegressionPct: 70,
+				jcGrantAmount: 942.69,
+				agaRealRate: 0.2387,
+				agaRealAmount: 270.13,
+				totalEmployerCost: 1401.81,
+				landSvShortfall: 55.11,
+				landDegressionAmount: 404.01,
+				jszAmount: 0,
+				jszAgaAmount: 0,
+				sachkostenAmount: 110.50
+			},
+			// Dec 2026 (Degression 70% + JSZ 1923.85)
+			{
+				date: '2026-12-31',
+				year: 2026,
+				month: 12,
+				monthUnits: 1.0,
+				startDate: '01.12.2026',
+				endDate: '31.12.2026',
+				fteSalary: 2942.36,
+				partTimeSalary: 2263.35,
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: 430.04,
+				jcTotalGross: 2693.39,
+				jcDegressionPct: 70,
+				jcGrantAmount: 1885.37,
+				agaRealRate: 0.2387,
+				agaRealAmount: 540.26,
+				totalEmployerCost: 2803.62,
+				landSvShortfall: 110.23,
+				landDegressionAmount: 808.02,
+				jszAmount: 1923.85,
+				jszAgaAmount: 459.22,
+				sachkostenAmount: 221.00
+			}
+		];
+
+		const customRates = {
+			selectedInsuranceName: 'AOK BLN-BRB',
+			kkZusatzRate: 0.01345,
+			u1Rate: 0.0130,
+			u2Rate: 0.0044,
+			u3Rate: 0.0015
+		};
+
+		const result = calculateTvlComparison(records2026, participant, 2026, customRates, insuranceFunds);
+
+		// Critical assertion: No step upgrade in 2026 for Marina Schuhmacher
+		expect(result.inputs.hasStepUpgrade).toBe(false);
+		expect(result.periodRight).toBeUndefined();
+
+		// Left period covers the whole year in E2/3
+		expect(result.inputs.tariffGroupStepLeft).toBe('E2/3');
+		expect(result.periodLeft.tariffCode).toBe('E2/3');
+		expect(result.periodLeft.startDate).toBe('01.01.2026');
+		expect(result.periodLeft.endDate).toBe('31.12.2026');
+		expect(result.periodLeft.totalMonths).toBe(12);
+
+		// Salaries
+		expect(result.periodLeft.tvl394JanMar).toBe(2917.80);
+		expect(result.periodLeft.tvlUmJanMar).toBe(2221.68);
+		expect(result.periodLeft.tvl394AbApr).toBe(3017.80);
+		expect(result.periodLeft.tvlUmAbApr).toBe(2297.82);
+		expect(result.periodLeft.istJanMar).toBe(2188.35);
+		expect(result.periodLeft.istAbApr).toBe(2263.35);
+
+		// JSZ
+		expect(result.periodLeft.jsz394).toBe(2638.46);
+		expect(result.periodLeft.jszUm).toBe(2008.98);
+		expect(result.periodLeft.jszIst).toBe(1923.85);
+
+		// Totals match Excel exactly to the cent
+		expect(result.totalPersonalkostenTvl).toBe(36051.95);
+		expect(result.totalPersonalkostenIst).toBe(35444.39);
+		expect(result.totalDifference).toBe(-607.56);
+		expect(result.isBesserstellungsverbotCompliant).toBe(true);
+	});
+
 	it('correctly autodetects Krankenkasse from W2 cell string representations', () => {
 		const baseParticipant: ParticipantInfo = {
 			name: 'Test Person',
@@ -290,7 +530,7 @@ describe('TV-L Comparison Calculation Engine', () => {
 			weeklyHours: 30,
 			fullTimeHours: 39,
 			tariffGroup: 'EG 2',
-			tariffStep: 'ES 2',
+			tariffStep: 'ES 1',
 			sachkostenMonthly: 155,
 			childrenCount: 0,
 			healthInsuranceName: 'DAK (15,9%)',
@@ -433,22 +673,22 @@ describe('TV-L Comparison Calculation Engine', () => {
 			weeklyHours: 30,
 			fullTimeHours: 39,
 			tariffGroup: 'EG 2',
-			tariffStep: 'ES 2',
+			tariffStep: 'ES 1',
 			sachkostenMonthly: 155,
 			childrenCount: 0,
 			healthInsuranceName: 'DAK',
 			defaultAgaRate: 0.2314
 		};
 
-		// Case A: Compliant records
+		// Case A: Compliant records (Jan 2026 before 16.01 -> ES2)
 		const compliantRecords: MonthlyRecord[] = [
 			{
-				date: '2026-01-31',
+				date: '2026-01-15',
 				year: 2026,
 				month: 1,
-				monthUnits: 1.0,
+				monthUnits: 15 / 31,
 				startDate: '01.01.2026',
-				endDate: '31.01.2026',
+				endDate: '15.01.2026',
 				fteSalary: 2781.91,
 				partTimeSalary: 2139.93,
 				weeklyHours: 30,
@@ -510,7 +750,7 @@ describe('TV-L Comparison Calculation Engine', () => {
 			weeklyHours: 30,
 			fullTimeHours: 39,
 			tariffGroup: 'EG 2',
-			tariffStep: 'ES 2',
+			tariffStep: 'ES 1',
 			sachkostenMonthly: 155,
 			childrenCount: 0,
 			healthInsuranceName: 'DAK',

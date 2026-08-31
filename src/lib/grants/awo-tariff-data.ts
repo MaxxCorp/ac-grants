@@ -244,6 +244,47 @@ export function getApplicableAwoPeriod(year: number, month: number): AwoTariffPe
 }
 
 /**
+ * Calculates the experience level (Stufe 1..6) at a specific date based on contract entry date
+ * and initial starting experience level (default ES1).
+ * In TV-L / TVöD / AWO collective bargaining agreements:
+ * - Stay in Stufe 1: 1 year (12 months) -> advances to Stufe 2
+ * - Stay in Stufe 2: 2 years (24 months) -> advances to Stufe 3
+ * - Stay in Stufe 3: 3 years (36 months) -> advances to Stufe 4
+ * - Stay in Stufe 4: 4 years (48 months) -> advances to Stufe 5
+ * - Stay in Stufe 5: 5 years (60 months) -> advances to Stufe 6
+ * (The number of the current Erfahrungsstufe determines the number of years until advancing to the next one).
+ */
+export function calculateTariffStepAtDate(
+	targetDate: { day: number; month: number; year: number },
+	startDate: { day: number; month: number; year: number },
+	initialStep: number = 1
+): number {
+	const diffMonths =
+		(targetDate.year - startDate.year) * 12 +
+		(targetDate.month - startDate.month) +
+		(targetDate.day >= startDate.day ? 0 : -1);
+
+	if (diffMonths < 0) {
+		return Math.max(1, Math.min(6, initialStep));
+	}
+
+	let currentStep = Math.max(1, Math.min(6, initialStep));
+	let remainingMonths = diffMonths;
+
+	while (currentStep < 6) {
+		const requiredMonthsInStep = currentStep * 12;
+		if (remainingMonths >= requiredMonthsInStep) {
+			remainingMonths -= requiredMonthsInStep;
+			currentStep += 1;
+		} else {
+			break;
+		}
+	}
+
+	return currentStep;
+}
+
+/**
  * Calculates the participant's experience step for a specific monthly record,
  * accounting for entry date anniversary milestones according to TV-L / AWO rules.
  */
@@ -251,7 +292,7 @@ export function determineParticipantStepForRecord(
 	participant: ParticipantInfo,
 	rec: MonthlyRecord
 ): number {
-	const initialStepNum = parseInt((participant.tariffStep.match(/\d+/) || ['1'])[0], 10);
+	const initialStepNum = parseInt((participant.tariffStep.match(/\d+/) || ['1'])[0], 10) || 1;
 
 	// 1. Check if rec.fteSalary matches an exact step in AWO tariff scale for this period
 	const period = getApplicableAwoPeriod(rec.year, rec.month);
@@ -273,15 +314,7 @@ export function determineParticipantStepForRecord(
 	if (!startParsed) return initialStepNum;
 
 	const recordDay = rec.startDate ? (parseDateDMY(rec.startDate)?.day || 1) : 1;
-	const diffMonths = (rec.year - startParsed.year) * 12 + (rec.month - startParsed.month) + (recordDay >= startParsed.day ? 0 : -1);
-	const diffYears = diffMonths / 12;
-
-	if (diffYears >= 15) return 6;
-	if (diffYears >= 10) return 5;
-	if (diffYears >= 6) return 4;
-	if (diffYears >= 3) return 3;
-	if (diffYears >= 1) return 2;
-	return Math.max(1, initialStepNum);
+	return calculateTariffStepAtDate({ day: recordDay, month: rec.month, year: rec.year }, startParsed, initialStepNum);
 }
 
 /**

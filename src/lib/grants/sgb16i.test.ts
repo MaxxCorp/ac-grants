@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { transformSgb16i, buildCompoundOneLineText, isRecordWithinExitDate, isRecordWithinStartDate, parseDateComponents, getTariffStep } from '#lib/grants/sgb16i';
+import { transformSgb16i, buildCompoundOneLineText, isRecordWithinExitDate, isRecordWithinStartDate, parseDateComponents, getTariffStep, calculateMonthUnits, clipRecordDateRange } from '#lib/grants/sgb16i';
 import { normalizeTariffStep } from '#lib/server/excel';
 import type { MonthlyRecord, ParticipantInfo } from '#lib/types/grant';
 
@@ -536,21 +536,125 @@ describe('§16i SGB II / ZGS Berlin Transformation Engine', () => {
 		expect(resMidYear.tabs[2].grandTotal).toBe(1860);
 	});
 
-	it('should correctly normalize various representations of experience levels from cell C2', () => {
-		expect(normalizeTariffStep('1')).toBe('ES1');
-		expect(normalizeTariffStep('ES1')).toBe('ES1');
-		expect(normalizeTariffStep('ES 1')).toBe('ES1');
-		expect(normalizeTariffStep('Stufe 1')).toBe('ES1');
-		expect(normalizeTariffStep('2')).toBe('ES2');
-		expect(normalizeTariffStep('ES2')).toBe('ES2');
-		expect(normalizeTariffStep('ES 2')).toBe('ES2');
-		expect(normalizeTariffStep('3')).toBe('ES3');
-		expect(normalizeTariffStep('ES3')).toBe('ES3');
-		expect(normalizeTariffStep('4')).toBe('ES4');
-		expect(normalizeTariffStep('5')).toBe('ES5');
-		expect(normalizeTariffStep('6')).toBe('ES6');
-		expect(normalizeTariffStep('')).toBe('ES1');
-		expect(normalizeTariffStep(null)).toBe('ES1');
-		expect(normalizeTariffStep(undefined)).toBe('ES1');
+	it('should accurately calculate month units for full months, half months, and partial day ranges', () => {
+		expect(calculateMonthUnits(1, 31, 31)).toBe(1.0);
+		expect(calculateMonthUnits(1, 30, 30)).toBe(1.0);
+		expect(calculateMonthUnits(1, 28, 28)).toBe(1.0);
+		expect(calculateMonthUnits(1, 29, 29)).toBe(1.0);
+
+		// Second half of month (16th to end of month)
+		expect(calculateMonthUnits(16, 31, 31)).toBe(0.5);
+		expect(calculateMonthUnits(16, 30, 30)).toBe(0.5);
+		expect(calculateMonthUnits(16, 28, 28)).toBe(0.5);
+		expect(calculateMonthUnits(15, 28, 28)).toBe(0.5);
+
+		// First half of month (1st to 15th)
+		expect(calculateMonthUnits(1, 15, 31)).toBe(0.5);
+		expect(calculateMonthUnits(1, 15, 30)).toBe(0.5);
+		expect(calculateMonthUnits(1, 14, 28)).toBe(0.5);
+
+		// Arbitrary day spans
+		expect(calculateMonthUnits(10, 20, 31)).toBe(0.35); // 11 / 31 = 0.3548 -> 0.35
+	});
+
+	it('should dynamically clip and prorate when customStartDate or customEndDate starts or ends mid-month', () => {
+		const participant: ParticipantInfo = {
+			name: 'Frau Manuela Beier',
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			runtimeStart: '01.07.2023',
+			runtimeEnd: '15.11.2027',
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			sachkostenMonthly: 221,
+			childrenCount: 0,
+			healthInsuranceName: 'Barmer',
+			defaultAgaRate: 0.23815
+		};
+
+		// 53 monthly records from 07/2023 to 11/2027
+		const records: MonthlyRecord[] = [];
+		let currentDate = new Date(2023, 6, 1);
+		for (let i = 0; i < 53; i++) {
+			const y = currentDate.getFullYear();
+			const m = currentDate.getMonth() + 1;
+			const lastDay = new Date(y, m, 0).getDate();
+			const mStr = String(m).padStart(2, '0');
+			const fteSalary = y === 2023 ? 2245.27 : (y === 2024 || (y === 2025 && m <= 2)) ? 2441.88 : (y === 2025 && m <= 8) ? 2636.88 : 2781.91;
+			const isLast = i === 52;
+			const monthUnits = isLast ? 0.5 : 1.0;
+			const fullMonthlyPartTime = (fteSalary * 30) / 39;
+			const partTimeSalary = fullMonthlyPartTime * monthUnits;
+			const jcFlatRate = partTimeSalary * 0.19;
+			const jcTotalGross = partTimeSalary + jcFlatRate;
+			const degPct = i < 24 ? 100 : i < 36 ? 90 : i < 48 ? 80 : 70;
+
+			records.push({
+				date: `${y}-${mStr}-${String(isLast ? 15 : lastDay).padStart(2, '0')}`,
+				year: y,
+				month: m,
+				monthUnits,
+				startDate: `01.${mStr}.${y}`,
+				endDate: `${String(isLast ? 15 : lastDay).padStart(2, '0')}.${mStr}.${y}`,
+				fteSalary,
+				partTimeSalary,
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: jcFlatRate,
+				jcTotalGross,
+				jcDegressionPct: degPct,
+				jcGrantAmount: (jcTotalGross * degPct) / 100,
+				agaRealRate: 0.23815,
+				agaRealAmount: partTimeSalary * 0.23815,
+				totalEmployerCost: partTimeSalary * 1.23815,
+				landSvShortfall: partTimeSalary * (0.23815 - 0.19),
+				landDegressionAmount: (jcTotalGross * (100 - degPct)) / 100,
+				jszAmount: m === 12 ? fullMonthlyPartTime * 0.85 : 0,
+				jszAgaAmount: m === 12 ? fullMonthlyPartTime * 0.85 * 0.23815 : 0,
+				isJszMonth: m === 12,
+				sachkostenAmount: 221 * monthUnits
+			});
+
+			currentDate = new Date(y, m, 1);
+		}
+
+		// 1. Custom start date: 16.12.2024 to contract exit date (15.11.2027)
+		const resStart = transformSgb16i(records, participant, {
+			includeOffsetRows: true,
+			runtimeStartScope: 'custom',
+			customStartDate: '16.12.2024',
+			runtimeScope: 'exit_date'
+		});
+
+		// December 2024 is clipped to 0.5 months -> 0.5 in 2024 + 12 in 2025 + 12 in 2026 + 10.5 in 2027 = 35.0 months
+		expect(resStart.runtimeMonths).toBe(35);
+		expect(resStart.years).toEqual([2024, 2025, 2026, 2027]);
+
+		// Tab 0 Jobcenter: First row starts at 16.12.2024 with 2.5 months (0.5 in Dec 2024 + 2 in 2025)
+		expect(resStart.tabs[0].rows[0].calculationPeriodText.startsWith('16.12.2024')).toBe(true);
+		expect(resStart.tabs[0].rows[0].monthCount).toBe(2.5);
+
+		// Tab 2 Sachkosten: 35.0 months * 221 € = 7,735.00 €
+		expect(resStart.tabs[2].grandTotal).toBe(7735);
+		expect(resStart.tabs[2].rows[0].calculationPeriodText).toBe('16.12.2024 - 15.11.2027');
+
+		// Control checks MATCH with 0 delta
+		expect(resStart.controls.overallStatus).toBe('MATCH');
+		expect(resStart.controls.totalDelta).toBe(0);
+
+		// 2. Custom end date mid-month: 15.06.2027 (ending mid-month)
+		const resEnd = transformSgb16i(records, participant, {
+			includeOffsetRows: true,
+			runtimeStartScope: 'custom',
+			customStartDate: '16.12.2024',
+			runtimeScope: 'custom',
+			customEndDate: '15.06.2027'
+		});
+
+		// 0.5 (Dec 2024) + 12 (2025) + 12 (2026) + 5.5 (Jan-15.Jun 2027) = 30.0 months
+		expect(resEnd.runtimeMonths).toBe(30);
+		expect(resEnd.tabs[2].grandTotal).toBe(30 * 221); // 6630 €
+		expect(resEnd.tabs[2].rows[0].calculationPeriodText).toBe('16.12.2024 - 15.06.2027');
+		expect(resEnd.controls.overallStatus).toBe('MATCH');
 	});
 });

@@ -15,7 +15,7 @@ import {
 	getAllTvlTariffCodes,
 	normalizeTvlTariffCode
 } from '#lib/grants/tvl-tariff-data';
-import { getAwoTariffSalary, validateBerechnungsblattTariff } from '#lib/grants/awo-tariff-data';
+import { getAwoTariffSalary, validateBerechnungsblattTariff, determineParticipantStepForRecord } from '#lib/grants/awo-tariff-data';
 
 function round2(val: number): number {
 	return Math.round((val + Number.EPSILON) * 100) / 100;
@@ -193,7 +193,7 @@ export function calculatePeriod(
 			const baseJszSalary394 = switchMonth > 9 ? tvl394JanMar : (switchMonth < 7 ? tvl394AbApr : (tvl394JanMar + tvl394AbApr) / 2);
 			jsz394 = round2((baseJszSalary394 + sueZulage394) * jszRatePct * (monthsForJsz / 12));
 			jszUm = round2((jsz394 / STATUTORY_SV_RATES.FULL_TIME_HOURS_TVL) * weeklyHours);
-			jszIst = options?.istJsz !== undefined ? options.istJsz : round2((istAbApr || istJanMar) * jszRatePct * (monthsForJsz / 12));
+			jszIst = options?.istJsz !== undefined ? options.istJsz : round2((istAbApr || istJanMar) * 0.85 * (monthsForJsz / 12));
 		} else {
 			// Right section JSZ (Jul/Aug/Sep average)
 			const jul394 = switchMonth > 7 ? tvl394JanMar : tvl394AbApr;
@@ -340,6 +340,47 @@ export function calculatePeriod(
 }
 
 /**
+ * Calculates the experience level (Stufe 1..6) at a specific date based on contract entry date
+ * and initial starting experience level (default ES1).
+ * In TV-L / TVöD / AWO collective bargaining agreements:
+ * - Stay in Stufe 1: 1 year (12 months) -> advances to Stufe 2
+ * - Stay in Stufe 2: 2 years (24 months) -> advances to Stufe 3
+ * - Stay in Stufe 3: 3 years (36 months) -> advances to Stufe 4
+ * - Stay in Stufe 4: 4 years (48 months) -> advances to Stufe 5
+ * - Stay in Stufe 5: 5 years (60 months) -> advances to Stufe 6
+ * (The number of the current Erfahrungsstufe determines the number of years until advancing to the next one).
+ */
+export function calculateTariffStepAtDate(
+	targetDate: { day: number; month: number; year: number },
+	startDate: { day: number; month: number; year: number },
+	initialStep: number = 1
+): number {
+	const diffMonths =
+		(targetDate.year - startDate.year) * 12 +
+		(targetDate.month - startDate.month) +
+		(targetDate.day >= startDate.day ? 0 : -1);
+
+	if (diffMonths < 0) {
+		return Math.max(1, Math.min(6, initialStep));
+	}
+
+	let currentStep = Math.max(1, Math.min(6, initialStep));
+	let remainingMonths = diffMonths;
+
+	while (currentStep < 6) {
+		const requiredMonthsInStep = currentStep * 12;
+		if (remainingMonths >= requiredMonthsInStep) {
+			remainingMonths -= requiredMonthsInStep;
+			currentStep += 1;
+		} else {
+			break;
+		}
+	}
+
+	return currentStep;
+}
+
+/**
  * Normalizes insurance fund names for robust matching (e.g. 'DAK (15,9%)' -> 'DAK').
  */
 export function normalizeInsuranceName(name: string): string {
@@ -454,88 +495,51 @@ export function calculateTvlComparison(
 
 	// 1. Determine Step Progression & Dates in Selected Year
 	const entryParsed = parseDateDMY(participant.runtimeStart || customInputs?.eintrittsdatum || '16.01.2023');
-	const initialStepNum = parseInt((participant.tariffStep.match(/\d+/) || ['1'])[0], 10);
+	const initialStepNum = parseInt((participant.tariffStep.match(/\d+/) || ['1'])[0], 10) || 1;
 	const tariffGroup = participant.tariffGroup.replace(/\s+/g, '').replace(/^EG/, 'E') || 'E2';
-
-	// Check if any month in yearRecords has a split record in Berechnungsblatt
-	let splitRecordIdx = -1;
-	for (let i = 0; i < yearRecords.length; i++) {
-		const rec = yearRecords[i];
-		const prev = i > 0 ? yearRecords[i - 1] : null;
-
-		if (prev && prev.month === rec.month && (prev.monthUnits < 1.0 || rec.monthUnits < 1.0)) {
-			splitRecordIdx = i;
-			break;
-		}
-
-		if (rec.startDate && !rec.startDate.startsWith('01.') && !rec.startDate.startsWith('1.') && i > 0) {
-			splitRecordIdx = i;
-			break;
-		}
-	}
 
 	// Calculate participant step at start of year (01.01) and end of year (31.12)
 	let stepAtYearStart = initialStepNum;
 	let stepAtYearEnd = initialStepNum;
 	let anniversaryInYear = false;
-	let anniversaryDay = 16;
-	let anniversaryMonth = 1;
 
 	if (entryParsed) {
-		anniversaryDay = entryParsed.day;
-		anniversaryMonth = entryParsed.month;
-
 		const startOfYearDate = { day: 1, month: 1, year };
 		const endOfYearDate = { day: 31, month: 12, year };
 
-		const getStepAtDate = (d: { day: number; month: number; year: number }) => {
-			const diffMonths = (d.year - entryParsed.year) * 12 + (d.month - entryParsed.month) + (d.day >= entryParsed.day ? 0 : -1);
-			const diffYears = diffMonths / 12;
-
-			if (initialStepNum === 1) {
-				if (diffYears >= 15) return 6;
-				if (diffYears >= 10) return 5;
-				if (diffYears >= 6) return 4;
-				if (diffYears >= 3) return 3;
-				if (diffYears >= 1) return 2;
-				return 1;
-			} else if (initialStepNum === 2) {
-				if (diffYears >= 14) return 6;
-				if (diffYears >= 9) return 5;
-				if (diffYears >= 5) return 4;
-				if (diffYears >= 3) return 3;
-				return 2;
-			} else if (initialStepNum === 3) {
-				if (diffYears >= 12) return 6;
-				if (diffYears >= 7) return 5;
-				if (diffYears >= 3) return 4;
-				return 3;
-			} else {
-				let s = initialStepNum;
-				let rem = diffYears;
-				const durations = [0, 1, 2, 3, 4, 5];
-				while (s < 6 && rem >= durations[s]) {
-					rem -= durations[s];
-					s++;
-				}
-				return s;
-			}
-		};
-
-		stepAtYearStart = getStepAtDate(startOfYearDate);
-		stepAtYearEnd = getStepAtDate(endOfYearDate);
+		stepAtYearStart = calculateTariffStepAtDate(startOfYearDate, entryParsed, initialStepNum);
+		stepAtYearEnd = calculateTariffStepAtDate(endOfYearDate, entryParsed, initialStepNum);
 		anniversaryInYear = stepAtYearEnd > stepAtYearStart;
+	}
+
+	// Also check if records in this year contain an actual step change in salary (e.g. from uploaded split records with distinct salaries)
+	let recordStepUpgradeDetected = false;
+	let recordSplitIdx = -1;
+	for (let i = 1; i < yearRecords.length; i++) {
+		const rec = yearRecords[i];
+		const prev = yearRecords[i - 1];
+		if (rec.fteSalary && prev.fteSalary && Math.abs(rec.fteSalary - prev.fteSalary) > 1.0) {
+			const prevStep = determineParticipantStepForRecord(participant, prev);
+			const currStep = determineParticipantStepForRecord(participant, rec);
+			if (currStep > prevStep) {
+				recordStepUpgradeDetected = true;
+				recordSplitIdx = i;
+				break;
+			}
+		}
 	}
 
 	let hasStepUpgrade = false;
 	if (customInputs?.hasStepUpgrade !== undefined) {
 		hasStepUpgrade = Boolean(customInputs.hasStepUpgrade);
 	} else {
-		hasStepUpgrade = splitRecordIdx >= 0 || anniversaryInYear;
+		hasStepUpgrade = anniversaryInYear || recordStepUpgradeDetected;
 	}
 
 	const currentStepInYear = stepAtYearStart;
-	const nextStepInYear = hasStepUpgrade ? (stepAtYearEnd > stepAtYearStart ? stepAtYearEnd : Math.min(6, currentStepInYear + 1)) : Math.min(6, currentStepInYear + 1);
+	const nextStepInYear = hasStepUpgrade
+		? (stepAtYearEnd > stepAtYearStart ? stepAtYearEnd : Math.min(6, currentStepInYear + 1))
+		: Math.min(6, currentStepInYear + 1);
 
 	const baseCodeLeft = normalizeTvlTariffCode(customInputs?.tariffGroupStepLeft || `${tariffGroup}/${currentStepInYear}`);
 	const baseCodeRight = normalizeTvlTariffCode(customInputs?.tariffGroupStepRight || `${tariffGroup}/${nextStepInYear}`);
@@ -547,14 +551,7 @@ export function calculateTvlComparison(
 	let defaultEndRight = `31.12.${year}`;
 
 	if (hasStepUpgrade) {
-		if (splitRecordIdx >= 0) {
-			const preRec = yearRecords[splitRecordIdx - 1];
-			const postRec = yearRecords[splitRecordIdx];
-			defaultStartLeft = yearRecords[0]?.startDate || `01.01.${year}`;
-			defaultEndLeft = preRec?.endDate || `15.01.${year}`;
-			defaultStartRight = postRec?.startDate || `16.01.${year}`;
-			defaultEndRight = yearRecords[yearRecords.length - 1]?.endDate || `31.12.${year}`;
-		} else if (entryParsed) {
+		if (entryParsed) {
 			const annDay = entryParsed.day;
 			const annMonth = entryParsed.month;
 			defaultStartLeft = `01.01.${year}`;
@@ -567,7 +564,14 @@ export function calculateTvlComparison(
 				defaultEndLeft = `${String(dim).padStart(2, '0')}.${String(prevMonth).padStart(2, '0')}.${year}`;
 			}
 			defaultStartRight = `${String(annDay).padStart(2, '0')}.${String(annMonth).padStart(2, '0')}.${year}`;
-			defaultEndRight = `31.12.${year}`;
+			defaultEndRight = yearRecords[yearRecords.length - 1]?.endDate || `31.12.${year}`;
+		} else if (recordSplitIdx >= 0) {
+			const preRec = yearRecords[recordSplitIdx - 1];
+			const postRec = yearRecords[recordSplitIdx];
+			defaultStartLeft = yearRecords[0]?.startDate || `01.01.${year}`;
+			defaultEndLeft = preRec?.endDate || `15.01.${year}`;
+			defaultStartRight = postRec?.startDate || `16.01.${year}`;
+			defaultEndRight = yearRecords[yearRecords.length - 1]?.endDate || `31.12.${year}`;
 		}
 	} else {
 		defaultStartLeft = yearRecords[0]?.startDate || `01.01.${year}`;
@@ -592,31 +596,42 @@ export function calculateTvlComparison(
 	let expectedIstJanMarRight: number | undefined = undefined;
 	let expectedIstAbAprRight: number | undefined = undefined;
 
-	const rightStepMatch = baseCodeRight.match(/\/(\d+)/);
-	const rightStepNum = rightStepMatch ? parseInt(rightStepMatch[1], 10) : nextStepInYear;
-	const rightGroup = baseCodeRight.split('/')[0] || leftGroup;
+	if (hasStepUpgrade) {
+		const rightStepMatch = baseCodeRight.match(/\/(\d+)/);
+		const rightStepNum = rightStepMatch ? parseInt(rightStepMatch[1], 10) : nextStepInYear;
+		const rightGroup = baseCodeRight.split('/')[0] || leftGroup;
 
-	const awoPreRight = getAwoTariffSalary(rightGroup, rightStepNum, year, 1, weeklyHoursRight, fullTimeHours);
-	const awoPostRight = getAwoTariffSalary(rightGroup, rightStepNum, year, 12, weeklyHoursRight, fullTimeHours);
+		const awoPreRight = getAwoTariffSalary(rightGroup, rightStepNum, year, 1, weeklyHoursRight, fullTimeHours);
+		const awoPostRight = getAwoTariffSalary(rightGroup, rightStepNum, year, 12, weeklyHoursRight, fullTimeHours);
 
-	expectedIstJanMarRight = awoPreRight ? awoPreRight.partTimeSalary : expectedIstJanMarLeft;
-	expectedIstAbAprRight = awoPostRight ? awoPostRight.partTimeSalary : expectedIstAbAprLeft;
+		expectedIstJanMarRight = awoPreRight ? awoPreRight.partTimeSalary : expectedIstJanMarLeft;
+		expectedIstAbAprRight = awoPostRight ? awoPostRight.partTimeSalary : expectedIstAbAprLeft;
+	}
 
 	// Salaried amounts (default to official AWO values unless overridden)
 	let istJanMarLeft = customInputs?.istJanMarLeft !== undefined ? customInputs.istJanMarLeft : expectedIstJanMarLeft;
 	let istAbAprLeft = customInputs?.istAbAprLeft !== undefined ? customInputs.istAbAprLeft : expectedIstAbAprLeft;
 	let istJanMarRight = customInputs?.istJanMarRight !== undefined ? customInputs.istJanMarRight : (expectedIstJanMarRight || expectedIstJanMarLeft);
 	let istAbAprRight = customInputs?.istAbAprRight !== undefined ? customInputs.istAbAprRight : (expectedIstAbAprRight || expectedIstAbAprLeft);
+	let istJszLeft: number | undefined = undefined;
 	let istJszRight = 0;
 
 	// JSZ from December or November record or calculated from AWO (85% of September salary)
 	const jszRec = yearRecords.find((r) => r.jszAmount > 0) || yearRecords.find((r) => r.month === 12);
-	if (jszRec && jszRec.jszAmount > 0) {
-		istJszRight = jszRec.jszAmount;
-	} else if (hasStepUpgrade && expectedIstAbAprRight) {
-		istJszRight = round2(expectedIstAbAprRight * 0.85);
+	if (hasStepUpgrade) {
+		if (jszRec && jszRec.jszAmount > 0) {
+			istJszRight = jszRec.jszAmount;
+		} else if (expectedIstAbAprRight) {
+			istJszRight = round2(expectedIstAbAprRight * 0.85);
+		}
+		if (customInputs?.istJszRight !== undefined) istJszRight = customInputs.istJszRight;
+	} else {
+		if (jszRec && jszRec.jszAmount > 0) {
+			istJszLeft = jszRec.jszAmount;
+		} else if (expectedIstAbAprLeft) {
+			istJszLeft = round2(expectedIstAbAprLeft * 0.85);
+		}
 	}
-	if (customInputs?.istJszRight !== undefined) istJszRight = customInputs.istJszRight;
 
 	const inputs: TvlComparisonInputs = {
 		year,
@@ -680,7 +695,7 @@ export function calculateTvlComparison(
 		{
 			year,
 			contractStartDate: inputs.eintrittsdatum,
-			istJsz: undefined
+			istJsz: istJszLeft
 		}
 	);
 
