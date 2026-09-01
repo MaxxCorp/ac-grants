@@ -9,6 +9,7 @@ import {
 } from './excel-generator';
 import { parseExcelBuffer } from './excel';
 import { transformSgb16i } from '#lib/grants/sgb16i';
+import type { BerechnungsblattGeneratorOptions } from '#lib/types/grant';
 
 describe('Berechnungsblatt Generator', () => {
 	it('calculates milestones for 5 years: Stufenaufstiege, Tariferhöhungen, planned exit', () => {
@@ -134,5 +135,83 @@ describe('Berechnungsblatt Generator', () => {
 		expect(result.controls.totalDelta).toBe(0);
 		expect(result.runtimeMonths).toBe(60);
 		expect(result.tabs.length).toBe(3); // Jobcenter, Landesmittel, Sachkosten
+	});
+
+	it('handles mid-month start (e.g. 16.10.2026), generating 2 lines in each degression transition month (Month 24, 36, 48)', async () => {
+		const options: BerechnungsblattGeneratorOptions = {
+			employeeName: 'Herr Michael Splitmann',
+			startDate: '2026-10-16',
+			durationMonths: 60,
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			healthInsuranceName: 'Barmer',
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			sachkostenMonthly: 155,
+			childrenCount: 0,
+			jszPercentage: 85
+		};
+
+		const buf = await generateBerechnungsblattExcel(options);
+		const parsed = parseExcelBuffer(buf);
+
+		expect(parsed.participant.name).toBe('Herr Michael Splitmann');
+		expect(parsed.participant.runtimeStart).toBe('16.10.2026');
+		expect(parsed.participant.runtimeEnd).toBe('15.10.2031');
+
+		// Total duration must sum to exactly 60.0 months
+		const totalUnits = parsed.records.reduce((sum, r) => sum + r.monthUnits, 0);
+		expect(totalUnits).toBe(60);
+
+		// Initial month 10/2026 has 1 record with 0.5 units at 100%
+		const oct2026 = parsed.records.filter(r => r.year === 2026 && r.month === 10);
+		expect(oct2026.length).toBe(1);
+		expect(oct2026[0].monthUnits).toBe(0.5);
+		expect(oct2026[0].jcDegressionPct).toBe(100);
+
+		// Degression transition 1: Month 24 (October 2028) must have 2 records!
+		// Line 1: 0.5 units at 100%
+		// Line 2: 0.5 units at 90%
+		const oct2028 = parsed.records.filter(r => r.year === 2028 && r.month === 10);
+		expect(oct2028.length).toBe(2);
+		expect(oct2028[0].monthUnits).toBe(0.5);
+		expect(oct2028[0].jcDegressionPct).toBe(100);
+		expect(oct2028[1].monthUnits).toBe(0.5);
+		expect(oct2028[1].jcDegressionPct).toBe(90);
+
+		// Degression transition 2: Month 36 (October 2029) must have 2 records!
+		// Line 1: 0.5 units at 90%
+		// Line 2: 0.5 units at 80%
+		const oct2029 = parsed.records.filter(r => r.year === 2029 && r.month === 10);
+		expect(oct2029.length).toBe(2);
+		expect(oct2029[0].monthUnits).toBe(0.5);
+		expect(oct2029[0].jcDegressionPct).toBe(90);
+		expect(oct2029[1].monthUnits).toBe(0.5);
+		expect(oct2029[1].jcDegressionPct).toBe(80);
+
+		// Degression transition 3: Month 48 (October 2030) must have 2 records!
+		// Line 1: 0.5 units at 80%
+		// Line 2: 0.5 units at 70%
+		const oct2030 = parsed.records.filter(r => r.year === 2030 && r.month === 10);
+		expect(oct2030.length).toBe(2);
+		expect(oct2030[0].monthUnits).toBe(0.5);
+		expect(oct2030[0].jcDegressionPct).toBe(80);
+		expect(oct2030[1].monthUnits).toBe(0.5);
+		expect(oct2030[1].jcDegressionPct).toBe(70);
+
+		// Final month October 2031 has 1 record with 0.5 units at 70%
+		const oct2031 = parsed.records.filter(r => r.year === 2031 && r.month === 10);
+		expect(oct2031.length).toBe(1);
+		expect(oct2031[0].monthUnits).toBe(0.5);
+		expect(oct2031[0].jcDegressionPct).toBe(70);
+
+		// SGB 16i transformation must achieve 100% MATCH
+		const result = transformSgb16i(parsed.records, parsed.participant, {
+			includeOffsetRows: true
+		});
+
+		expect(result.controls.overallStatus).toBe('MATCH');
+		expect(result.controls.totalDelta).toBe(0);
+		expect(result.runtimeMonths).toBe(60);
 	});
 });

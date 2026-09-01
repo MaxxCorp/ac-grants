@@ -65,7 +65,14 @@ export function parseDateInput(input?: string): { year: number; month: number; d
  * Calculates the end date for a given start date and duration in months.
  */
 export function calculateEndDate(startDate: { year: number; month: number; day: number }, durationMonths = 60): { year: number; month: number; day: number } {
-	let totalMonths = (startDate.year * 12 + startDate.month - 1) + durationMonths - 1;
+	let totalMonths = (startDate.year * 12 + startDate.month - 1);
+	if (startDate.day === 1) {
+		totalMonths += durationMonths - 1;
+	} else {
+		// When starting mid-month (e.g. 16th), duration is full years/months to day-1
+		// E.g. 16.11.2022 for 60 months (5 years) ends on 15.11.2027!
+		totalMonths += durationMonths;
+	}
 	const endYear = Math.floor(totalMonths / 12);
 	const endMonth = (totalMonths % 12) + 1;
 
@@ -105,6 +112,7 @@ export function getInsuranceFundByName(name = 'Barmer') {
 export function calculateMilestones(options: BerechnungsblattGeneratorOptions): GeneratorMilestone[] {
 	const start = parseDateInput(options.startDate);
 	const durationMonths = options.durationMonths || 60;
+	const end = calculateEndDate(start, durationMonths);
 	const group = options.tariffGroup || 'EG2';
 	const initialStepNum = parseInt((options.tariffStep || 'ES1').replace(/\D/g, ''), 10) || 1;
 	const weeklyHours = options.weeklyHours || 30;
@@ -114,12 +122,14 @@ export function calculateMilestones(options: BerechnungsblattGeneratorOptions): 
 	let previousStep = initialStepNum;
 	let previousFte = 0;
 
-	for (let i = 0; i < durationMonths; i++) {
+	// Total calendar span in months
+	const totalCalendarMonths = (end.year * 12 + end.month) - (start.year * 12 + start.month) + 1;
+
+	for (let i = 0; i < totalCalendarMonths; i++) {
 		const totalMonths = (start.year * 12 + start.month - 1) + i;
 		const curYear = Math.floor(totalMonths / 12);
 		const curMonth = (totalMonths % 12) + 1;
-		const lastDay = new Date(curYear, curMonth, 0).getDate();
-		const dateStr = `${String(lastDay).padStart(2, '0')}.${String(curMonth).padStart(2, '0')}.${curYear}`;
+		const isLastMonth = (curYear === end.year && curMonth === end.month);
 
 		const currentStep = calculateTariffStepAtDate(
 			{ day: start.day, month: curMonth, year: curYear },
@@ -161,12 +171,12 @@ export function calculateMilestones(options: BerechnungsblattGeneratorOptions): 
 		}
 
 		// 3. Planned Exit check (last month)
-		if (i === durationMonths - 1) {
+		if (isLastMonth) {
 			milestones.push({
 				type: 'exit',
 				year: curYear,
 				month: curMonth,
-				dateStr,
+				dateStr: formatDateDMY(end),
 				label: `Geplantes Laufzeitende (nach ${durationMonths} Monaten)`,
 				color: COLOR_EXIT
 			});

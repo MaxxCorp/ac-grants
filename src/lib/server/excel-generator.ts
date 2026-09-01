@@ -3,6 +3,7 @@ import type { BerechnungsblattGeneratorOptions, GeneratorMilestone, ParticipantI
 import {
 	getAwoTariffSalary,
 	calculateTariffStepAtDate,
+	isAwoTariffIncreaseMonth,
 	normalizeAwoGroupKey,
 	AWO_TARIFF_PERIODS
 } from '#lib/grants/awo-tariff-data';
@@ -212,32 +213,154 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 	const startYear = start.year;
 	const endYear = end.year;
 	let currentRow = 4;
-
-	// Keep track of active month index (0 to durationMonths - 1)
 	let activeMonthCounter = 0;
+	let cumulativeActiveUnits = 0;
 	let previousFteSalary = 0;
 	let previousStep = initialStepNum;
 
 	// Registry of yearly total rows for bottom summary
 	const yearlyTotalRows: { year: number; row: number }[] = [];
 
+	interface MonthRowDescriptor {
+		year: number;
+		month: number;
+		isActive: boolean;
+		dateStr: string;
+		monthUnits: number;
+		degression: number;
+		isSplitPart?: 1 | 2;
+		isLastActiveRow?: boolean;
+	}
+
+	function getDegression(cumUnits: number): number {
+		if (cumUnits >= 48) return 70;
+		if (cumUnits >= 36) return 80;
+		if (cumUnits >= 24) return 90;
+		return 100;
+	}
+
 	for (let y = startYear; y <= endYear; y++) {
 		const yearStartRow = currentRow;
 		let septemberRowNumber: number | null = null;
+		let decemberRowNumber: number | null = null;
 		let lastActiveMonthRowNumber: number | null = null;
 		let sepSalaryValue = 0;
 		let sepAgaValue = 0;
 		let yearMonthUnitsTotal = 0;
 
-		// 12 months for this calendar year
-		for (let m = 1; m <= 12; m++) {
-			const rowNum = currentRow;
-			const isBeforeStart = y === startYear && m < start.month;
-			const isAfterEnd = y === endYear && m > end.month;
-			const isActive = !isBeforeStart && !isAfterEnd;
+		// Build row descriptors for all months in this calendar year
+		const yearRows: MonthRowDescriptor[] = [];
 
+		for (let m = 1; m <= 12; m++) {
+			const monthIndex = y * 12 + m;
+			const startIndex = start.year * 12 + start.month;
+			const endIndex = end.year * 12 + end.month;
 			const lastDayOfMonth = new Date(y, m, 0).getDate();
 			const mStr = String(m).padStart(2, '0');
+			const yy = String(y).slice(-2);
+
+			if (monthIndex < startIndex || monthIndex > endIndex) {
+				// Inactive month
+				yearRows.push({
+					year: y,
+					month: m,
+					isActive: false,
+					dateStr: `${mStr}/${lastDayOfMonth}/${yy}`,
+					monthUnits: 0,
+					degression: 0
+				});
+				continue;
+			}
+
+			// Active month
+			if (monthIndex === startIndex) {
+				// Start month
+				const units = start.day === 1 ? 1.0 : 0.5;
+				const dateDay = start.day === 1 ? lastDayOfMonth : start.day;
+				cumulativeActiveUnits += units;
+				yearRows.push({
+					year: y,
+					month: m,
+					isActive: true,
+					dateStr: `${mStr}/${dateDay}/${yy}`,
+					monthUnits: units,
+					degression: 100
+				});
+			} else if (monthIndex === endIndex) {
+				// Final active month
+				const remainingUnits = durationMonths - cumulativeActiveUnits;
+				const units = remainingUnits < 1.0 ? remainingUnits : 1.0;
+				const dateDay = end.day < lastDayOfMonth ? end.day : lastDayOfMonth;
+				const deg = getDegression(cumulativeActiveUnits);
+				cumulativeActiveUnits += units;
+				yearRows.push({
+					year: y,
+					month: m,
+					isActive: true,
+					dateStr: `${mStr}/${dateDay}/${yy}`,
+					monthUnits: units,
+					degression: deg,
+					isLastActiveRow: true
+				});
+			} else {
+				// Intermediate active month
+				// Check if a degression threshold (24, 36, 48) crosses strictly inside this month
+				const splitThreshold = [24, 36, 48].find(T => cumulativeActiveUnits < T && cumulativeActiveUnits + 1.0 > T);
+
+				if (splitThreshold !== undefined) {
+					// SPLIT MONTH! 2 rows covering their respective degression split
+					const units1 = splitThreshold - cumulativeActiveUnits;
+					const degression1 = getDegression(cumulativeActiveUnits);
+					cumulativeActiveUnits += units1;
+
+					yearRows.push({
+						year: y,
+						month: m,
+						isActive: true,
+						dateStr: `${mStr}/15/${yy}`,
+						monthUnits: units1,
+						degression: degression1,
+						isSplitPart: 1
+					});
+
+					const units2 = 1.0 - units1;
+					const degression2 = getDegression(cumulativeActiveUnits);
+					cumulativeActiveUnits += units2;
+
+					yearRows.push({
+						year: y,
+						month: m,
+						isActive: true,
+						dateStr: `${mStr}/${lastDayOfMonth}/${yy}`,
+						monthUnits: units2,
+						degression: degression2,
+						isSplitPart: 2
+					});
+				} else {
+					// Full month
+					const deg = getDegression(cumulativeActiveUnits);
+					cumulativeActiveUnits += 1.0;
+					yearRows.push({
+						year: y,
+						month: m,
+						isActive: true,
+						dateStr: `${mStr}/${lastDayOfMonth}/${yy}`,
+						monthUnits: 1.0,
+						degression: deg
+					});
+				}
+			}
+		}
+
+		// Render each row in yearRows into the worksheet
+		for (const r of yearRows) {
+			const rowNum = currentRow++;
+			const lastDayOfMonth = new Date(y, r.month, 0).getDate();
+			const mStr = String(r.month).padStart(2, '0');
+
+			if (r.month === 12) {
+				decemberRowNumber = rowNum;
+			}
 
 			// Col C & D (Mindestlohn)
 			wsGehalt.getCell(`C${rowNum}`).value = 14.6;
@@ -245,55 +368,61 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 			wsGehalt.getCell(`D${rowNum}`).value = 14.84;
 			wsGehalt.getCell(`D${rowNum}`).numFmt = '0.00';
 
-			if (isActive) {
+			if (r.isActive) {
 				lastActiveMonthRowNumber = rowNum;
-				if (m === 9) septemberRowNumber = rowNum;
+				if (r.month === 9 && r.isSplitPart !== 2) {
+					septemberRowNumber = rowNum;
+				}
 
 				// Date cell Col A
 				const dateCell = wsGehalt.getCell(`A${rowNum}`);
-				dateCell.value = `${mStr}/${lastDayOfMonth}/${String(y).slice(-2)}`;
+				dateCell.value = r.dateStr;
 				dateCell.alignment = { horizontal: 'center' };
 
-				// Check milestone color for this month
-				const mKey = `${y}-${m}`;
-				const milestone = milestoneMap.get(mKey);
-				if (milestone) {
-					dateCell.fill = {
-						type: 'pattern',
-						pattern: 'solid',
-						fgColor: { argb: 'FF' + milestone.color }
-					};
-					dateCell.font = { bold: true, color: { argb: milestone.color === COLOR_EXIT ? 'FFFFFFFF' : 'FF000000' } };
-				}
-
-				// Anteil Monat (Col B)
-				const isSplitFirstMonth = y === startYear && m === start.month && start.day > 1;
-				const isSplitLastMonth = y === endYear && m === end.month && end.day < lastDayOfMonth;
-				const monthUnits = isSplitFirstMonth || isSplitLastMonth ? 0.5 : 1.0;
-				wsGehalt.getCell(`B${rowNum}`).value = monthUnits;
-				wsGehalt.getCell(`B${rowNum}`).numFmt = '0.00';
-
-				// Determine experience step for this month
+				// Determine experience step for this row
+				const stepDay = r.isSplitPart === 2 ? 16 : (r.isSplitPart === 1 ? 1 : start.day);
 				const currentStep = calculateTariffStepAtDate(
-					{ day: start.day, month: m, year: y },
+					{ day: stepDay, month: r.month, year: y },
 					start,
 					initialStepNum
 				);
 
-				// Lookup salary from AWO tariff
-				const salaryInfo = getAwoTariffSalary(group, currentStep, y, m, weeklyHours, fullTimeHours);
+				// Milestone color
+				if (r.isLastActiveRow) {
+					dateCell.fill = {
+						type: 'pattern',
+						pattern: 'solid',
+						fgColor: { argb: 'FF' + COLOR_EXIT }
+					};
+					dateCell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+				} else if (currentStep > previousStep && activeMonthCounter > 0) {
+					dateCell.fill = {
+						type: 'pattern',
+						pattern: 'solid',
+						fgColor: { argb: 'FF' + COLOR_STUFENAUFSTIEG }
+					};
+					dateCell.font = { bold: true, color: { argb: 'FF000000' } };
+				} else if (isAwoTariffIncreaseMonth(y, r.month) && r.isSplitPart !== 2) {
+					dateCell.fill = {
+						type: 'pattern',
+						pattern: 'solid',
+						fgColor: { argb: 'FF' + COLOR_TARIFERHOEHUNG }
+					};
+					dateCell.font = { bold: true, color: { argb: 'FF000000' } };
+				}
+
+				// Col B (Anteil Monat)
+				wsGehalt.getCell(`B${rowNum}`).value = r.monthUnits;
+				wsGehalt.getCell(`B${rowNum}`).numFmt = '0.00';
+
+				// Salary
+				const salaryInfo = getAwoTariffSalary(group, currentStep, y, r.month, weeklyHours, fullTimeHours);
 				const fteSalary = salaryInfo?.fteSalary || 2674.27;
 
-				// Calculations for precalculated results
-				let degression = 100;
-				if (activeMonthCounter >= 48) degression = 70;
-				else if (activeMonthCounter >= 36) degression = 80;
-				else if (activeMonthCounter >= 24) degression = 90;
-
-				const partTimeSalary = (fteSalary * weeklyHours / 39) * monthUnits;
+				const partTimeSalary = (fteSalary * weeklyHours / 39) * r.monthUnits;
 				const jcFlatRate = partTimeSalary * 0.19;
 				const jcTotalGross = partTimeSalary + jcFlatRate;
-				const egzJc = (jcTotalGross * degression) / 100;
+				const egzJc = (jcTotalGross * r.degression) / 100;
 				const kvZbAg = (healthFund.kvRate + healthFund.zusatzbeitragAg);
 				const rvAvPvAg = (healthFund.rvRate + healthFund.avRate + healthFund.pvRate);
 				const umlagen = (healthFund.u1Rate + healthFund.u2Rate + healthFund.u3Rate);
@@ -302,13 +431,13 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				const totalEmployerCost = partTimeSalary + agaReal;
 				const landSvShortfall = totalEmployerCost - jcTotalGross;
 				const landDegression = totalEmployerCost - egzJc - landSvShortfall;
-				const skLand = sachkostenMonthly * monthUnits;
+				const skLand = sachkostenMonthly * r.monthUnits;
 
-				if (m === 9 || !septemberRowNumber) {
+				if (r.month === 9 || !septemberRowNumber) {
 					sepSalaryValue = (fteSalary * weeklyHours / 39);
 					sepAgaValue = sepSalaryValue * totalAgaRate;
 				}
-				yearMonthUnitsTotal += monthUnits;
+				yearMonthUnitsTotal += r.monthUnits;
 
 				// Col F (FTE AN-Brutto)
 				const cellF = wsGehalt.getCell(`F${rowNum}`);
@@ -331,7 +460,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				cellI.numFmt = '#,##0.00 €';
 
 				// Col J (Degression %)
-				wsGehalt.getCell(`J${rowNum}`).value = degression;
+				wsGehalt.getCell(`J${rowNum}`).value = r.degression;
 				wsGehalt.getCell(`J${rowNum}`).alignment = { horizontal: 'right' };
 
 				// Col K (EGZ JC): =I#*J#%
@@ -340,7 +469,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				cellK.numFmt = '#,##0.00 €';
 
 				// Col M (Tarifeinigung delta)
-				if (activeMonthCounter > 0 && fteSalary > previousFteSalary && currentStep === previousStep) {
+				if (activeMonthCounter > 0 && fteSalary > previousFteSalary && currentStep === previousStep && r.isSplitPart !== 2) {
 					wsGehalt.getCell(`M${rowNum}`).value = { formula: `F${rowNum}-F${rowNum - 1}`, result: fteSalary - previousFteSalary };
 					wsGehalt.getCell(`M${rowNum}`).numFmt = '#,##0.00 €';
 				}
@@ -350,54 +479,43 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				cellO.value = { formula: `SUM(G${rowNum}:G${rowNum})`, result: partTimeSalary };
 				cellO.numFmt = '#,##0.00 €';
 
-				// --- REPURPOSED AGA COLUMNS P - T ---
-				// Col P: Krankenkasse
+				// Col P-T
 				wsGehalt.getCell(`P${rowNum}`).value = healthFund.name;
 				wsGehalt.getCell(`P${rowNum}`).alignment = { horizontal: 'center' };
 
-				// Col Q: KV + ZB (AG): (14.6 + zusatzbeitrag)/2
 				wsGehalt.getCell(`Q${rowNum}`).value = kvZbAg;
 				wsGehalt.getCell(`Q${rowNum}`).numFmt = '0.000%';
 
-				// Col R: RV + AV + PV (AG): 9.3% + 1.3% + 1.8%
 				wsGehalt.getCell(`R${rowNum}`).value = rvAvPvAg;
 				wsGehalt.getCell(`R${rowNum}`).numFmt = '0.000%';
 
-				// Col S: Umlagen (U1 + U2 + U3)
 				wsGehalt.getCell(`S${rowNum}`).value = umlagen;
 				wsGehalt.getCell(`S${rowNum}`).numFmt = '0.000%';
 
-				// Col T: AGA-Gesamtsatz: =SUM(Q#:S#)
 				const cellT = wsGehalt.getCell(`T${rowNum}`);
 				cellT.value = { formula: `SUM(Q${rowNum}:S${rowNum})`, result: totalAgaRate };
 				cellT.numFmt = '0.000%';
 
-				// Col U: AGAreal: =O#*T#
 				const cellU = wsGehalt.getCell(`U${rowNum}`);
 				cellU.value = { formula: `O${rowNum}*T${rowNum}`, result: agaReal };
 				cellU.numFmt = '#,##0.00 €';
 
-				// Col V: Gehalt AN + AGAreal: =U#+O#
 				const cellV = wsGehalt.getCell(`V${rowNum}`);
 				cellV.value = { formula: `U${rowNum}+O${rowNum}`, result: totalEmployerCost };
 				cellV.numFmt = '#,##0.00 €';
 
-				// Col W: Anteil JC: =K#
 				const cellW = wsGehalt.getCell(`W${rowNum}`);
 				cellW.value = { formula: `K${rowNum}`, result: egzJc };
 				cellW.numFmt = '#,##0.00 €';
 
-				// Col X: Anteil ZGS: =V#-I#
 				const cellX = wsGehalt.getCell(`X${rowNum}`);
 				cellX.value = { formula: `V${rowNum}-I${rowNum}`, result: landSvShortfall };
 				cellX.numFmt = '#,##0.00 €';
 
-				// Col Y: Anteil Degression: =V#-W#-X#
 				const cellY = wsGehalt.getCell(`Y${rowNum}`);
 				cellY.value = { formula: `V${rowNum}-W${rowNum}-X${rowNum}`, result: landDegression };
 				cellY.numFmt = '#,##0.00 €';
 
-				// Col Z: SK-Land: =$M$2*B#
 				const cellZ = wsGehalt.getCell(`Z${rowNum}`);
 				cellZ.value = { formula: `$M$2*B${rowNum}`, result: skLand };
 				cellZ.numFmt = '#,##0.00 €';
@@ -406,8 +524,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				previousStep = currentStep;
 				activeMonthCounter++;
 			} else {
-				// Inactive month (outside runtime)
-				// Put standard formulas that evaluate to 0 to maintain clean structure
+				// Inactive month
 				wsGehalt.getCell(`G${rowNum}`).value = { formula: `F${rowNum}*($J$2/39)*B${rowNum}`, result: 0 };
 				wsGehalt.getCell(`G${rowNum}`).numFmt = '#,##0.00 €';
 				wsGehalt.getCell(`H${rowNum}`).value = { formula: `SUM(G${rowNum}:G${rowNum})*19%`, result: 0 };
@@ -422,8 +539,6 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				wsGehalt.getCell(`Y${rowNum}`).value = { formula: `V${rowNum}-W${rowNum}-X${rowNum}`, result: 0 };
 				wsGehalt.getCell(`Z${rowNum}`).value = { formula: `$M$2*B${rowNum}`, result: 0 };
 			}
-
-			currentRow++;
 		}
 
 		// Year summary rows: JSZ, AGA auf JSZ, Yearly Totals
@@ -435,7 +550,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 		yearlyTotalRows.push({ year: y, row: sumRow });
 
 		// Calculate expected JSZ result (only if employed on 01.12.)
-		const isEmployedInDecember = y < endYear || (y === endYear && end.month === 12);
+		const isEmployedInDecember = y < endYear || (y === endYear && (end.month > 12 || (end.month === 12 && end.day >= 1)));
 		const jszAmount = isEmployedInDecember && lastActiveMonthRowNumber ? (sepSalaryValue * jszPct * (yearMonthUnitsTotal / 12)) : 0;
 		const jszAgaAmount = isEmployedInDecember && lastActiveMonthRowNumber ? (sepAgaValue * jszPct * (yearMonthUnitsTotal / 12)) : 0;
 
@@ -447,8 +562,9 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 
 		// Formula for JSZ in Col X: IF(V_dec>0, O_sep*85%*(L_sum/12), 0)
 		const refSepO = septemberRowNumber ? `O${septemberRowNumber}` : (lastActiveMonthRowNumber ? `O${lastActiveMonthRowNumber}` : `O${yearEndRow}`);
+		const refDec = decemberRowNumber || yearEndRow;
 		const cellJszX = wsGehalt.getCell(`X${jszRow}`);
-		cellJszX.value = { formula: `IF(V${yearEndRow}>0,${refSepO}*${jszPct}*(L${jszRow}/12),0)`, result: jszAmount };
+		cellJszX.value = { formula: `IF(V${refDec}>0,${refSepO}*${jszPct}*(L${jszRow}/12),0)`, result: jszAmount };
 		cellJszX.numFmt = '#,##0.00 €';
 
 		// Row: AGA auf JSZ
@@ -456,11 +572,19 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 		wsGehalt.getCell(`O${agaJszRow}`).font = { bold: true };
 		const refSepU = septemberRowNumber ? `U${septemberRowNumber}` : (lastActiveMonthRowNumber ? `U${lastActiveMonthRowNumber}` : `U${yearEndRow}`);
 		const cellAgaJszX = wsGehalt.getCell(`X${agaJszRow}`);
-		cellAgaJszX.value = { formula: `IF(V${yearEndRow}>0,${refSepU}*${jszPct}*(L${jszRow}/12),0)`, result: jszAgaAmount };
+		cellAgaJszX.value = { formula: `IF(V${refDec}>0,${refSepU}*${jszPct}*(L${jszRow}/12),0)`, result: jszAgaAmount };
 		cellAgaJszX.numFmt = '#,##0.00 €';
 
 		// Row: Yearly Totals
-		for (const col of ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'W', 'X', 'Y', 'Z']) {
+		wsGehalt.getCell(`O${sumRow}`).value = { formula: `SUM(O${yearStartRow}:O${yearEndRow})` };
+		wsGehalt.getCell(`O${sumRow}`).font = { bold: true };
+		wsGehalt.getCell(`O${sumRow}`).numFmt = '#,##0.00 €';
+
+		wsGehalt.getCell(`V${sumRow}`).value = { formula: `SUM(V${yearStartRow}:V${yearEndRow})` };
+		wsGehalt.getCell(`V${sumRow}`).font = { bold: true };
+		wsGehalt.getCell(`V${sumRow}`).numFmt = '#,##0.00 €';
+
+		for (const col of ['W', 'X', 'Y', 'Z']) {
 			const cell = wsGehalt.getCell(`${col}${sumRow}`);
 			cell.value = { formula: `SUM(${col}${yearStartRow}:${col}${agaJszRow})` };
 			cell.font = { bold: true };
@@ -475,21 +599,6 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				bottom: { style: 'double' }
 			};
 		}
-
-		// Col V total sums only monthly rows (V_start to V_end), matching sample formula
-		const cellSumV = wsGehalt.getCell(`V${sumRow}`);
-		cellSumV.value = { formula: `SUM(V${yearStartRow}:V${yearEndRow})` };
-		cellSumV.font = { bold: true };
-		cellSumV.numFmt = '#,##0.00 €';
-		cellSumV.fill = {
-			type: 'pattern',
-			pattern: 'solid',
-			fgColor: { argb: 'FF' + COLOR_SUM_BG }
-		};
-		cellSumV.border = {
-			top: { style: 'thin' },
-			bottom: { style: 'double' }
-		};
 	}
 
 	// ==========================================
