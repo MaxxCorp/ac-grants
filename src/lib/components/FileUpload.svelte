@@ -11,7 +11,8 @@
 		runtimeStartScope = 'contract_start',
 		customStartDate = undefined,
 		restrictToExitDate = true,
-		restrictYear = undefined
+		restrictYear = undefined,
+		onOpenGenerator = undefined
 	}: {
 		onResult: (res: GrantTransformationResult) => void;
 		selectedScheme?: string;
@@ -22,6 +23,7 @@
 		customStartDate?: string;
 		restrictToExitDate?: boolean;
 		restrictYear?: number | undefined;
+		onOpenGenerator?: () => void;
 	} = $props();
 
 	let isDragging = $state(false);
@@ -151,10 +153,10 @@
 					{:else if successFileName}
 						<span class="text-success">Erfolgreich geladen: {successFileName}</span>
 					{:else}
-						Excel-Berechnungsblatt hier ablegen
+						Excel-Berechnungsblatt ablegen oder neu generieren
 					{/if}
 				</h3>
-				<p>Unterstützt <code>.xlsx</code> Gehalts- und Personalkostenberechnungen</p>
+				<p>Unterstützt <code>.xlsx</code> Berechnungsbögen oder generiert ein neues 5-Jahres-Berechnungsblatt für neue Mitarbeiter/innen</p>
 			</div>
 
 			<div class="actions-row">
@@ -166,6 +168,26 @@
 					</svg>
 					Datei auswählen
 				</label>
+
+				{#if onOpenGenerator}
+					<button
+						type="button"
+						class="btn btn-generator"
+						onclick={(e) => {
+							e.preventDefault();
+							e.stopPropagation();
+							onOpenGenerator();
+						}}
+					>
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+							<polyline points="14 2 14 8 20 8"></polyline>
+							<line x1="12" y1="18" x2="12" y2="12"></line>
+							<line x1="9" y1="15" x2="15" y2="15"></line>
+						</svg>
+						✨ Berechnungsblatt erstellen
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -300,6 +322,21 @@
 	.btn-primary:hover {
 		background: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
 		box-shadow: 0 4px 15px rgba(79, 70, 229, 0.4);
+	}
+
+	.btn-generator {
+		background: rgba(99, 102, 241, 0.15);
+		border: 1px solid rgba(99, 102, 241, 0.45);
+		color: #c7d2fe;
+		box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+	}
+
+	.btn-generator:hover {
+		background: rgba(99, 102, 241, 0.28);
+		border-color: #818cf8;
+		color: #ffffff;
+		transform: translateY(-1px);
+		box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
 	}
 
 	.btn:disabled {

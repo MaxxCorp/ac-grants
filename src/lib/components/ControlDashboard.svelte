@@ -45,6 +45,8 @@
 
 				<span class="participant-badge">
 					<strong>{participant.name}</strong> • {participant.tariffGroup}/{participant.tariffStep} ({participant.weeklyHours}h/Woche) • KK: {participant.healthInsuranceName}
+					{#if participant.jobcenterId} • JC: <code>{participant.jobcenterId}</code>{/if}
+					{#if participant.zgsId} • ZGS: <code>{participant.zgsId}</code>{/if}
 				</span>
 			</div>
 			<h2>Plausibilitäts- & Kontrollrechnungs-Dashboard</h2>

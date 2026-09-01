@@ -135,3 +135,57 @@ export const uploadExcel = form(
 		return result;
 	}
 );
+
+// Remote Command: Generate Berechnungsblatt Excel and compute transformation
+import { generateBerechnungsblattExcel } from '#lib/server/excel-generator';
+
+export interface GeneratedBerechnungsblattResponse {
+	fileBase64: string;
+	fileName: string;
+	result: GrantTransformationResult;
+}
+
+export const generateBerechnungsblatt = command(
+	v.object({
+		employeeName: v.string(),
+		startDate: v.string(),
+		durationMonths: v.optional(v.number(), 60),
+		tariffGroup: v.optional(v.string(), 'EG2'),
+		tariffStep: v.optional(v.string(), 'ES1'),
+		healthInsuranceName: v.optional(v.string(), 'Barmer'),
+		customAgaRate: v.optional(v.number()),
+		jobcenterId: v.optional(v.string()),
+		zgsId: v.optional(v.string()),
+		weeklyHours: v.optional(v.number(), 30),
+		fullTimeHours: v.optional(v.number(), 39),
+		sachkostenMonthly: v.optional(v.number(), 155),
+		childrenCount: v.optional(v.number(), 0),
+		jszPercentage: v.optional(v.number(), 85),
+		schemeId: v.optional(v.string(), 'sgb16i-berlin'),
+		includeOffsetRows: v.optional(v.boolean(), true)
+	}),
+	async (payload): Promise<GeneratedBerechnungsblattResponse> => {
+		const buffer = await generateBerechnungsblattExcel(payload);
+		const { participant, records, insuranceFunds } = parseExcelBuffer(buffer);
+		(participant as any).insuranceFunds = insuranceFunds;
+
+		const scheme = getGrantScheme(payload.schemeId || 'sgb16i-berlin');
+		const result = scheme.transform(records, participant, {
+			includeOffsetRows: payload.includeOffsetRows ?? true,
+			runtimeScope: 'full_5_years',
+			runtimeStartScope: 'contract_start',
+			restrictToExitDate: false
+		});
+		result.insuranceFunds = insuranceFunds;
+
+		const sanitizedName = (payload.employeeName || 'Mitarbeiter').replace(/[^a-zA-Z0-9äöüÄÖÜß_-]/g, '_');
+		const fileName = `Berechnungsblatt_${sanitizedName}.xlsx`;
+
+		return {
+			fileBase64: buffer.toString('base64'),
+			fileName,
+			result
+		};
+	}
+);
+

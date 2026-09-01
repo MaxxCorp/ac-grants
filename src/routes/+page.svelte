@@ -8,6 +8,7 @@
 	import AwoTariffAuditCard from '#lib/components/AwoTariffAuditCard.svelte';
 	import TargetFormCompanion from '#lib/components/TargetFormCompanion.svelte';
 	import AgaTimelineEditor from '#lib/components/AgaTimelineEditor.svelte';
+	import BerechnungsblattGeneratorModal from '#lib/components/BerechnungsblattGeneratorModal.svelte';
 
 	let availableSchemes = $state<any[]>([]);
 	let selectedSchemeId = $state('sgb16i-berlin');
@@ -18,6 +19,7 @@
 	let customEndDate = $state('');
 	let currentResult = $state<GrantTransformationResult | null>(null);
 	let isRecalculating = $state(false);
+	let isGeneratorOpen = $state(false);
 
 	function loadDemoData() {
 		const participant: ParticipantInfo = {
@@ -375,6 +377,7 @@
 				{customStartDate}
 				{runtimeScope}
 				{customEndDate}
+				onOpenGenerator={() => (isGeneratorOpen = true)}
 			/>
 
 			<div class="demo-trigger-wrapper">
@@ -398,24 +401,32 @@
 					onToggleOffset={handleToggleOffset}
 				/>
 
-				<!-- AWO Berlin Tariff Plausibility & Compliance Audit (Spalte F) -->
-				<AwoTariffAuditCard
-					validation={currentResult.tariffValidation}
-					participant={currentResult.participant}
-					records={currentResult.rawMonthlyRecords}
-				/>
-
-				<!-- Time-Varying AGA Rate Matrix Editor -->
+				<!-- Time-Dependent Employer Social Contribution (AGA) Matrix -->
 				<AgaTimelineEditor
 					timeline={currentResult.agaTimeline}
 					participant={currentResult.participant}
 					onUpdateTimeline={handleUpdateTimeline}
 				/>
 
+				<!-- AWO Tariff Audit & Human Error Detection -->
+				<AwoTariffAuditCard
+					validation={currentResult.tariffValidation}
+					participant={currentResult.participant}
+					records={currentResult.rawMonthlyRecords}
+				/>
+
 				<!-- Target Form Companion with 1-Click Clipboard Copying -->
 				<TargetFormCompanion result={currentResult} />
 			</section>
 		{/if}
+
+		<!-- Berechnungsblatt Generator Modal -->
+		<BerechnungsblattGeneratorModal
+			bind:isOpen={isGeneratorOpen}
+			onClose={() => (isGeneratorOpen = false)}
+			onResult={handleResult}
+			selectedScheme={selectedSchemeId}
+		/>
 	</main>
 </div>
 

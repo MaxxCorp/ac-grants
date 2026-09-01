@@ -10,7 +10,41 @@ export interface ParticipantInfo {
 	childrenCount: number;
 	healthInsuranceName: string;
 	defaultAgaRate: number;
+	jobcenterId?: string;
+	zgsId?: string;
 }
+
+export interface BerechnungsblattGeneratorOptions {
+	employeeName: string;
+	startDate: string; // YYYY-MM-DD or DD.MM.YYYY
+	durationMonths?: number; // default 60
+	tariffGroup?: string; // default "EG2"
+	tariffStep?: string; // default "ES1"
+	healthInsuranceName?: string; // default "Barmer"
+	customAgaRate?: number; // default 0.23815
+	jobcenterId?: string;
+	zgsId?: string;
+	weeklyHours?: number; // default 30
+	fullTimeHours?: number; // default 39
+	sachkostenMonthly?: number; // default 155
+	childrenCount?: number; // default 0
+	jszPercentage?: number; // default 85
+	customAgaTimeline?: AgaRatePeriod[];
+}
+
+export interface GeneratorMilestone {
+	type: 'stufenaufstieg' | 'tariferhoehung' | 'exit';
+	year: number;
+	month: number;
+	dateStr: string;
+	label: string;
+	color: string; // '70AD47' (green), 'FFC000' (yellow), 'FF0000' (red)
+	oldStep?: string;
+	newStep?: string;
+	oldSalary?: number;
+	newSalary?: number;
+}
+
 
 export interface MonthlyRecord {
 	date: string;

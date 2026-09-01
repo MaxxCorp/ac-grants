@@ -205,6 +205,36 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 	const healthInsuranceName = rawHealthInsurance || 'DAK';
 	const defaultAgaRate = parseNumber(getCellValue('Y', 2), 0.2314);
 
+	// Parse JobCenter-ID and ZGS-ID from Row 1 if present
+	let jobcenterId: string | undefined;
+	let zgsId: string | undefined;
+
+	for (const col of ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']) {
+		const txt = getCellFormattedText(col, 1);
+		if (txt.toLowerCase().includes('jobcenter') || txt.toLowerCase().includes('jc')) {
+			const nextCol = String.fromCharCode(col.charCodeAt(0) + 1);
+			const nextVal = getCellFormattedText(nextCol, 1) || getCellFormattedText(String.fromCharCode(col.charCodeAt(0) + 2), 1);
+			if (nextVal && !nextVal.toLowerCase().includes('id')) jobcenterId = nextVal;
+		}
+		if (txt.toLowerCase().includes('zgs')) {
+			const nextCol = String.fromCharCode(col.charCodeAt(0) + 1);
+			const nextVal = getCellFormattedText(nextCol, 1) || getCellFormattedText(String.fromCharCode(col.charCodeAt(0) + 2), 1);
+			if (nextVal && !nextVal.toLowerCase().includes('id')) zgsId = nextVal;
+		}
+	}
+	if (!jobcenterId) {
+		const directF1 = getCellFormattedText('F', 1);
+		if (directF1 && !directF1.toLowerCase().includes('id') && !directF1.toLowerCase().includes('jobcenter')) {
+			jobcenterId = directF1;
+		}
+	}
+	if (!zgsId) {
+		const directJ1 = getCellFormattedText('J', 1);
+		if (directJ1 && !directJ1.toLowerCase().includes('id') && !directJ1.toLowerCase().includes('zgs')) {
+			zgsId = directJ1;
+		}
+	}
+
 	let runtimeStart = '';
 	let runtimeEnd = '';
 	const runtimeParts = rawRuntime.split('-').map(s => s.trim());
@@ -224,7 +254,9 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 		sachkostenMonthly,
 		childrenCount,
 		healthInsuranceName,
-		defaultAgaRate
+		defaultAgaRate,
+		jobcenterId,
+		zgsId
 	};
 
 	// Parse monthly records from Row 4 onwards (after header rows)
@@ -345,7 +377,13 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 			const jcGrantAmount = parseNumber(getCellValue('K', r), (jcTotalGross * jcDegressionPct) / 100);
 			const tariffDelta = parseNumber(getCellValue('M', r), 0);
 
-			const agaRealAmount = parseNumber(getCellValue('U', r), partTimeSalary * defaultAgaRate);
+			let rowAgaRate = defaultAgaRate;
+			const colTVal = parseNumber(getCellValue('T', r), 0);
+			if (colTVal > 0) {
+				rowAgaRate = colTVal > 1 ? colTVal / 100 : colTVal;
+			}
+
+			const agaRealAmount = parseNumber(getCellValue('U', r), partTimeSalary * rowAgaRate);
 			const totalEmployerCost = parseNumber(getCellValue('V', r), partTimeSalary + agaRealAmount);
 			const landSvShortfall = parseNumber(getCellValue('X', r), totalEmployerCost - jcTotalGross);
 			const landDegressionAmount = parseNumber(getCellValue('Y', r), 0);
@@ -368,7 +406,7 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 				fullMonthlyJcTotalGross,
 				jcDegressionPct,
 				jcGrantAmount,
-				agaRealRate: defaultAgaRate,
+				agaRealRate: rowAgaRate,
 				agaRealAmount,
 				totalEmployerCost,
 				landSvShortfall,
