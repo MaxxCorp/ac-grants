@@ -8,6 +8,7 @@ import type {
 	ControlCheckResult,
 	ControlCheckItem,
 	AgaRatePeriod,
+	BgRatePeriod,
 	RuntimeScope,
 	RuntimeStartScope
 } from '#lib/types/grant';
@@ -1226,6 +1227,18 @@ export function transformSgb16i(
 		}
 	];
 
+	// Default BG timeline if not provided
+	const bgRate = participant.defaultBgRate ?? 0.018;
+	const defaultBgTimeline: BgRatePeriod[] = options.customBgTimeline || participant.bgTimeline || [
+		{
+			id: 'bg-default',
+			startDate: participant.runtimeStart ? formatDateDMY(participant.runtimeStart) : '2026-08-01',
+			endDate: participant.runtimeEnd ? formatDateDMY(participant.runtimeEnd) : '2031-07-31',
+			rate: bgRate,
+			label: `BGW Standard (${(bgRate * 100).toFixed(2)}%)`
+		}
+	];
+
 	// Generate TV-L Comparison calculation
 	const tvlComparison = calculateTvlComparison(
 		allProcessedRecords,
@@ -1246,6 +1259,7 @@ export function transformSgb16i(
 		tabs: [jcTab, landTab, skTab],
 		controls,
 		agaTimeline: defaultAgaTimeline,
+		bgTimeline: defaultBgTimeline,
 		options: {
 			...options,
 			runtimeScope,

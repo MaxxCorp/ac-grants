@@ -11,6 +11,7 @@ import { DEFAULT_INSURANCE_FUNDS } from '#lib/grants/tvl-tariff-data';
 import {
 	COLOR_STUFENAUFSTIEG,
 	COLOR_TARIFERHOEHUNG,
+	COLOR_UMGRUPPIERUNG,
 	COLOR_EXIT,
 	COLOR_HEADER_BG,
 	COLOR_SUM_BG,
@@ -18,12 +19,15 @@ import {
 	calculateEndDate,
 	formatDateDMY,
 	getInsuranceFundByName,
-	calculateMilestones
+	calculateMilestones,
+	resolveTariffStateAtDate,
+	getEffectiveBgRate
 } from '#lib/grants/generator-milestones';
 
 export {
 	COLOR_STUFENAUFSTIEG,
 	COLOR_TARIFERHOEHUNG,
+	COLOR_UMGRUPPIERUNG,
 	COLOR_EXIT,
 	COLOR_HEADER_BG,
 	COLOR_SUM_BG,
@@ -31,7 +35,9 @@ export {
 	calculateEndDate,
 	formatDateDMY,
 	getInsuranceFundByName,
-	calculateMilestones
+	calculateMilestones,
+	resolveTariffStateAtDate,
+	getEffectiveBgRate
 };
 
 /**
@@ -54,6 +60,9 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 	const childrenCount = options.childrenCount ?? 0;
 	const healthFund = getInsuranceFundByName(options.healthInsuranceName || 'Barmer');
 	const defaultAgaRate = options.customAgaRate || healthFund.agaRate;
+	const defaultBgRate = options.bgRate ?? 0.018;
+	const customBgTimeline = options.customBgTimeline;
+	const reclassifications = options.reclassifications || [];
 	const jszPct = (options.jszPercentage ?? 85) / 100;
 	const employeeName = options.employeeName.trim() || 'Neue/r Mitarbeiter/in';
 	const jobcenterId = options.jobcenterId?.trim() || '';
@@ -70,7 +79,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 		views: [{ showGridLines: true }]
 	});
 
-	// Column Widths matching the sample
+	// Column Widths: includes BG-Kosten and Gesamtkosten inkl. BG
 	wsGehalt.columns = [
 		{ key: 'A', width: 14 }, // Datum
 		{ key: 'B', width: 12 }, // Anteil Monat
@@ -94,10 +103,12 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 		{ key: 'T', width: 14 }, // AGA-Gesamtsatz
 		{ key: 'U', width: 15 }, // AGAreal
 		{ key: 'V', width: 17 }, // Gehalt AN + AGAreal
-		{ key: 'W', width: 14 }, // Anteil JC
-		{ key: 'X', width: 16 }, // Anteil ZGS
-		{ key: 'Y', width: 16 }, // Anteil Degression
-		{ key: 'Z', width: 13 }  // SK-Land
+		{ key: 'W', width: 14 }, // BG-Kosten
+		{ key: 'X', width: 18 }, // Gesamtkosten inkl. BG
+		{ key: 'Y', width: 14 }, // Anteil JC
+		{ key: 'Z', width: 16 }, // Anteil ZGS
+		{ key: 'AA', width: 16 }, // Anteil Degression
+		{ key: 'AB', width: 13 }  // SK-Land
 	];
 
 	// ROW 1: Jobcenter-ID & ZGS-ID & Startstufe
@@ -159,6 +170,12 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 	wsGehalt.getCell('Y2').font = { bold: true };
 	wsGehalt.getCell('Y2').numFmt = '0.000%';
 
+	wsGehalt.getCell('Z2').value = 'BG-Satz';
+	wsGehalt.getCell('Z2').font = { bold: true };
+	wsGehalt.getCell('AA2').value = defaultBgRate;
+	wsGehalt.getCell('AA2').font = { bold: true };
+	wsGehalt.getCell('AA2').numFmt = '0.000%';
+
 	// ROW 3: Column Headers
 	const headers: Record<string, string> = {
 		B: 'Anteil Monat',
@@ -180,10 +197,12 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 		T: 'AGA-Gesamtsatz',
 		U: 'AGAreal',
 		V: 'Gehalt AN + AGAreal',
-		W: 'Anteil JC',
-		X: 'Anteil ZGS',
-		Y: 'Anteil Degression',
-		Z: 'SK-Land'
+		W: 'BG-Kosten',
+		X: 'Gesamtkosten inkl. BG',
+		Y: 'Anteil JC',
+		Z: 'Anteil ZGS',
+		AA: 'Anteil Degression',
+		AB: 'SK-Land'
 	};
 
 	for (const [col, title] of Object.entries(headers)) {
@@ -217,6 +236,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 	let cumulativeActiveUnits = 0;
 	let previousFteSalary = 0;
 	let previousStep = initialStepNum;
+	let previousGroup = group;
 
 	// Registry of yearly total rows for bottom summary
 	const yearlyTotalRows: { year: number; row: number }[] = [];
@@ -246,6 +266,8 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 		let lastActiveMonthRowNumber: number | null = null;
 		let sepSalaryValue = 0;
 		let sepAgaValue = 0;
+		let sepBgRate = defaultBgRate;
+		let sepBgValue = 0;
 		let yearMonthUnitsTotal = 0;
 
 		// Build row descriptors for all months in this calendar year
@@ -379,13 +401,17 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				dateCell.value = r.dateStr;
 				dateCell.alignment = { horizontal: 'center' };
 
-				// Determine experience step for this row
+				// Determine experience step and group for this row (supporting reclassifications)
 				const stepDay = r.isSplitPart === 2 ? 16 : (r.isSplitPart === 1 ? 1 : start.day);
-				const currentStep = calculateTariffStepAtDate(
+				const tariffState = resolveTariffStateAtDate(
 					{ day: stepDay, month: r.month, year: y },
 					start,
-					initialStepNum
+					group,
+					initialStepNum,
+					reclassifications
 				);
+				const currentGroup = tariffState.group;
+				const currentStep = tariffState.step;
 
 				// Milestone color
 				if (r.isLastActiveRow) {
@@ -393,6 +419,13 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 						type: 'pattern',
 						pattern: 'solid',
 						fgColor: { argb: 'FF' + COLOR_EXIT }
+					};
+					dateCell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+				} else if (tariffState.isReclassificationEffectiveThisMonth && r.isSplitPart !== 2) {
+					dateCell.fill = {
+						type: 'pattern',
+						pattern: 'solid',
+						fgColor: { argb: 'FF' + COLOR_UMGRUPPIERUNG }
 					};
 					dateCell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
 				} else if (currentStep > previousStep && activeMonthCounter > 0) {
@@ -416,7 +449,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				wsGehalt.getCell(`B${rowNum}`).numFmt = '0.00';
 
 				// Salary
-				const salaryInfo = getAwoTariffSalary(group, currentStep, y, r.month, weeklyHours, fullTimeHours);
+				const salaryInfo = getAwoTariffSalary(currentGroup, currentStep, y, r.month, weeklyHours, fullTimeHours);
 				const fteSalary = salaryInfo?.fteSalary || 2674.27;
 
 				const partTimeSalary = (fteSalary * weeklyHours / 39) * r.monthUnits;
@@ -433,9 +466,20 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				const landDegression = totalEmployerCost - egzJc - landSvShortfall;
 				const skLand = sachkostenMonthly * r.monthUnits;
 
+				// Berufsgenossenschaft (BG) calculation
+				const rowBgRate = getEffectiveBgRate(
+					{ year: y, month: r.month, day: stepDay },
+					defaultBgRate,
+					customBgTimeline
+				);
+				const bgAmount = partTimeSalary * rowBgRate;
+				const totalEmployerCostWithBg = totalEmployerCost + bgAmount;
+
 				if (r.month === 9 || !septemberRowNumber) {
 					sepSalaryValue = (fteSalary * weeklyHours / 39);
 					sepAgaValue = sepSalaryValue * totalAgaRate;
+					sepBgRate = rowBgRate;
+					sepBgValue = sepSalaryValue * rowBgRate;
 				}
 				yearMonthUnitsTotal += r.monthUnits;
 
@@ -469,7 +513,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				cellK.numFmt = '#,##0.00 €';
 
 				// Col M (Tarifeinigung delta)
-				if (activeMonthCounter > 0 && fteSalary > previousFteSalary && currentStep === previousStep && r.isSplitPart !== 2) {
+				if (activeMonthCounter > 0 && fteSalary > previousFteSalary && currentStep === previousStep && currentGroup === previousGroup && r.isSplitPart !== 2) {
 					wsGehalt.getCell(`M${rowNum}`).value = { formula: `F${rowNum}-F${rowNum - 1}`, result: fteSalary - previousFteSalary };
 					wsGehalt.getCell(`M${rowNum}`).numFmt = '#,##0.00 €';
 				}
@@ -500,28 +544,44 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				cellU.value = { formula: `O${rowNum}*T${rowNum}`, result: agaReal };
 				cellU.numFmt = '#,##0.00 €';
 
+				// Col V (Gehalt AN + AGAreal)
 				const cellV = wsGehalt.getCell(`V${rowNum}`);
 				cellV.value = { formula: `U${rowNum}+O${rowNum}`, result: totalEmployerCost };
 				cellV.numFmt = '#,##0.00 €';
 
+				// Col W (BG-Kosten): =O#*rowBgRate
 				const cellW = wsGehalt.getCell(`W${rowNum}`);
-				cellW.value = { formula: `K${rowNum}`, result: egzJc };
+				cellW.value = { formula: `O${rowNum}*${rowBgRate}`, result: bgAmount };
 				cellW.numFmt = '#,##0.00 €';
 
+				// Col X (Gesamtkosten inkl. BG): =V#+W#
 				const cellX = wsGehalt.getCell(`X${rowNum}`);
-				cellX.value = { formula: `V${rowNum}-I${rowNum}`, result: landSvShortfall };
+				cellX.value = { formula: `V${rowNum}+W${rowNum}`, result: totalEmployerCostWithBg };
 				cellX.numFmt = '#,##0.00 €';
 
+				// Col Y (Anteil JC): =K#
 				const cellY = wsGehalt.getCell(`Y${rowNum}`);
-				cellY.value = { formula: `V${rowNum}-W${rowNum}-X${rowNum}`, result: landDegression };
+				cellY.value = { formula: `K${rowNum}`, result: egzJc };
 				cellY.numFmt = '#,##0.00 €';
 
+				// Col Z (Anteil ZGS): =V#-I#
 				const cellZ = wsGehalt.getCell(`Z${rowNum}`);
-				cellZ.value = { formula: `$M$2*B${rowNum}`, result: skLand };
+				cellZ.value = { formula: `V${rowNum}-I${rowNum}`, result: landSvShortfall };
 				cellZ.numFmt = '#,##0.00 €';
+
+				// Col AA (Anteil Degression): =V#-Y#-Z#
+				const cellAA = wsGehalt.getCell(`AA${rowNum}`);
+				cellAA.value = { formula: `V${rowNum}-Y${rowNum}-Z${rowNum}`, result: landDegression };
+				cellAA.numFmt = '#,##0.00 €';
+
+				// Col AB (SK-Land): =$M$2*B#
+				const cellAB = wsGehalt.getCell(`AB${rowNum}`);
+				cellAB.value = { formula: `$M$2*B${rowNum}`, result: skLand };
+				cellAB.numFmt = '#,##0.00 €';
 
 				previousFteSalary = fteSalary;
 				previousStep = currentStep;
+				previousGroup = currentGroup;
 				activeMonthCounter++;
 			} else {
 				// Inactive month
@@ -534,10 +594,12 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 				wsGehalt.getCell(`O${rowNum}`).numFmt = '#,##0.00 €';
 				wsGehalt.getCell(`U${rowNum}`).value = { formula: `O${rowNum}*$Y$2`, result: 0 };
 				wsGehalt.getCell(`V${rowNum}`).value = { formula: `U${rowNum}+O${rowNum}`, result: 0 };
-				wsGehalt.getCell(`W${rowNum}`).value = { formula: `K${rowNum}`, result: 0 };
-				wsGehalt.getCell(`X${rowNum}`).value = { formula: `V${rowNum}-I${rowNum}`, result: 0 };
-				wsGehalt.getCell(`Y${rowNum}`).value = { formula: `V${rowNum}-W${rowNum}-X${rowNum}`, result: 0 };
-				wsGehalt.getCell(`Z${rowNum}`).value = { formula: `$M$2*B${rowNum}`, result: 0 };
+				wsGehalt.getCell(`W${rowNum}`).value = { formula: `O${rowNum}*$AA$2`, result: 0 };
+				wsGehalt.getCell(`X${rowNum}`).value = { formula: `V${rowNum}+W${rowNum}`, result: 0 };
+				wsGehalt.getCell(`Y${rowNum}`).value = { formula: `K${rowNum}`, result: 0 };
+				wsGehalt.getCell(`Z${rowNum}`).value = { formula: `V${rowNum}-I${rowNum}`, result: 0 };
+				wsGehalt.getCell(`AA${rowNum}`).value = { formula: `V${rowNum}-Y${rowNum}-Z${rowNum}`, result: 0 };
+				wsGehalt.getCell(`AB${rowNum}`).value = { formula: `$M$2*B${rowNum}`, result: 0 };
 			}
 		}
 
@@ -553,6 +615,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 		const isEmployedInDecember = y < endYear || (y === endYear && (end.month > 12 || (end.month === 12 && end.day >= 1)));
 		const jszAmount = isEmployedInDecember && lastActiveMonthRowNumber ? (sepSalaryValue * jszPct * (yearMonthUnitsTotal / 12)) : 0;
 		const jszAgaAmount = isEmployedInDecember && lastActiveMonthRowNumber ? (sepAgaValue * jszPct * (yearMonthUnitsTotal / 12)) : 0;
+		const jszBgAmount = isEmployedInDecember && lastActiveMonthRowNumber ? (sepBgValue * jszPct * (yearMonthUnitsTotal / 12)) : 0;
 
 		// Row: Jahressonderzahlung (85%)
 		wsGehalt.getCell(`L${jszRow}`).value = { formula: `SUM(B${yearStartRow}:B${yearEndRow})`, result: yearMonthUnitsTotal };
@@ -560,20 +623,38 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 		wsGehalt.getCell(`O${jszRow}`).value = `Jahressonderzahlung (${Math.round(jszPct * 100)}%)`;
 		wsGehalt.getCell(`O${jszRow}`).font = { bold: true };
 
-		// Formula for JSZ in Col X: IF(V_dec>0, O_sep*85%*(L_sum/12), 0)
 		const refSepO = septemberRowNumber ? `O${septemberRowNumber}` : (lastActiveMonthRowNumber ? `O${lastActiveMonthRowNumber}` : `O${yearEndRow}`);
 		const refDec = decemberRowNumber || yearEndRow;
+
+		// Col W: JSZ BG
+		const cellJszW = wsGehalt.getCell(`W${jszRow}`);
+		cellJszW.value = { formula: `IF(V${refDec}>0,Z${jszRow}*${sepBgRate},0)`, result: jszBgAmount };
+		cellJszW.numFmt = '#,##0.00 €';
+
+		// Col X: JSZ Total with BG: =W#+Z#
 		const cellJszX = wsGehalt.getCell(`X${jszRow}`);
-		cellJszX.value = { formula: `IF(V${refDec}>0,${refSepO}*${jszPct}*(L${jszRow}/12),0)`, result: jszAmount };
+		cellJszX.value = { formula: `W${jszRow}+Z${jszRow}`, result: jszAmount + jszBgAmount };
 		cellJszX.numFmt = '#,##0.00 €';
+
+		// Col Z: JSZ in Anteil ZGS
+		const cellJszZ = wsGehalt.getCell(`Z${jszRow}`);
+		cellJszZ.value = { formula: `IF(V${refDec}>0,${refSepO}*${jszPct}*(L${jszRow}/12),0)`, result: jszAmount };
+		cellJszZ.numFmt = '#,##0.00 €';
 
 		// Row: AGA auf JSZ
 		wsGehalt.getCell(`O${agaJszRow}`).value = 'AGA auf JSZ';
 		wsGehalt.getCell(`O${agaJszRow}`).font = { bold: true };
 		const refSepU = septemberRowNumber ? `U${septemberRowNumber}` : (lastActiveMonthRowNumber ? `U${lastActiveMonthRowNumber}` : `U${yearEndRow}`);
+
+		// Col X: AGA auf JSZ in Gesamtkosten inkl. BG
 		const cellAgaJszX = wsGehalt.getCell(`X${agaJszRow}`);
-		cellAgaJszX.value = { formula: `IF(V${refDec}>0,${refSepU}*${jszPct}*(L${jszRow}/12),0)`, result: jszAgaAmount };
+		cellAgaJszX.value = { formula: `Z${agaJszRow}`, result: jszAgaAmount };
 		cellAgaJszX.numFmt = '#,##0.00 €';
+
+		// Col Z: AGA auf JSZ in Anteil ZGS
+		const cellAgaJszZ = wsGehalt.getCell(`Z${agaJszRow}`);
+		cellAgaJszZ.value = { formula: `IF(V${refDec}>0,${refSepU}*${jszPct}*(L${jszRow}/12),0)`, result: jszAgaAmount };
+		cellAgaJszZ.numFmt = '#,##0.00 €';
 
 		// Row: Yearly Totals
 		wsGehalt.getCell(`O${sumRow}`).value = { formula: `SUM(O${yearStartRow}:O${yearEndRow})` };
@@ -584,7 +665,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 		wsGehalt.getCell(`V${sumRow}`).font = { bold: true };
 		wsGehalt.getCell(`V${sumRow}`).numFmt = '#,##0.00 €';
 
-		for (const col of ['W', 'X', 'Y', 'Z']) {
+		for (const col of ['W', 'X', 'Y', 'Z', 'AA', 'AB']) {
 			const cell = wsGehalt.getCell(`${col}${sumRow}`);
 			cell.value = { formula: `SUM(${col}${yearStartRow}:${col}${agaJszRow})` };
 			cell.font = { bold: true };
@@ -612,7 +693,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 		wsGehalt.getCell(`U${r}`).value = item.year;
 		wsGehalt.getCell(`U${r}`).font = { bold: true };
 
-		for (const col of ['V', 'W', 'X', 'Y', 'Z']) {
+		for (const col of ['V', 'W', 'X', 'Y', 'Z', 'AA', 'AB']) {
 			const cell = wsGehalt.getCell(`${col}${r}`);
 			cell.value = { formula: `=${col}${item.row}` };
 			cell.numFmt = '#,##0.00 €';
@@ -621,7 +702,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 	}
 
 	const grandTotalRow = currentRow++;
-	for (const col of ['V', 'W', 'X', 'Y', 'Z']) {
+	for (const col of ['V', 'W', 'X', 'Y', 'Z', 'AA', 'AB']) {
 		const cell = wsGehalt.getCell(`${col}${grandTotalRow}`);
 		cell.value = { formula: `SUM(${col}${summaryStartRow}:${col}${grandTotalRow - 1})` };
 		cell.font = { bold: true };
@@ -639,10 +720,14 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 	note1.font = { italic: true, size: 9 };
 
 	for (const m of milestones) {
-		if (m.type === 'stufenaufstieg' || m.type === 'tariferhoehung') {
+		if (m.type === 'stufenaufstieg' || m.type === 'tariferhoehung' || m.type === 'umgruppierung') {
 			const noteCell = wsGehalt.getCell(`A${currentRow++}`);
 			noteCell.value = `${m.label} am ${m.dateStr}`;
-			noteCell.font = { bold: true, size: 9 };
+			noteCell.font = {
+				bold: true,
+				size: 9,
+				color: m.type === 'umgruppierung' ? { argb: 'FFFFFFFF' } : undefined
+			};
 			noteCell.fill = {
 				type: 'pattern',
 				pattern: 'solid',

@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type { ParticipantInfo, MonthlyRecord, AgaRatePeriod, InsuranceFundDetails } from '#lib/types/grant';
+import type { ParticipantInfo, MonthlyRecord, AgaRatePeriod, InsuranceFundDetails, TariffReclassification } from '#lib/types/grant';
 import { DEFAULT_INSURANCE_FUNDS } from '#lib/grants/tvl-tariff-data';
 
 /**
@@ -205,6 +205,19 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 	const healthInsuranceName = rawHealthInsurance || 'DAK';
 	const defaultAgaRate = parseNumber(getCellValue('Y', 2), 0.2314);
 
+	let defaultBgRate = 0.018;
+	for (const col of ['Z', 'AA', 'AB', 'Y', 'X']) {
+		const txt = getCellFormattedText(col, 2).toLowerCase();
+		if (txt.includes('bg') || txt.includes('unfall')) {
+			const nextCol = String.fromCharCode(col.charCodeAt(0) + 1);
+			const nextVal = parseNumber(getCellValue(nextCol, 2), 0);
+			if (nextVal > 0) {
+				defaultBgRate = nextVal > 1 ? nextVal / 100 : nextVal;
+				break;
+			}
+		}
+	}
+
 	// Parse JobCenter-ID and ZGS-ID from Row 1 if present
 	let jobcenterId: string | undefined;
 	let zgsId: string | undefined;
@@ -255,40 +268,78 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 		childrenCount,
 		healthInsuranceName,
 		defaultAgaRate,
+		defaultBgRate,
 		jobcenterId,
 		zgsId
 	};
+
+	// Scan Row 3 headers to detect dynamic column layout
+	const headerColMap: Record<string, string> = {};
+	const candidateCols: string[] = [];
+	for (let i = 0; i < 26; i++) candidateCols.push(String.fromCharCode(65 + i));
+	for (let i = 0; i < 10; i++) candidateCols.push(`A${String.fromCharCode(65 + i)}`);
+
+	for (const c of candidateCols) {
+		const hText = getCellFormattedText(c, 3).toLowerCase().replace(/\s+/g, ' ').trim();
+		if (hText) {
+			headerColMap[hText] = c;
+		}
+	}
+
+	const findCol = (keywords: string[], fallback: string): string => {
+		for (const [header, col] of Object.entries(headerColMap)) {
+			if (keywords.some(kw => header.includes(kw.toLowerCase()))) {
+				return col;
+			}
+		}
+		return fallback;
+	};
+
+	const colBgCost = findCol(['bg-kosten', 'berufsgenossenschaft', 'bg kosten', 'unfallversicherung'], '');
+	const colTotalCostWithBg = findCol(['gesamtkosten inkl. bg', 'gesamt ag-brutto inkl. bg', 'inkl. bg'], '');
+	const colJcShare = findCol(['anteil jc', 'egz jc'], colBgCost ? 'Y' : 'W');
+	const colZgsShare = findCol(['anteil zgs'], colBgCost ? 'Z' : 'X');
+	const colDegressionShare = findCol(['anteil degression'], colBgCost ? 'AA' : 'Y');
+	const colSkLand = findCol(['sk-land', 'sachkosten'], colBgCost ? 'AB' : 'Z');
 
 	// Parse monthly records from Row 4 onwards (after header rows)
 	const records: MonthlyRecord[] = [];
 	let lastPendingJsz = 0;
 	let lastPendingJszAga = 0;
+	let lastPendingJszBg = 0;
 
-	// Loop through rows up to 120
-	for (let r = 4; r <= 120; r++) {
+	// Loop through rows up to 130
+	for (let r = 4; r <= 130; r++) {
 		const colA = getCellValue('A', r);
 		const colF = getCellValue('F', r);
 		const colO = getCellValue('O', r);
 
 		// Check if this is a JSZ (Jahressonderzahlung) row
 		if (colO && String(colO).includes('Jahressonderzahlung')) {
-			lastPendingJsz = parseNumber(getCellValue('X', r), 0);
+			lastPendingJsz = parseNumber(getCellValue(colZgsShare, r), 0);
+			if (colBgCost) {
+				lastPendingJszBg = parseNumber(getCellValue(colBgCost, r), 0);
+			}
 			continue;
 		}
 
 		// Check if this is a JSZ AGA row
 		if (colO && String(colO).includes('AGA auf JSZ')) {
-			lastPendingJszAga = parseNumber(getCellValue('X', r), 0);
+			lastPendingJszAga = parseNumber(getCellValue(colZgsShare, r), 0);
 
 			// Attach JSZ to the previous monthly record (usually the last month of that year, e.g. Dec)
 			if (records.length > 0 && (lastPendingJsz > 0 || lastPendingJszAga > 0)) {
 				const lastRecord = records[records.length - 1];
 				lastRecord.jszAmount = lastPendingJsz;
 				lastRecord.jszAgaAmount = lastPendingJszAga;
+				if (lastPendingJszBg > 0) {
+					lastRecord.jszBgAmount = lastPendingJszBg;
+				}
 				lastRecord.isJszMonth = true;
 			}
 			lastPendingJsz = 0;
 			lastPendingJszAga = 0;
+			lastPendingJszBg = 0;
 			continue;
 		}
 
@@ -385,9 +436,26 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 
 			const agaRealAmount = parseNumber(getCellValue('U', r), partTimeSalary * rowAgaRate);
 			const totalEmployerCost = parseNumber(getCellValue('V', r), partTimeSalary + agaRealAmount);
-			const landSvShortfall = parseNumber(getCellValue('X', r), totalEmployerCost - jcTotalGross);
-			const landDegressionAmount = parseNumber(getCellValue('Y', r), 0);
-			const sachkostenAmount = parseNumber(getCellValue('Z', r), sachkostenMonthly * safeMonthUnits);
+			const landSvShortfall = parseNumber(getCellValue(colZgsShare, r), totalEmployerCost - jcTotalGross);
+			const landDegressionAmount = parseNumber(getCellValue(colDegressionShare, r), 0);
+			const sachkostenAmount = parseNumber(getCellValue(colSkLand, r), sachkostenMonthly * safeMonthUnits);
+
+			// BG calculation
+			let bgAmount = 0;
+			let totalEmployerCostWithBg = totalEmployerCost;
+			let rowBgRate = defaultBgRate;
+
+			if (colBgCost) {
+				bgAmount = parseNumber(getCellValue(colBgCost, r), 0);
+				if (partTimeSalary > 0 && bgAmount > 0) {
+					rowBgRate = bgAmount / partTimeSalary;
+				}
+			}
+			if (colTotalCostWithBg) {
+				totalEmployerCostWithBg = parseNumber(getCellValue(colTotalCostWithBg, r), totalEmployerCost + bgAmount);
+			} else if (bgAmount > 0) {
+				totalEmployerCostWithBg = totalEmployerCost + bgAmount;
+			}
 
 			records.push({
 				date: dateStr,
@@ -415,9 +483,38 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 				jszAmount: 0,
 				jszAgaAmount: 0,
 				sachkostenAmount,
-				tariffDelta: tariffDelta > 0 ? tariffDelta : undefined
+				tariffDelta: tariffDelta > 0 ? tariffDelta : undefined,
+				isJszMonth: false,
+				bgRate: rowBgRate,
+				bgAmount,
+				totalEmployerCostWithBg
 			});
 		}
+	}
+
+	// Extract reclassifications from footnotes if present
+	const reclassifications: TariffReclassification[] = [];
+	for (let r = 70; r <= 140; r++) {
+		const txt = getCellFormattedText('A', r);
+		if (txt && (txt.includes('Umgruppierung') || txt.includes('Höhergruppierung') || txt.includes('Stufenanpassung'))) {
+			const amMatch = txt.match(/(.*)\s+am\s+(\d{1,2}\.\d{1,2}\.\d{4})/);
+			if (amMatch) {
+				const note = amMatch[1].trim();
+				const effectiveDate = amMatch[2];
+				const groupMatch = note.match(/(EG\s*\d+|S\s*\d+[a-z]?)/i);
+				const stepMatch = note.match(/(ES\s*\d+)/i);
+				reclassifications.push({
+					id: `reclass-fn-${r}`,
+					effectiveDate,
+					tariffGroup: groupMatch ? groupMatch[0].replace(/\s+/g, '').toUpperCase() : undefined,
+					tariffStep: stepMatch ? stepMatch[0].replace(/\s+/g, '').toUpperCase() : undefined,
+					note
+				});
+			}
+		}
+	}
+	if (reclassifications.length > 0) {
+		participant.reclassifications = reclassifications;
 	}
 
 	// Parse available insurance funds and rates from AGA sheet if present

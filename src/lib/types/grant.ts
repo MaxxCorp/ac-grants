@@ -1,3 +1,19 @@
+export interface TariffReclassification {
+	id: string;
+	effectiveDate: string; // YYYY-MM-DD or DD.MM.YYYY
+	tariffGroup?: string;  // e.g. "EG3", "S08b"
+	tariffStep?: string;   // e.g. "ES2", "ES3"
+	note?: string;         // e.g. "Höhergruppierung"
+}
+
+export interface BgRatePeriod {
+	id: string;
+	startDate: string;
+	endDate: string;
+	rate: number; // e.g. 0.018 for 1.80%
+	label: string;
+}
+
 export interface ParticipantInfo {
 	name: string;
 	tariffGroup: string;
@@ -12,6 +28,9 @@ export interface ParticipantInfo {
 	defaultAgaRate: number;
 	jobcenterId?: string;
 	zgsId?: string;
+	reclassifications?: TariffReclassification[];
+	defaultBgRate?: number;
+	bgTimeline?: BgRatePeriod[];
 }
 
 export interface BerechnungsblattGeneratorOptions {
@@ -30,17 +49,22 @@ export interface BerechnungsblattGeneratorOptions {
 	childrenCount?: number; // default 0
 	jszPercentage?: number; // default 85
 	customAgaTimeline?: AgaRatePeriod[];
+	reclassifications?: TariffReclassification[];
+	bgRate?: number; // default 0.018 (1.80%)
+	customBgTimeline?: BgRatePeriod[];
 }
 
 export interface GeneratorMilestone {
-	type: 'stufenaufstieg' | 'tariferhoehung' | 'exit';
+	type: 'stufenaufstieg' | 'tariferhoehung' | 'umgruppierung' | 'exit';
 	year: number;
 	month: number;
 	dateStr: string;
 	label: string;
-	color: string; // '70AD47' (green), 'FFC000' (yellow), 'FF0000' (red)
+	color: string; // '70AD47' (green), 'FFC000' (yellow), '8B5CF6' (purple), 'FF0000' (red)
 	oldStep?: string;
 	newStep?: string;
+	oldGroup?: string;
+	newGroup?: string;
 	oldSalary?: number;
 	newSalary?: number;
 }
@@ -75,6 +99,12 @@ export interface MonthlyRecord {
 	tariffDelta?: number;
 	isJszMonth?: boolean;
 	notes?: string;
+	tariffGroup?: string;
+	tariffStep?: string;
+	bgRate?: number;
+	bgAmount?: number;
+	totalEmployerCostWithBg?: number;
+	jszBgAmount?: number;
 }
 
 export interface AgaRatePeriod {
@@ -165,6 +195,7 @@ export interface GrantTransformationOptions {
 	restrictToExitDate?: boolean; // Legacy compatibility: true -> 'exit_date', false -> 'full_5_years'
 	restrictToYear?: number; // Optional fallback year restriction
 	customAgaTimeline?: AgaRatePeriod[];
+	customBgTimeline?: BgRatePeriod[];
 }
 
 export interface InsuranceFundDetails {
@@ -410,6 +441,7 @@ export interface GrantTransformationResult {
 	tabs: FormTabDefinition[];
 	controls: ControlCheckResult;
 	agaTimeline: AgaRatePeriod[];
+	bgTimeline?: BgRatePeriod[];
 	options: GrantTransformationOptions;
 	rawMonthlyRecords: MonthlyRecord[];
 	insuranceFunds?: InsuranceFundDetails[];

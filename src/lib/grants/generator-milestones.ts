@@ -1,4 +1,9 @@
-import type { BerechnungsblattGeneratorOptions, GeneratorMilestone } from '#lib/types/grant';
+import type {
+	BerechnungsblattGeneratorOptions,
+	GeneratorMilestone,
+	TariffReclassification,
+	BgRatePeriod
+} from '#lib/types/grant';
 import {
 	getAwoTariffSalary,
 	calculateTariffStepAtDate,
@@ -6,12 +11,13 @@ import {
 } from '#lib/grants/awo-tariff-data';
 import { DEFAULT_INSURANCE_FUNDS } from '#lib/grants/tvl-tariff-data';
 
-// Color definitions matching the sample spreadsheet exactly
+// Color definitions matching the spreadsheet exactly
 export const COLOR_STUFENAUFSTIEG = '70AD47'; // Green
 export const COLOR_TARIFERHOEHUNG = 'FFC000'; // Amber/Yellow
-export const COLOR_EXIT = 'FF0000';           // Red
-export const COLOR_HEADER_BG = 'D9E1F2';      // Light blue-grey for headers
-export const COLOR_SUM_BG = 'F2F2F2';         // Soft grey for yearly totals
+export const COLOR_UMGRUPPIERUNG  = '8B5CF6'; // Vibrant Purple
+export const COLOR_EXIT           = 'FF0000'; // Red
+export const COLOR_HEADER_BG      = 'D9E1F2'; // Light blue-grey for headers
+export const COLOR_SUM_BG         = 'F2F2F2'; // Soft grey for yearly totals
 
 /**
  * Normalizes input date to year, month (1-12), day (1-31).
@@ -107,7 +113,109 @@ export function getInsuranceFundByName(name = 'Barmer') {
 }
 
 /**
- * Calculates milestones (Stufenaufstiege, Tariferhöhungen, planned exit) for the 5-year runtime.
+ * Resolves the effective Berufsgenossenschaft (BG) contribution rate for a target date.
+ */
+export function getEffectiveBgRate(
+	targetDate: { year: number; month: number; day?: number } | string,
+	defaultRate = 0.018,
+	customBgTimeline?: BgRatePeriod[]
+): number {
+	if (!customBgTimeline || customBgTimeline.length === 0) {
+		return defaultRate;
+	}
+	let dateStr = '';
+	if (typeof targetDate === 'string') {
+		const parsed = parseDateInput(targetDate);
+		dateStr = `${parsed.year}-${String(parsed.month).padStart(2, '0')}-${String(parsed.day || 1).padStart(2, '0')}`;
+	} else {
+		dateStr = `${targetDate.year}-${String(targetDate.month).padStart(2, '0')}-${String(targetDate.day || 1).padStart(2, '0')}`;
+	}
+
+	for (const period of customBgTimeline) {
+		const start = period.startDate.includes('.') ? parseDateInput(period.startDate) : null;
+		const end = period.endDate.includes('.') ? parseDateInput(period.endDate) : null;
+		const startStr = start ? `${start.year}-${String(start.month).padStart(2, '0')}-${String(start.day).padStart(2, '0')}` : period.startDate;
+		const endStr = end ? `${end.year}-${String(end.month).padStart(2, '0')}-${String(end.day).padStart(2, '0')}` : period.endDate;
+
+		if (dateStr >= startStr && dateStr <= endStr) {
+			return period.rate;
+		}
+	}
+	return defaultRate;
+}
+
+/**
+ * Resolves the active tariff group and experience step for a specific target date,
+ * incorporating arbitrary reclassifications that took effect on or before that date.
+ */
+export function resolveTariffStateAtDate(
+	targetDate: { day: number; month: number; year: number },
+	startDate: { day: number; month: number; year: number },
+	initialGroup: string = 'EG2',
+	initialStep: number = 1,
+	reclassifications: TariffReclassification[] = []
+): {
+	group: string;
+	step: number;
+	activeReclassification?: TariffReclassification;
+	isReclassificationEffectiveThisMonth?: boolean;
+} {
+	const targetVal = targetDate.year * 10000 + targetDate.month * 100 + targetDate.day;
+
+	const sorted = [...reclassifications]
+		.filter(r => Boolean(r && r.effectiveDate))
+		.map(r => {
+			const parsed = parseDateInput(r.effectiveDate);
+			return {
+				...r,
+				parsed,
+				dateVal: parsed.year * 10000 + parsed.month * 100 + parsed.day
+			};
+		})
+		.sort((a, b) => a.dateVal - b.dateVal);
+
+	const applied = sorted.filter(r => r.dateVal <= targetVal);
+
+	// Determine group
+	let currentGroup = initialGroup;
+	for (const r of applied) {
+		if (r.tariffGroup && r.tariffGroup.trim()) {
+			currentGroup = r.tariffGroup.trim();
+		}
+	}
+
+	// Determine step
+	// Find most recent reclassification that specified a tariffStep
+	let stepBaselineDate = startDate;
+	let stepBaselineVal = initialStep;
+
+	for (const r of applied) {
+		if (r.tariffStep && r.tariffStep.trim()) {
+			const parsedStep = parseInt(r.tariffStep.replace(/\D/g, ''), 10);
+			if (!isNaN(parsedStep) && parsedStep >= 1 && parsedStep <= 6) {
+				stepBaselineVal = parsedStep;
+				stepBaselineDate = r.parsed;
+			}
+		}
+	}
+
+	const currentStep = calculateTariffStepAtDate(targetDate, stepBaselineDate, stepBaselineVal);
+
+	// Check if a reclassification took effect in this target month
+	const effectiveThisMonth = applied.find(
+		r => r.parsed.year === targetDate.year && r.parsed.month === targetDate.month
+	);
+
+	return {
+		group: currentGroup,
+		step: currentStep,
+		activeReclassification: applied[applied.length - 1],
+		isReclassificationEffectiveThisMonth: Boolean(effectiveThisMonth)
+	};
+}
+
+/**
+ * Calculates milestones (Stufenaufstiege, Tariferhöhungen, Umgruppierungen, planned exit) for the 5-year runtime.
  */
 export function calculateMilestones(options: BerechnungsblattGeneratorOptions): GeneratorMilestone[] {
 	const start = parseDateInput(options.startDate);
@@ -117,9 +225,11 @@ export function calculateMilestones(options: BerechnungsblattGeneratorOptions): 
 	const initialStepNum = parseInt((options.tariffStep || 'ES1').replace(/\D/g, ''), 10) || 1;
 	const weeklyHours = options.weeklyHours || 30;
 	const fullTimeHours = options.fullTimeHours || 39;
+	const reclassifications = options.reclassifications || [];
 
 	const milestones: GeneratorMilestone[] = [];
 	let previousStep = initialStepNum;
+	let previousGroup = group;
 	let previousFte = 0;
 
 	// Total calendar span in months
@@ -131,17 +241,56 @@ export function calculateMilestones(options: BerechnungsblattGeneratorOptions): 
 		const curMonth = (totalMonths % 12) + 1;
 		const isLastMonth = (curYear === end.year && curMonth === end.month);
 
-		const currentStep = calculateTariffStepAtDate(
+		const tariffState = resolveTariffStateAtDate(
 			{ day: start.day, month: curMonth, year: curYear },
 			start,
-			initialStepNum
+			group,
+			initialStepNum,
+			reclassifications
 		);
 
-		const salaryInfo = getAwoTariffSalary(group, currentStep, curYear, curMonth, weeklyHours, fullTimeHours);
+		const currentGroup = tariffState.group;
+		const currentStep = tariffState.step;
+
+		const salaryInfo = getAwoTariffSalary(currentGroup, currentStep, curYear, curMonth, weeklyHours, fullTimeHours);
 		const currentFte = salaryInfo?.fteSalary || 0;
 
-		// 1. Stufenaufstieg check
-		if (i > 0 && currentStep > previousStep) {
+		// 1. Reclassification check (Umgruppierung / Stufenanpassung)
+		if (tariffState.isReclassificationEffectiveThisMonth) {
+			const activeRec = reclassifications.find(r => {
+				const p = parseDateInput(r.effectiveDate);
+				return p.year === curYear && p.month === curMonth;
+			});
+
+			let label = activeRec?.note?.trim();
+			if (!label) {
+				const groupChanged = currentGroup !== previousGroup;
+				const stepChanged = currentStep !== previousStep;
+				if (groupChanged && stepChanged) {
+					label = `Umgruppierung zu ${currentGroup} (ES${currentStep})`;
+				} else if (groupChanged) {
+					label = `Höhergruppierung zu ${currentGroup}`;
+				} else {
+					label = `Stufenanpassung zu ES${currentStep}`;
+				}
+			}
+
+			milestones.push({
+				type: 'umgruppierung',
+				year: curYear,
+				month: curMonth,
+				dateStr: activeRec?.effectiveDate ? formatDateDMY(parseDateInput(activeRec.effectiveDate)) : `01.${String(curMonth).padStart(2, '0')}.${curYear}`,
+				label,
+				color: COLOR_UMGRUPPIERUNG,
+				oldGroup: previousGroup,
+				newGroup: currentGroup,
+				oldStep: `ES${previousStep}`,
+				newStep: `ES${currentStep}`,
+				oldSalary: previousFte,
+				newSalary: currentFte
+			});
+		} else if (i > 0 && currentStep > previousStep) {
+			// 2. Regular Stufenaufstieg check (if no reclassification occurred this month)
 			milestones.push({
 				type: 'stufenaufstieg',
 				year: curYear,
@@ -156,7 +305,7 @@ export function calculateMilestones(options: BerechnungsblattGeneratorOptions): 
 			});
 		}
 
-		// 2. Tariferhöhung check
+		// 3. Tariferhöhung check
 		if (i > 0 && isAwoTariffIncreaseMonth(curYear, curMonth)) {
 			milestones.push({
 				type: 'tariferhoehung',
@@ -170,7 +319,7 @@ export function calculateMilestones(options: BerechnungsblattGeneratorOptions): 
 			});
 		}
 
-		// 3. Planned Exit check (last month)
+		// 4. Planned Exit check (last month)
 		if (isLastMonth) {
 			milestones.push({
 				type: 'exit',
@@ -182,6 +331,7 @@ export function calculateMilestones(options: BerechnungsblattGeneratorOptions): 
 			});
 		}
 
+		previousGroup = currentGroup;
 		previousStep = currentStep;
 		previousFte = currentFte;
 	}

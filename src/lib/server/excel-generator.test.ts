@@ -5,7 +5,8 @@ import {
 	calculateMilestones,
 	COLOR_STUFENAUFSTIEG,
 	COLOR_TARIFERHOEHUNG,
-	COLOR_EXIT
+	COLOR_EXIT,
+	COLOR_UMGRUPPIERUNG
 } from './excel-generator';
 import { parseExcelBuffer } from './excel';
 import { transformSgb16i } from '#lib/grants/sgb16i';
@@ -92,6 +93,13 @@ describe('Berechnungsblatt Generator', () => {
 		expect(wsGehalt.getCell('S3').value).toBe('Umlagen U1-U3');
 		expect(wsGehalt.getCell('T3').value).toBe('AGA-Gesamtsatz');
 		expect(wsGehalt.getCell('U3').value).toBe('AGAreal');
+		expect(wsGehalt.getCell('V3').value).toBe('Gehalt AN + AGAreal');
+		expect(wsGehalt.getCell('W3').value).toBe('BG-Kosten');
+		expect(wsGehalt.getCell('X3').value).toBe('Gesamtkosten inkl. BG');
+		expect(wsGehalt.getCell('Y3').value).toBe('Anteil JC');
+		expect(wsGehalt.getCell('Z3').value).toBe('Anteil ZGS');
+		expect(wsGehalt.getCell('AA3').value).toBe('Anteil Degression');
+		expect(wsGehalt.getCell('AB3').value).toBe('SK-Land');
 
 		// Check AGA sheet rows
 		const wsAga = wb.getWorksheet('AGA')!;
@@ -118,9 +126,15 @@ describe('Berechnungsblatt Generator', () => {
 		expect(parsed.records[0].month).toBe(10);
 		expect(parsed.records[59].year).toBe(2031);
 		expect(parsed.records[59].month).toBe(9);
-
-		// Check AGA rate parsed on records
+		
+		// Check AGA and BG rate parsed on records
 		expect(parsed.records[0].agaRealRate).toBeCloseTo(0.23815, 4);
+		expect(parsed.records[0].bgRate).toBeCloseTo(0.018, 3);
+		expect(parsed.records[0].bgAmount).toBeGreaterThan(30);
+		expect(parsed.records[0].totalEmployerCostWithBg).toBeCloseTo(
+			parsed.records[0].totalEmployerCost + parsed.records[0].bgAmount!,
+			2
+		);
 
 		// Check JSZ records: 5 years of runtime -> 5 JSZ entries
 		const jszRecords = parsed.records.filter(r => r.isJszMonth);
@@ -159,9 +173,9 @@ describe('Berechnungsblatt Generator', () => {
 		expect(parsed.participant.runtimeStart).toBe('16.10.2026');
 		expect(parsed.participant.runtimeEnd).toBe('15.10.2031');
 
-		// Total duration must sum to exactly 60.0 months
+		// 60 full-time-equivalent months, but split lines make parsed records > 60
 		const totalUnits = parsed.records.reduce((sum, r) => sum + r.monthUnits, 0);
-		expect(totalUnits).toBe(60);
+		expect(totalUnits).toBeCloseTo(60, 2);
 
 		// Initial month 10/2026 has 1 record with 0.5 units at 100%
 		const oct2026 = parsed.records.filter(r => r.year === 2026 && r.month === 10);
@@ -213,5 +227,134 @@ describe('Berechnungsblatt Generator', () => {
 		expect(result.controls.overallStatus).toBe('MATCH');
 		expect(result.controls.totalDelta).toBe(0);
 		expect(result.runtimeMonths).toBe(60);
+	});
+
+	it('handles arbitrary reclassifications (EG/ES change) at arbitrary dates with milestone and color highlight', async () => {
+		const options: BerechnungsblattGeneratorOptions = {
+			employeeName: 'Frau Tanja Umgruppiert',
+			startDate: '2026-10-01',
+			durationMonths: 60,
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			healthInsuranceName: 'Barmer',
+			reclassifications: [
+				{
+					id: 'rec-1',
+					effectiveDate: '2028-10-01',
+					tariffGroup: 'EG3',
+					tariffStep: 'ES2',
+					note: 'Höhergruppierung zur Fachkraft'
+				}
+			]
+		};
+
+		// Check milestone detection
+		const milestones = calculateMilestones(options);
+		const umgMilestone = milestones.find(m => m.type === 'umgruppierung');
+		expect(umgMilestone).toBeDefined();
+		expect(umgMilestone?.year).toBe(2028);
+		expect(umgMilestone?.month).toBe(10);
+		expect(umgMilestone?.color).toBe(COLOR_UMGRUPPIERUNG);
+		expect(umgMilestone?.newGroup).toBe('EG3');
+
+		// Generate workbook
+		const buf = await generateBerechnungsblattExcel(options);
+		const wb = new ExcelJS.Workbook();
+		await wb.xlsx.load(buf as any);
+		const wsGehalt = wb.getWorksheet('Gehalt')!;
+
+		// Month 25 (October 2028) row should be highlighted purple
+		// Find the row for October 2028
+		let oct2028Row = 0;
+		for (let r = 4; r <= 80; r++) {
+			const val = String(wsGehalt.getCell(`A${r}`).value || '');
+			if (val.includes('10/31/28') || val.includes('10/15/28') || val.includes('10.2028')) {
+				oct2028Row = r;
+				break;
+			}
+		}
+		expect(oct2028Row).toBeGreaterThan(0);
+		const cellA = wsGehalt.getCell(`A${oct2028Row}`);
+		const fill = cellA.fill as any;
+		expect(fill).toBeDefined();
+		expect(fill.fgColor?.argb).toContain(COLOR_UMGRUPPIERUNG);
+
+		// Footnotes should contain the reclassification
+		let hasReclassFootnote = false;
+		for (let r = 70; r <= 130; r++) {
+			const fn = wsGehalt.getCell(`A${r}`).value;
+			if (fn && String(fn).includes('Höhergruppierung zur Fachkraft')) {
+				hasReclassFootnote = true;
+				break;
+			}
+		}
+		expect(hasReclassFootnote).toBe(true);
+
+		// Parse back and verify salary reflects EG3
+		const parsed = parseExcelBuffer(buf);
+		const recBefore = parsed.records.find(r => r.year === 2028 && r.month === 9)!;
+		const recAfter = parsed.records.find(r => r.year === 2028 && r.month === 10)!;
+
+		// EG3 is higher than EG2
+		expect(recAfter.fteSalary).toBeGreaterThan(recBefore.fteSalary);
+
+		// SGB 16i transformation remains 100% MATCH
+		const result = transformSgb16i(parsed.records, parsed.participant, {
+			includeOffsetRows: true
+		});
+		expect(result.controls.overallStatus).toBe('MATCH');
+		expect(result.controls.totalDelta).toBe(0);
+	});
+
+	it('computes Berufsgenossenschaft (BG) costs across time in separate column W and total in column X', async () => {
+		const options: BerechnungsblattGeneratorOptions = {
+			employeeName: 'Herr Bernd BG-Tester',
+			startDate: '2026-10-01',
+			durationMonths: 60,
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			healthInsuranceName: 'Barmer',
+			bgRate: 0.018,
+			customBgTimeline: [
+				{
+					id: 'bg-1',
+					startDate: '2026-10-01',
+					endDate: '2028-09-30',
+					rate: 0.018,
+					label: 'BGW Standard 1,80%'
+				},
+				{
+					id: 'bg-2',
+					startDate: '2028-10-01',
+					endDate: '2031-09-30',
+					rate: 0.022,
+					label: 'BGW Erhöht 2,20%'
+				}
+			]
+		};
+
+		const buf = await generateBerechnungsblattExcel(options);
+		const parsed = parseExcelBuffer(buf);
+
+		expect(parsed.records.length).toBe(60);
+
+		// Month 1: October 2026 (1.80%)
+		const month1 = parsed.records[0];
+		expect(month1.bgRate).toBeCloseTo(0.018, 3);
+		expect(month1.bgAmount).toBeCloseTo(month1.partTimeSalary * 0.018, 2);
+		expect(month1.totalEmployerCostWithBg).toBeCloseTo(month1.totalEmployerCost + month1.bgAmount!, 2);
+
+		// Month 25: October 2028 (2.20%)
+		const month25 = parsed.records[24];
+		expect(month25.bgRate).toBeCloseTo(0.022, 3);
+		expect(month25.bgAmount).toBeCloseTo(month25.partTimeSalary * 0.022, 2);
+		expect(month25.totalEmployerCostWithBg).toBeCloseTo(month25.totalEmployerCost + month25.bgAmount!, 2);
+
+		// SGB 16i transformation remains 100% MATCH
+		const result = transformSgb16i(parsed.records, parsed.participant, {
+			includeOffsetRows: true
+		});
+		expect(result.controls.overallStatus).toBe('MATCH');
+		expect(result.controls.totalDelta).toBe(0);
 	});
 });

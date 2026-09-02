@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { generateBerechnungsblatt } from '#lib/grant.remote';
 	import { calculateMilestones } from '#lib/grants/generator-milestones';
-	import type { GrantTransformationResult } from '#lib/types/grant';
+	import type {
+		GrantTransformationResult,
+		TariffReclassification,
+		BgRatePeriod,
+		AgaRatePeriod
+	} from '#lib/types/grant';
 
 	let {
 		isOpen = $bindable(false),
@@ -36,6 +41,94 @@
 	let healthInsuranceName = $state('Barmer');
 	let jobcenterId = $state('');
 	let zgsId = $state('');
+
+	// Reclassifications (Umgruppierungen & Stufenanpassungen)
+	let reclassifications = $state<TariffReclassification[]>([]);
+
+	function addReclassification() {
+		let defaultEffDate = '2028-01-01';
+		if (startDate) {
+			const parts = startDate.split('-');
+			if (parts.length === 3) {
+				defaultEffDate = `${parseInt(parts[0], 10) + 1}-${parts[1]}-${parts[2]}`;
+			}
+		}
+		reclassifications = [
+			...reclassifications,
+			{
+				id: `reclass-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+				effectiveDate: defaultEffDate,
+				tariffGroup,
+				tariffStep: 'ES2',
+				note: 'Umgruppierung / Stufenanpassung'
+			}
+		];
+	}
+
+	function removeReclassification(id: string) {
+		reclassifications = reclassifications.filter(r => r.id !== id);
+	}
+
+	// Berufsgenossenschaft (Gesetzliche Unfallversicherung)
+	let bgRate = $state(1.80); // in percent (e.g. 1.80%)
+	let showBgTimeline = $state(false);
+	let bgTimeline = $state<BgRatePeriod[]>([]);
+
+	const PRESET_BG_RATES = [
+		{ label: 'BGW Standard', rate: 1.80, note: 'Wohlfahrtspflege & Gesundheit' },
+		{ label: 'BGW Erhöht', rate: 2.00, note: 'Gefahrtarif mit Risikozuschlag' },
+		{ label: 'VBG', rate: 1.50, note: 'Verwaltungs-Berufsgenossenschaft' }
+	];
+
+	function addBgPeriod() {
+		let nextStart = '2028-01-01';
+		let nextEnd = '2031-09-30';
+		if (bgTimeline.length > 0) {
+			nextStart = bgTimeline[bgTimeline.length - 1].endDate;
+		}
+		bgTimeline = [
+			...bgTimeline,
+			{
+				id: `bg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+				startDate: nextStart,
+				endDate: nextEnd,
+				rate: bgRate / 100,
+				label: `Anpassung BG ab ${nextStart.slice(0, 4)}`
+			}
+		];
+	}
+
+	function removeBgPeriod(id: string) {
+		bgTimeline = bgTimeline.filter(p => p.id !== id);
+	}
+
+	// Krankenkassen-Zeitverlauf (AGA)
+	let showAgaTimeline = $state(false);
+	let customAgaTimeline = $state<AgaRatePeriod[]>([]);
+
+	function addAgaPeriod() {
+		let nextStart = '2028-01-01';
+		let nextEnd = '2031-09-30';
+		if (customAgaTimeline.length > 0) {
+			nextStart = customAgaTimeline[customAgaTimeline.length - 1].endDate;
+		}
+		const selFund = AVAILABLE_INSURANCES.find(i => i.name === healthInsuranceName);
+		const defaultAga = selFund ? parseFloat(selFund.rate.replace(',', '.')) / 100 : 0.23815;
+		customAgaTimeline = [
+			...customAgaTimeline,
+			{
+				id: `aga-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+				startDate: nextStart,
+				endDate: nextEnd,
+				rate: defaultAga,
+				label: `Anpassung AGA ab ${nextStart.slice(0, 4)}`
+			}
+		];
+	}
+
+	function removeAgaPeriod(id: string) {
+		customAgaTimeline = customAgaTimeline.filter(p => p.id !== id);
+	}
 
 	// Advanced customizations
 	let showAdvanced = $state(false);
@@ -79,7 +172,8 @@
 				tariffGroup,
 				tariffStep,
 				weeklyHours,
-				fullTimeHours
+				fullTimeHours,
+				reclassifications
 			});
 		} catch {
 			return [];
@@ -131,7 +225,11 @@
 				childrenCount,
 				jszPercentage,
 				schemeId: selectedScheme,
-				includeOffsetRows: true
+				includeOffsetRows: true,
+				reclassifications: reclassifications.length > 0 ? reclassifications : undefined,
+				bgRate: bgRate / 100,
+				customBgTimeline: bgTimeline.length > 0 ? bgTimeline : undefined,
+				customAgaTimeline: customAgaTimeline.length > 0 ? customAgaTimeline : undefined
 			});
 
 			// Download file
@@ -266,7 +364,7 @@
 					<!-- Krankenkasse -->
 					<div class="form-group col-span-2">
 						<div class="label-row">
-							<label for="healthInsurance">Gesetzliche Krankenkasse</label>
+							<label for="healthInsurance">Gesetzliche Krankenkasse (AGA-Beitragssatz)</label>
 							<span class="verified-badge">
 								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3">
 									<polyline points="20 6 9 17 4 12"></polyline>
@@ -281,6 +379,152 @@
 								</option>
 							{/each}
 						</select>
+
+						<div class="timeline-toggle-row">
+							<button
+								type="button"
+								class="timeline-pill-btn {showAgaTimeline || customAgaTimeline.length > 0 ? 'active' : ''}"
+								onclick={() => (showAgaTimeline = !showAgaTimeline)}
+							>
+								📅 Krankenkassen-Beitragssatz im Zeitverlauf anpassen {customAgaTimeline.length > 0 ? `(${customAgaTimeline.length} Intervalle)` : ''}
+							</button>
+						</div>
+
+						{#if showAgaTimeline}
+							<div class="nested-timeline-box">
+								<div class="nested-timeline-header">
+									<span>📅 Krankenkassen-Beitragssatz im Zeitverlauf</span>
+									<button type="button" class="btn-sub-action" onclick={addAgaPeriod}>
+										+ Zeitraum hinzufügen
+									</button>
+								</div>
+								{#if customAgaTimeline.length === 0}
+									<p class="empty-timeline-hint">Standardmäßig gilt der Beitragssatz der gewählten Krankenkasse über die gesamte Laufzeit. Fügen Sie Zeiträume hinzu, falls sich der Krankenkassen- oder Zusatzbeitragssatz ändert.</p>
+								{:else}
+									<div class="timeline-rows-list">
+										{#each customAgaTimeline as period, idx (period.id)}
+											<div class="timeline-row-card">
+												<span class="period-num">#{idx + 1}</span>
+												<div class="sub-field">
+													<label for="aga-start-{period.id}">Von</label>
+													<input id="aga-start-{period.id}" type="date" bind:value={period.startDate} class="form-input-sm" />
+												</div>
+												<div class="sub-field">
+													<label for="aga-end-{period.id}">Bis</label>
+													<input id="aga-end-{period.id}" type="date" bind:value={period.endDate} class="form-input-sm" />
+												</div>
+												<div class="sub-field">
+													<label for="aga-rate-{period.id}">AGA-Satz (%)</label>
+													<input
+														id="aga-rate-{period.id}"
+														type="number"
+														step="0.001"
+														value={Number((period.rate * 100).toFixed(3))}
+														oninput={(e) => (period.rate = parseFloat(e.currentTarget.value) / 100 || 0)}
+														class="form-input-sm"
+													/>
+												</div>
+												<div class="sub-field flex-grow">
+													<label for="aga-label-{period.id}">Bezeichnung</label>
+													<input id="aga-label-{period.id}" type="text" bind:value={period.label} placeholder="z. B. Anpassung 2028" class="form-input-sm" />
+												</div>
+												<button type="button" class="btn-icon-delete" onclick={() => removeAgaPeriod(period.id)} aria-label="Entfernen">
+													✕
+												</button>
+											</div>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						{/if}
+					</div>
+
+					<!-- Berufsgenossenschaft (Gesetzliche Unfallversicherung) -->
+					<div class="form-group col-span-2">
+						<div class="label-row">
+							<label for="bgRate">Berufsgenossenschaft (Gesetzliche Unfallversicherung)</label>
+							<div class="preset-chips">
+								{#each PRESET_BG_RATES as preset}
+									<button
+										type="button"
+										class="chip-btn {bgRate === preset.rate ? 'active' : ''}"
+										onclick={() => (bgRate = preset.rate)}
+									>
+										{preset.label} ({preset.rate.toFixed(2).replace('.', ',')}%)
+									</button>
+								{/each}
+							</div>
+						</div>
+						<div class="input-with-toggle">
+							<div class="input-with-unit">
+								<input
+									type="number"
+									id="bgRate"
+									bind:value={bgRate}
+									min="0"
+									max="15"
+									step="0.05"
+									class="form-input"
+								/>
+								<span class="unit">% Beitragssatz</span>
+							</div>
+							<button
+								type="button"
+								class="timeline-pill-btn {showBgTimeline || bgTimeline.length > 0 ? 'active' : ''}"
+								onclick={() => (showBgTimeline = !showBgTimeline)}
+							>
+								📅 Zeitverlauf {bgTimeline.length > 0 ? `(${bgTimeline.length} Intervalle)` : ''}
+							</button>
+						</div>
+						<span class="field-hint">Wird als eigene Spalte "BG-Kosten" und "Gesamtkosten inkl. BG" berechnet (Standard BGW: 1,80%).</span>
+
+						{#if showBgTimeline}
+							<div class="nested-timeline-box">
+								<div class="nested-timeline-header">
+									<span>📅 Berufsgenossenschafts-Beitragssatz im Zeitverlauf</span>
+									<button type="button" class="btn-sub-action" onclick={addBgPeriod}>
+										+ Zeitraum hinzufügen
+									</button>
+								</div>
+								{#if bgTimeline.length === 0}
+									<p class="empty-timeline-hint">Standardmäßig gilt der oben angegebene Beitragssatz ({bgRate.toFixed(2).replace('.', ',')}%) über die gesamte 5-jährige Laufzeit. Fügen Sie Zeiträume hinzu, falls sich der BG-Gefahrtarif oder Beitragsfuß ändert.</p>
+								{:else}
+									<div class="timeline-rows-list">
+										{#each bgTimeline as period, idx (period.id)}
+											<div class="timeline-row-card">
+												<span class="period-num">#{idx + 1}</span>
+												<div class="sub-field">
+													<label for="bg-start-{period.id}">Von</label>
+													<input id="bg-start-{period.id}" type="date" bind:value={period.startDate} class="form-input-sm" />
+												</div>
+												<div class="sub-field">
+													<label for="bg-end-{period.id}">Bis</label>
+													<input id="bg-end-{period.id}" type="date" bind:value={period.endDate} class="form-input-sm" />
+												</div>
+												<div class="sub-field">
+													<label for="bg-rate-{period.id}">BG-Satz (%)</label>
+													<input
+														id="bg-rate-{period.id}"
+														type="number"
+														step="0.05"
+														value={Number((period.rate * 100).toFixed(3))}
+														oninput={(e) => (period.rate = parseFloat(e.currentTarget.value) / 100 || 0)}
+														class="form-input-sm"
+													/>
+												</div>
+												<div class="sub-field flex-grow">
+													<label for="bg-label-{period.id}">Bezeichnung</label>
+													<input id="bg-label-{period.id}" type="text" bind:value={period.label} placeholder="z. B. Anpassung BGW 2028" class="form-input-sm" />
+												</div>
+												<button type="button" class="btn-icon-delete" onclick={() => removeBgPeriod(period.id)} aria-label="Entfernen">
+													✕
+												</button>
+											</div>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						{/if}
 					</div>
 
 					<!-- JobCenter & ZGS Tracking IDs -->
@@ -305,6 +549,69 @@
 							class="form-input"
 						/>
 					</div>
+				</div>
+
+				<!-- Reclassifications (Umgruppierungen & Stufenanpassungen) Section -->
+				<div class="reclass-section">
+					<div class="reclass-header">
+						<div class="reclass-title-group">
+							<span class="reclass-icon">🔄</span>
+							<div>
+								<h4>Beliebige Umgruppierungen & Stufenanpassungen ({reclassifications.length})</h4>
+								<p class="reclass-desc">Legen Sie fest, ob die/der Mitarbeiter/in zu beliebigen Terminen in eine andere Entgeltgruppe (EG) oder Erfahrungsstufe (ES) wechselt.</p>
+							</div>
+						</div>
+						<button type="button" class="btn-add-reclass" onclick={addReclassification}>
+							+ Umgruppierung hinzufügen
+						</button>
+					</div>
+
+					{#if reclassifications.length === 0}
+						<div class="reclass-empty-hint">
+							Keine manuellen Umgruppierungen hinterlegt. Reguläre Stufenaufstiege (nach 1 bzw. 2 Jahren) und Tariferhöhungen der AWO Berlin werden automatisch berechnet.
+						</div>
+					{:else}
+						<div class="reclass-list">
+							{#each reclassifications as rec, idx (rec.id)}
+								<div class="reclass-card">
+									<div class="reclass-card-header">
+										<span class="reclass-badge">Umgruppierungs-Ereignis #{idx + 1}</span>
+										<button type="button" class="btn-icon-delete" onclick={() => removeReclassification(rec.id)} aria-label="Entfernen">
+											✕
+										</button>
+									</div>
+									<div class="reclass-grid">
+										<div class="sub-field">
+											<label for="rec-date-{rec.id}">Wirksam ab Datum <span class="required">*</span></label>
+											<input id="rec-date-{rec.id}" type="date" bind:value={rec.effectiveDate} class="form-input" required />
+										</div>
+										<div class="sub-field">
+											<label for="rec-eg-{rec.id}">Neue Entgeltgruppe (EG)</label>
+											<select id="rec-eg-{rec.id}" bind:value={rec.tariffGroup} class="form-select">
+												<option value="">(Unverändert belassen)</option>
+												{#each AVAILABLE_GROUPS as grp}
+													<option value={grp}>{grp}</option>
+												{/each}
+											</select>
+										</div>
+										<div class="sub-field">
+											<label for="rec-es-{rec.id}">Neue Erfahrungsstufe (ES)</label>
+											<select id="rec-es-{rec.id}" bind:value={rec.tariffStep} class="form-select">
+												<option value="">(Unverändert belassen)</option>
+												{#each AVAILABLE_STEPS as stp}
+													<option value={stp}>{stp}</option>
+												{/each}
+											</select>
+										</div>
+										<div class="sub-field flex-grow">
+											<label for="rec-note-{rec.id}">Bezeichnung / Grund <span class="optional">(optional)</span></label>
+											<input id="rec-note-{rec.id}" type="text" bind:value={rec.note} placeholder="z. B. Höhergruppierung nach Tätigkeitswechsel" class="form-input" />
+										</div>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				</div>
 
 				<!-- Collapsible Advanced Settings -->
@@ -406,6 +713,7 @@
 					<div class="legend-row">
 						<span class="legend-item"><span class="color-dot green"></span> Stufenaufstieg (Grün)</span>
 						<span class="legend-item"><span class="color-dot yellow"></span> Tariferhöhung (Gelb)</span>
+						<span class="legend-item"><span class="color-dot purple"></span> Umgruppierung (Lila)</span>
 						<span class="legend-item"><span class="color-dot red"></span> Geplanter Austritt (Rot)</span>
 					</div>
 
@@ -413,7 +721,9 @@
 						{#each liveMilestones as m}
 							<div class="milestone-item border-{m.type}">
 								<div class="milestone-badge badge-{m.type}">
-									{#if m.type === 'stufenaufstieg'}
+									{#if m.type === 'umgruppierung'}
+										🔄 {m.newGroup || m.newStep || 'Umgruppierung'}
+									{:else if m.type === 'stufenaufstieg'}
 										🌱 {m.newStep}
 									{:else if m.type === 'tariferhoehung'}
 										📈 Tarif
@@ -719,6 +1029,304 @@
 		font-weight: 600;
 	}
 
+	.preset-chips {
+		display: flex;
+		gap: 0.35rem;
+		flex-wrap: wrap;
+	}
+
+	.chip-btn {
+		background: rgba(15, 23, 42, 0.5);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 6px;
+		padding: 0.2rem 0.5rem;
+		font-size: 0.75rem;
+		color: #94a3b8;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.chip-btn:hover {
+		color: #f8fafc;
+		border-color: rgba(255, 255, 255, 0.2);
+	}
+
+	.chip-btn.active {
+		background: rgba(99, 102, 241, 0.25);
+		border-color: #6366f1;
+		color: #c7d2fe;
+		font-weight: 600;
+	}
+
+	.input-with-toggle {
+		display: flex;
+		gap: 0.75rem;
+		align-items: center;
+	}
+
+	.timeline-toggle-row {
+		margin-top: 0.35rem;
+	}
+
+	.timeline-pill-btn {
+		background: rgba(30, 41, 59, 0.5);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 8px;
+		padding: 0.45rem 0.85rem;
+		font-size: 0.8rem;
+		color: #94a3b8;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		white-space: nowrap;
+		transition: all 0.15s ease;
+	}
+
+	.timeline-pill-btn:hover {
+		color: #f8fafc;
+		border-color: #6366f1;
+		background: rgba(99, 102, 241, 0.1);
+	}
+
+	.timeline-pill-btn.active {
+		background: rgba(99, 102, 241, 0.2);
+		border-color: #818cf8;
+		color: #c7d2fe;
+		font-weight: 600;
+	}
+
+	/* Nested Timeline Editor Box */
+	.nested-timeline-box {
+		margin-top: 0.5rem;
+		background: rgba(15, 23, 42, 0.7);
+		border: 1px solid rgba(99, 102, 241, 0.25);
+		border-radius: 10px;
+		padding: 0.75rem 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.nested-timeline-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		font-size: 0.825rem;
+		font-weight: 600;
+		color: #e2e8f0;
+	}
+
+	.btn-sub-action {
+		background: rgba(99, 102, 241, 0.2);
+		border: 1px solid rgba(99, 102, 241, 0.4);
+		color: #c7d2fe;
+		border-radius: 6px;
+		padding: 0.25rem 0.6rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.btn-sub-action:hover {
+		background: rgba(99, 102, 241, 0.35);
+		color: #ffffff;
+	}
+
+	.empty-timeline-hint {
+		font-size: 0.775rem;
+		color: #94a3b8;
+		margin: 0;
+		line-height: 1.4;
+	}
+
+	.timeline-rows-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.timeline-row-card {
+		display: flex;
+		gap: 0.5rem;
+		align-items: flex-end;
+		background: rgba(30, 41, 59, 0.6);
+		border: 1px solid rgba(255, 255, 255, 0.06);
+		border-radius: 8px;
+		padding: 0.5rem 0.75rem;
+	}
+
+	.period-num {
+		font-size: 0.75rem;
+		font-weight: 700;
+		color: #818cf8;
+		margin-bottom: 0.4rem;
+	}
+
+	.sub-field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.sub-field label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #94a3b8;
+	}
+
+	.sub-field.flex-grow {
+		flex: 1;
+	}
+
+	.form-input-sm {
+		background: rgba(15, 23, 42, 0.8);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 6px;
+		padding: 0.35rem 0.5rem;
+		color: #f8fafc;
+		font-size: 0.8rem;
+		min-width: 0;
+	}
+
+	.form-input-sm:focus {
+		outline: none;
+		border-color: #6366f1;
+	}
+
+	.btn-icon-delete {
+		background: rgba(239, 68, 68, 0.15);
+		border: 1px solid rgba(239, 68, 68, 0.3);
+		color: #f87171;
+		border-radius: 6px;
+		width: 28px;
+		height: 28px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		font-size: 0.8rem;
+		flex-shrink: 0;
+		transition: all 0.15s ease;
+		margin-bottom: 0.15rem;
+	}
+
+	.btn-icon-delete:hover {
+		background: rgba(239, 68, 68, 0.35);
+		color: #ffffff;
+	}
+
+	/* Reclassifications Section */
+	.reclass-section {
+		border: 1px solid rgba(139, 92, 246, 0.3);
+		border-radius: 12px;
+		background: rgba(139, 92, 246, 0.06);
+		padding: 1rem 1.15rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.85rem;
+	}
+
+	.reclass-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 1rem;
+	}
+
+	.reclass-title-group {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.65rem;
+	}
+
+	.reclass-icon {
+		font-size: 1.3rem;
+		line-height: 1;
+	}
+
+	.reclass-title-group h4 {
+		margin: 0 0 0.25rem 0;
+		font-size: 0.925rem;
+		font-weight: 700;
+		color: #e9d5ff;
+	}
+
+	.reclass-desc {
+		margin: 0;
+		font-size: 0.775rem;
+		color: #c4b5fd;
+		line-height: 1.35;
+	}
+
+	.btn-add-reclass {
+		background: rgba(139, 92, 246, 0.25);
+		border: 1px solid rgba(139, 92, 246, 0.5);
+		color: #ddd6fe;
+		border-radius: 8px;
+		padding: 0.45rem 0.85rem;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		white-space: nowrap;
+		transition: all 0.15s ease;
+		flex-shrink: 0;
+	}
+
+	.btn-add-reclass:hover {
+		background: rgba(139, 92, 246, 0.4);
+		color: #ffffff;
+		border-color: #a78bfa;
+	}
+
+	.reclass-empty-hint {
+		font-size: 0.8rem;
+		color: #94a3b8;
+		background: rgba(15, 23, 42, 0.4);
+		border-radius: 8px;
+		padding: 0.65rem 0.85rem;
+		border: 1px dashed rgba(255, 255, 255, 0.1);
+	}
+
+	.reclass-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.reclass-card {
+		background: rgba(15, 23, 42, 0.7);
+		border: 1px solid rgba(139, 92, 246, 0.25);
+		border-radius: 10px;
+		padding: 0.75rem 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.65rem;
+	}
+
+	.reclass-card-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.reclass-badge {
+		font-size: 0.75rem;
+		font-weight: 700;
+		color: #c4b5fd;
+		background: rgba(139, 92, 246, 0.2);
+		padding: 0.2rem 0.5rem;
+		border-radius: 6px;
+	}
+
+	.reclass-grid {
+		display: grid;
+		grid-template-columns: 140px 150px 150px 1fr;
+		gap: 0.75rem;
+		align-items: flex-end;
+	}
+
 	.advanced-section {
 		border: 1px solid rgba(255, 255, 255, 0.08);
 		border-radius: 12px;
@@ -815,6 +1423,10 @@
 		background: #ef4444;
 	}
 
+	.color-dot.purple {
+		background: #8b5cf6;
+	}
+
 	.milestone-list {
 		display: flex;
 		flex-direction: column;
@@ -843,6 +1455,10 @@
 		border-left-color: #ffc000;
 	}
 
+	.border-umgruppierung {
+		border-left-color: #8b5cf6;
+	}
+
 	.border-exit {
 		border-left-color: #ef4444;
 	}
@@ -863,6 +1479,11 @@
 	.badge-tariferhoehung {
 		background: rgba(255, 192, 0, 0.2);
 		color: #fde047;
+	}
+
+	.badge-umgruppierung {
+		background: rgba(139, 92, 246, 0.25);
+		color: #c4b5fd;
 	}
 
 	.badge-exit {

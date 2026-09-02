@@ -45,6 +45,17 @@ export const recalculateGrant = command(
 						label: v.string()
 					})
 				)
+			),
+			customBgTimeline: v.optional(
+				v.array(
+					v.object({
+						id: v.string(),
+						startDate: v.string(),
+						endDate: v.string(),
+						rate: v.number(),
+						label: v.string()
+					})
+				)
 			)
 		})
 	}),
@@ -162,7 +173,41 @@ export const generateBerechnungsblatt = command(
 		childrenCount: v.optional(v.number(), 0),
 		jszPercentage: v.optional(v.number(), 85),
 		schemeId: v.optional(v.string(), 'sgb16i-berlin'),
-		includeOffsetRows: v.optional(v.boolean(), true)
+		includeOffsetRows: v.optional(v.boolean(), true),
+		reclassifications: v.optional(
+			v.array(
+				v.object({
+					id: v.string(),
+					effectiveDate: v.string(),
+					tariffGroup: v.optional(v.string()),
+					tariffStep: v.optional(v.string()),
+					note: v.optional(v.string())
+				})
+			)
+		),
+		bgRate: v.optional(v.number(), 0.018),
+		customBgTimeline: v.optional(
+			v.array(
+				v.object({
+					id: v.string(),
+					startDate: v.string(),
+					endDate: v.string(),
+					rate: v.number(),
+					label: v.string()
+				})
+			)
+		),
+		customAgaTimeline: v.optional(
+			v.array(
+				v.object({
+					id: v.string(),
+					startDate: v.string(),
+					endDate: v.string(),
+					rate: v.number(),
+					label: v.string()
+				})
+			)
+		)
 	}),
 	async (payload): Promise<GeneratedBerechnungsblattResponse> => {
 		const buffer = await generateBerechnungsblattExcel(payload);
