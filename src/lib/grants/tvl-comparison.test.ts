@@ -522,6 +522,11 @@ describe('TV-L Comparison Calculation Engine', () => {
 		// Case 4: Barmer (16,7%)
 		const resBarmer = calculateTvlComparison(dummyRecords, { ...baseParticipant, healthInsuranceName: 'Barmer (16,7%)' }, 2026);
 		expect(resBarmer.inputs.selectedInsuranceName).toBe('Barmer');
+
+		// Case 5: mkk (18,1%) -> matches mkk
+		const resMkk = calculateTvlComparison(dummyRecords, { ...baseParticipant, healthInsuranceName: 'mkk (18,1%)' }, 2026);
+		expect(resMkk.inputs.selectedInsuranceName).toBe('mkk');
+		expect(resMkk.inputs.kkZusatzRate).toBe(0.0175);
 	});
 
 	it('automatically determines whether a 2nd period (Erfahrungsstufenwechsel) is needed', () => {

@@ -448,6 +448,14 @@ export function findMatchingInsuranceFund(
 		const kkh = insuranceFunds.find((f) => f.name.toLowerCase().includes('kkh'));
 		if (kkh) return kkh;
 	}
+	if (norm.includes('mkk') || norm.includes('meine krankenkasse')) {
+		const mkk = insuranceFunds.find((f) => f.name.toLowerCase().includes('mkk') || f.name.toLowerCase().includes('vbu'));
+		if (mkk) return mkk;
+	}
+	if (norm.includes('vbu')) {
+		const vbu = insuranceFunds.find((f) => f.name.toLowerCase().includes('vbu') || f.name.toLowerCase().includes('mkk'));
+		if (vbu) return vbu;
+	}
 
 	return insuranceFunds[0] || DEFAULT_INSURANCE_FUNDS[0];
 }

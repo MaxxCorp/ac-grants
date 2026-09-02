@@ -135,7 +135,7 @@ export const DEFAULT_INSURANCE_FUNDS: InsuranceFundDetails[] = [
 		agaRate: 0.25295
 	},
 	{
-		name: 'MKK',
+		name: 'mkk',
 		kvRate: 0.073,
 		zusatzbeitragTotal: 0.035,
 		zusatzbeitragAg: 0.0175,

@@ -22,6 +22,7 @@
 		{ name: 'Barmer', rate: 0.23815 },
 		{ name: 'AOK BLN-BRB', rate: 0.2387 },
 		{ name: 'Techniker', rate: 0.22935 },
+		{ name: 'mkk', rate: 0.2448 },
 		{ name: 'BIG direkt', rate: 0.25285 },
 		{ name: 'BKK VBU', rate: 0.2448 },
 		{ name: 'DAK', rate: 0.2314 },

@@ -61,6 +61,7 @@
 		{ name: 'Techniker', rate: '22,935%', note: 'Günstigster Zusatzbeitrag' },
 		{ name: 'AOK BLN-BRB', rate: '23,870%', note: 'Berlin/Brandenburg' },
 		{ name: 'DAK', rate: '23,140%', note: 'Bundesweit' },
+		{ name: 'mkk', rate: '24,480%', note: 'meine krankenkasse (ehem. BKK VBU)' },
 		{ name: 'BIG direkt', rate: '25,285%', note: 'Direktversicherung' },
 		{ name: 'BKK VBU', rate: '24,480%', note: 'Betriebskrankenkasse' },
 		{ name: 'IKK BLN-BRB', rate: '25,415%', note: 'Innungskrankenkasse' },
