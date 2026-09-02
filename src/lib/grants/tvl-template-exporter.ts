@@ -104,6 +104,8 @@ export function generateTvlComparisonWorkbook(
 		setCell('V10', inputs.istJanMarRight);
 		setCell('V11', inputs.istAbAprRight);
 		setCell('V21', inputs.istJszRight);
+	} else if (!inputs.hasStepUpgrade && inputs.istJszLeft !== undefined) {
+		setCell('V21', inputs.istJszLeft);
 	}
 
 	// 4. Notes & Bearbeiter

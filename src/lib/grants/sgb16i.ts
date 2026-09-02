@@ -971,16 +971,18 @@ export function transformSgb16i(
 			const yearlyAmounts: Record<number, number> = {};
 			for (const yr of years) yearlyAmounts[yr] = yr === y ? totalJszWithAga : 0;
 
-			let explanationText = `85% vom Septembergehalt, wenn beschäftigt am 1.12.`;
+			let explanationText = `85% vom Septembergehalt gem. AWO Berlin Tarif (10. ÄTV / TE 05.05.2026), Stichtag 01.12.`;
 			if (totalEmploymentMonthsInYear < 12) {
 				const countStr = totalEmploymentMonthsInYear % 1 === 0 ? String(totalEmploymentMonthsInYear) : totalEmploymentMonthsInYear.toFixed(1).replace('.', ',');
-				explanationText = `anteilig für ${countStr} Monate, 85% vom Septembergehalt, wenn beschäftigt am 1.12.`;
+				explanationText = `anteilig für ${countStr} Monate (${countStr}/12), 85% vom Septembergehalt gem. AWO Berlin Tarif (10. ÄTV / TE 05.05.2026), Stichtag 01.12.`;
 			}
 
 			const costTypeText = `Jahressonderzahlung ${y}`;
 			const runtimeText = contractRuntimeText;
 			const tariffText = `AWO Berlin ${participant.tariffGroup}/${getTariffStep(jszRecord, participant)}`;
-			const calculationPeriodText = `01.01.${y}-31.12.${y}`;
+			const startDateText = getPeriodStartDate(allMonthsInYear);
+			const endDateText = getPeriodEndDate(allMonthsInYear);
+			const calculationPeriodText = `${startDateText}-${endDateText}`;
 
 			const compoundOneLineText = buildCompoundOneLineText(
 				participant.name,

@@ -579,10 +579,35 @@
 						</tr>
 
 						<tr>
-							<td>Jahressonderzahlung (JSZ)</td>
+							<td class="font-medium">
+								Jahressonderzahlung (JSZ)
+								{#if !tvl.inputs.hasStepUpgrade}
+									<span class="cell-ref">V21</span>
+								{/if}
+							</td>
 							<td class="text-right font-mono">{formatCurrency(tvl.periodLeft.jsz394)}</td>
 							<td class="text-right font-mono">{formatCurrency(tvl.periodLeft.jszUm)}</td>
-							<td class="text-right font-mono">{formatCurrency(tvl.periodLeft.jszIst)}</td>
+							{#if !tvl.inputs.hasStepUpgrade}
+								<td class="td-input">
+									<div class="input-inline-copy">
+										<input
+											type="number"
+											step="0.01"
+											class="table-cell-input excel-blue"
+											value={tvl.inputs.istJszLeft ?? tvl.periodLeft.jszIst}
+											oninput={(e) => (customInputs = { ...customInputs, istJszLeft: parseFloat((e.target as HTMLInputElement).value) || 0 })}
+										/>
+										<button type="button" class="btn-tiny-copy" onclick={() => copyValue(tvl.inputs.istJszLeft ?? tvl.periodLeft.jszIst, 'istJszLeft')}>
+											{copiedField === 'istJszLeft' ? '✓' : '📋'}
+										</button>
+									</div>
+									{#if tvl.expectedIstJszLeft !== undefined}
+										<div class="benchmark-pill">AWO: {formatCurrency(tvl.expectedIstJszLeft)}</div>
+									{/if}
+								</td>
+							{:else}
+								<td class="text-right font-mono">{formatCurrency(tvl.periodLeft.jszIst)}</td>
+							{/if}
 						</tr>
 
 						<tr class="row-subtotal">
@@ -785,6 +810,9 @@
 											{copiedField === 'istJszRight' ? '✓' : '📋'}
 										</button>
 									</div>
+									{#if tvl.expectedIstJszRight !== undefined}
+										<div class="benchmark-pill">AWO: {formatCurrency(tvl.expectedIstJszRight)}</div>
+									{/if}
 								</td>
 							</tr>
 
@@ -936,7 +964,17 @@
 
 		<div class="notes-area">
 			<div class="form-field full-width">
-				<label for="tvl-notes">Bemerkungen (Zelle M39):</label>
+				<div class="notes-header-row">
+					<label for="tvl-notes">Bemerkungen (Zelle M39):</label>
+					<button
+						type="button"
+						class="btn-copy-comment"
+						onclick={() => copyValue(tvl.inputs.bemerkungen, 'bemerkungen')}
+						title="Bemerkung in die Zwischenablage kopieren"
+					>
+						{copiedField === 'bemerkungen' ? '✓ Kopiert!' : '📋 Bemerkung kopieren'}
+					</button>
+				</div>
 				<textarea
 					id="tvl-notes"
 					rows="3"
@@ -1316,6 +1354,33 @@
 		font-size: 0.78rem;
 		font-weight: 600;
 		color: #94a3b8;
+	}
+
+	.notes-header-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.25rem;
+	}
+
+	.btn-copy-comment {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		background: rgba(99, 102, 241, 0.15);
+		border: 1px solid rgba(99, 102, 241, 0.35);
+		color: #c7d2fe;
+		padding: 0.25rem 0.6rem;
+		border-radius: 6px;
+		font-size: 0.75rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.btn-copy-comment:hover {
+		background: rgba(99, 102, 241, 0.3);
+		color: #ffffff;
 	}
 
 	.field-input,

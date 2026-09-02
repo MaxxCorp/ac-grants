@@ -90,10 +90,16 @@
 				<div>
 					<div class="audit-badge-row">
 						<span class="badge {validation.isCompliant ? 'badge-green' : 'badge-amber'}">
-							{validation.isCompliant ? 'AWO-Tariftreue: 100% Konform' : `${validation.discrepancyCount} Tarifabweichung(en) in Spalte F`}
+							{validation.isCompliant ? 'AWO-Tariftreue: 100% Konform' : `${validation.discrepancyCount} Tarifabweichung(en)`}
 						</span>
+						{#if validation.jszAudits && validation.jszAudits.length > 0}
+							{@const jszOk = validation.jszAudits.every(a => a.isCompliant)}
+							<span class="badge {jszOk ? 'badge-purple' : 'badge-amber'}">
+								{jszOk ? '✓ JSZ (85% AWO) 100% Konform' : '⚠️ JSZ Abweichung'}
+							</span>
+						{/if}
 						<span class="badge-sub">
-							Gegenprüfung Spalte F (VZ-Brutto) mit AWO-Tariftabellen ab 09/2025
+							Gegenprüfung Spalte F (VZ-Brutto) & Jahressonderzahlung nach TV AWO Berlin (10. ÄTV / TE 05.05.2026)
 						</span>
 					</div>
 					<h3 class="audit-heading">AWO Berlin Tarif-Plausibilitätsprüfung</h3>
@@ -125,7 +131,21 @@
 				<span class="metric-val {validation.isCompliant ? 'text-emerald' : 'text-amber'}">
 					{validation.isCompliant ? '✓ Fehlerfrei' : `⚠️ ${validation.discrepancyCount} Abweichungen`}
 				</span>
-				<span class="metric-sub">Spalte F stimmt mit Tabelle überein</span>
+				<span class="metric-sub">VZ-Brutto & JSZ geprüft</span>
+			</div>
+
+			<div class="metric-box">
+				<span class="metric-label">Jahressonderzahlung (AWO 85%)</span>
+				{#if validation.jszAudits && validation.jszAudits.length > 0}
+					{@const jszOkCount = validation.jszAudits.filter(a => a.isCompliant).length}
+					<span class="metric-val font-mono {jszOkCount === validation.jszAudits.length ? 'text-emerald' : 'text-amber'}">
+						{jszOkCount}/{validation.jszAudits.length} Jahre konform
+					</span>
+					<span class="metric-sub">Stichtag 01.12. & Septembergehalt</span>
+				{:else}
+					<span class="metric-val font-mono text-muted">–</span>
+					<span class="metric-sub">Keine JSZ in Auswertung</span>
+				{/if}
 			</div>
 
 			<div class="metric-box">
@@ -206,6 +226,54 @@
 										<td class="text-center">
 											{#if !row.isDiscrepant}
 												<span class="status-tag tag-match">✓ Exakt</span>
+											{:else}
+												<span class="status-tag tag-diff">⚠️ Abweichung</span>
+											{/if}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+
+				{#if validation.jszAudits && validation.jszAudits.length > 0}
+					<div class="table-toolbar" style="margin-top: 1.5rem;">
+						<span class="table-title">🎁 Detailprüfung Jahressonderzahlung nach AWO Berlin Tarif (10. ÄTV / TE 05.05.2026):</span>
+					</div>
+					<div class="table-wrapper">
+						<table class="audit-table">
+							<thead>
+								<tr>
+									<th>Jahr</th>
+									<th>Stichtag 01.12.</th>
+									<th>Beschäftigungsmonate</th>
+									<th class="th-num">Basis (Septembergehalt)</th>
+									<th class="th-num">Berechnungsblatt JSZ</th>
+									<th class="th-num">AWO-Tarif JSZ (85%)</th>
+									<th class="th-num">AGA auf JSZ</th>
+									<th class="th-center">Status</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each validation.jszAudits as jsz}
+									<tr class={!jsz.isCompliant ? 'row-discrepant' : ''}>
+										<td class="font-mono font-bold">{jsz.year}</td>
+										<td>
+											{#if jsz.isEmployedOnDec1st}
+												<span class="status-tag tag-match">✓ Beschäftigt</span>
+											{:else}
+												<span class="status-tag tag-diff">✗ Ausgetreten</span>
+											{/if}
+										</td>
+										<td class="font-mono">{jsz.activeMonthsInYear.toFixed(1).replace('.0', '')} / 12 Monate</td>
+										<td class="text-right font-mono">{formatCurrency(jsz.septemberSalary)}</td>
+										<td class="text-right font-mono font-medium">{formatCurrency(jsz.recordedJszAmount)}</td>
+										<td class="text-right font-mono font-medium">{formatCurrency(jsz.expectedJszAmount)}</td>
+										<td class="text-right font-mono">{formatCurrency(jsz.recordedJszAga)}</td>
+										<td class="text-center">
+											{#if jsz.isCompliant}
+												<span class="status-tag tag-match">✓ AWO-konform</span>
 											{:else}
 												<span class="status-tag tag-diff">⚠️ Abweichung</span>
 											{/if}
@@ -308,6 +376,12 @@
 		background: rgba(245, 158, 11, 0.2);
 		color: #fbbf24;
 		border: 1px solid rgba(245, 158, 11, 0.4);
+	}
+
+	.badge-purple {
+		background: rgba(168, 85, 247, 0.15);
+		color: #c084fc;
+		border: 1px solid rgba(168, 85, 247, 0.3);
 	}
 
 	.badge-sub {

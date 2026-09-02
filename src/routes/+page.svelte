@@ -229,7 +229,30 @@
 
 	<!-- Main Body Content -->
 	<main class="app-main">
-		<!-- Configuration Toolbar -->
+		<!-- Excel File Upload Dropzone -->
+		<section class="upload-section">
+			<FileUpload
+				onResult={handleResult}
+				selectedScheme={selectedSchemeId}
+				{includeOffset}
+				{runtimeStartScope}
+				{customStartDate}
+				{runtimeScope}
+				{customEndDate}
+				onOpenGenerator={() => (isGeneratorOpen = true)}
+			/>
+
+			<div class="demo-trigger-wrapper">
+				<button type="button" class="btn-demo-data" onclick={loadDemoData}>
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+					</svg>
+					✨ Standard-Beispieldaten laden (60 Monate Musterberechnung)
+				</button>
+			</div>
+		</section>
+
+		<!-- Configuration Toolbar (Förderprogramm & Ausgabe-Optionen) -->
 		<section class="config-bar">
 			<div class="config-item scheme-selector">
 				<label for="schemeSelect">Förderprogramm:</label>
@@ -367,38 +390,14 @@
 			</div>
 		</section>
 
-		<!-- Excel File Upload Dropzone -->
-		<section class="upload-section">
-			<FileUpload
-				onResult={handleResult}
-				selectedScheme={selectedSchemeId}
-				{includeOffset}
-				{runtimeStartScope}
-				{customStartDate}
-				{runtimeScope}
-				{customEndDate}
-				onOpenGenerator={() => (isGeneratorOpen = true)}
-			/>
-
-			<div class="demo-trigger-wrapper">
-				<button type="button" class="btn-demo-data" onclick={loadDemoData}>
-					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-					</svg>
-					✨ Standard-Beispieldaten laden (60 Monate Musterberechnung)
-				</button>
-			</div>
-		</section>
-
 		<!-- Active Calculation Results -->
 		{#if currentResult}
 			<section class="results-section">
-				<!-- Confidence & Audit Dashboard -->
-				<ControlDashboard
-					controls={currentResult.controls}
+				<!-- AWO Tariff Audit & Human Error Detection -->
+				<AwoTariffAuditCard
+					validation={currentResult.tariffValidation}
 					participant={currentResult.participant}
-					{includeOffset}
-					onToggleOffset={handleToggleOffset}
+					records={currentResult.rawMonthlyRecords}
 				/>
 
 				<!-- Time-Dependent Employer Social Contribution (AGA) Matrix -->
@@ -408,11 +407,12 @@
 					onUpdateTimeline={handleUpdateTimeline}
 				/>
 
-				<!-- AWO Tariff Audit & Human Error Detection -->
-				<AwoTariffAuditCard
-					validation={currentResult.tariffValidation}
+				<!-- Confidence & Audit Dashboard -->
+				<ControlDashboard
+					controls={currentResult.controls}
 					participant={currentResult.participant}
-					records={currentResult.rawMonthlyRecords}
+					{includeOffset}
+					onToggleOffset={handleToggleOffset}
 				/>
 
 				<!-- Target Form Companion with 1-Click Clipboard Copying -->
@@ -512,6 +512,10 @@
 		font-size: 0.775rem;
 		color: #a5b4fc;
 		font-weight: 500;
+	}
+
+	.upload-section {
+		margin-bottom: 1.5rem;
 	}
 
 	.config-bar {

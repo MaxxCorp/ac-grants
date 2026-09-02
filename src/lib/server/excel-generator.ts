@@ -635,7 +635,7 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 	// Footnotes with matching color markers
 	currentRow += 2;
 	const note1 = wsGehalt.getCell(`A${currentRow++}`);
-	note1.value = `Die Jahressonderzahlung beträgt ${Math.round(jszPct * 100)}% des Septembergehalts (gemäß Arbeitsmonaten), mit Anspruch falls eine Beschäftigung zum 1.12. besteht`;
+	note1.value = `Die Jahressonderzahlung beträgt ${Math.round(jszPct * 100)}% des Septembergehalts (gemäß Arbeitsmonaten), mit Anspruch falls eine Beschäftigung zum 1.12. besteht (Tarif AWO Berlin 10. ÄTV / TE 05.05.2026)`;
 	note1.font = { italic: true, size: 9 };
 
 	for (const m of milestones) {

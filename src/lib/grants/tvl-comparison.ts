@@ -15,7 +15,7 @@ import {
 	getAllTvlTariffCodes,
 	normalizeTvlTariffCode
 } from '#lib/grants/tvl-tariff-data';
-import { getAwoTariffSalary, validateBerechnungsblattTariff, determineParticipantStepForRecord } from '#lib/grants/awo-tariff-data';
+import { getAwoTariffSalary, validateBerechnungsblattTariff, determineParticipantStepForRecord, calculateExpectedAwoJsz } from '#lib/grants/awo-tariff-data';
 
 function round2(val: number): number {
 	return Math.round((val + Number.EPSILON) * 100) / 100;
@@ -613,24 +613,36 @@ export function calculateTvlComparison(
 	let istAbAprLeft = customInputs?.istAbAprLeft !== undefined ? customInputs.istAbAprLeft : expectedIstAbAprLeft;
 	let istJanMarRight = customInputs?.istJanMarRight !== undefined ? customInputs.istJanMarRight : (expectedIstJanMarRight || expectedIstJanMarLeft);
 	let istAbAprRight = customInputs?.istAbAprRight !== undefined ? customInputs.istAbAprRight : (expectedIstAbAprRight || expectedIstAbAprLeft);
-	let istJszLeft: number | undefined = undefined;
+	// JSZ according to AWO Berlin tariff rules (85% of September salary, Stichtag 01.12., proration)
+	const expectedAwoJsz = calculateExpectedAwoJsz(year, yearRecords, participant);
+
+	let expectedIstJszLeft: number | undefined = undefined;
+	let expectedIstJszRight: number | undefined = undefined;
+	let istJszLeft = 0;
 	let istJszRight = 0;
 
-	// JSZ from December or November record or calculated from AWO (85% of September salary)
-	const jszRec = yearRecords.find((r) => r.jszAmount > 0) || yearRecords.find((r) => r.month === 12);
 	if (hasStepUpgrade) {
-		if (jszRec && jszRec.jszAmount > 0) {
-			istJszRight = jszRec.jszAmount;
-		} else if (expectedIstAbAprRight) {
-			istJszRight = round2(expectedIstAbAprRight * 0.85);
-		}
-		if (customInputs?.istJszRight !== undefined) istJszRight = customInputs.istJszRight;
+		expectedIstJszRight = expectedAwoJsz.expectedJszAmount;
+		expectedIstJszLeft = 0;
+		istJszRight = customInputs?.istJszRight !== undefined
+			? customInputs.istJszRight
+			: (expectedAwoJsz.recordedJszAmount > 0 ? expectedAwoJsz.recordedJszAmount : expectedAwoJsz.expectedJszAmount);
+		istJszLeft = customInputs?.istJszLeft !== undefined ? customInputs.istJszLeft : 0;
 	} else {
-		if (jszRec && jszRec.jszAmount > 0) {
-			istJszLeft = jszRec.jszAmount;
-		} else if (expectedIstAbAprLeft) {
-			istJszLeft = round2(expectedIstAbAprLeft * 0.85);
-		}
+		expectedIstJszLeft = expectedAwoJsz.expectedJszAmount;
+		expectedIstJszRight = 0;
+		istJszLeft = customInputs?.istJszLeft !== undefined
+			? customInputs.istJszLeft
+			: (expectedAwoJsz.recordedJszAmount > 0 ? expectedAwoJsz.recordedJszAmount : expectedAwoJsz.expectedJszAmount);
+		istJszRight = 0;
+	}
+
+	let defaultBemerkungen = 'Tarif AWO Berlin 10.ÄTV + Tarifeinigung vom 05.05.2026, Jahressonderzahlung 85% vom Septembergehalt (Stichtag 01.12.)';
+	if (!expectedAwoJsz.isEmployedOnDec1st) {
+		defaultBemerkungen = 'Tarif AWO Berlin 10.ÄTV + Tarifeinigung vom 05.05.2026, kein Anspruch auf Jahressonderzahlung (nicht am 01.12. angestellt)';
+	} else if (expectedAwoJsz.activeMonthsInYear < 12) {
+		const countStr = expectedAwoJsz.activeMonthsInYear % 1 === 0 ? String(expectedAwoJsz.activeMonthsInYear) : expectedAwoJsz.activeMonthsInYear.toFixed(1).replace('.', ',');
+		defaultBemerkungen = `Tarif AWO Berlin 10.ÄTV + Tarifeinigung vom 05.05.2026, Jahressonderzahlung monatsanteilig (${countStr}/12) 85% vom Septembergehalt, da am 01.12. angestellt`;
 	}
 
 	const inputs: TvlComparisonInputs = {
@@ -652,6 +664,7 @@ export function calculateTvlComparison(
 		istAbAprLeft,
 		besitzstandLeft: customInputs?.besitzstandLeft || 0,
 		vwlLeft: customInputs?.vwlLeft || 0,
+		istJszLeft,
 
 		hasStepUpgrade,
 		tariffGroupStepRight: baseCodeRight,
@@ -675,7 +688,7 @@ export function calculateTvlComparison(
 		u2Rate,
 		u3Rate,
 
-		bemerkungen: customInputs?.bemerkungen || 'Tarif AWO Berlin 10.ÄTV + Tarifeinigung vom 5.5.2026, Jahressonderzahlung monatsanteilig 85% vom Septembergehalt, wenn am 1.12. angestellt',
+		bemerkungen: customInputs?.bemerkungen || defaultBemerkungen,
 		bearbeiterName: customInputs?.bearbeiterName || 'Maxim Müller',
 		bearbeiterDate: customInputs?.bearbeiterDate || `31.08.${year}`
 	};
@@ -761,6 +774,8 @@ export function calculateTvlComparison(
 		expectedIstJanMarLeft,
 		expectedIstAbAprLeft,
 		expectedIstJanMarRight,
-		expectedIstAbAprRight
+		expectedIstAbAprRight,
+		expectedIstJszLeft,
+		expectedIstJszRight
 	};
 }

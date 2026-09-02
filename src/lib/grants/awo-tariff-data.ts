@@ -361,13 +361,14 @@ export function getAwoTariffSalary(
 		periodLabel: period.label
 	};
 }
+import type { JszAuditItem } from '#lib/types/grant';
 
 export interface TariffDiscrepancy {
 	recordDate: string;
 	year: number;
 	month: number;
 	group: string;
-	step: number;
+	step: number | string;
 	recordedFteSalary: number; // Column F in Berechnungsblatt
 	expectedFteSalary: number; // Official AWO Tariftabelle Full-Time
 	recordedPartTimeSalary: number;
@@ -384,12 +385,111 @@ export interface TariffValidationReport {
 	skippedPriorTo2025Count: number;
 	discrepancyCount: number;
 	discrepancies: TariffDiscrepancy[];
+	jszAudits?: JszAuditItem[];
 	summaryText: string;
 }
 
 /**
- * Audits the uploaded Berechnungsblatt against official AWO Berlin Tariftabellen (ab 09/2025).
- * Validates Column F (Full-Time Salary / VZ-Brutto) directly against the tariff scale.
+ * Calculates the expected AWO Berlin Jahressonderzahlung for a calendar year according to TV AWO Berlin rules:
+ * - Entitlement (Stichtag 01.12.): Employee must be employed on 01.12. (in December). If not, JSZ is 0.
+ * - Assessment base: September monthly gross salary (or first full active month if started after September).
+ * - Assessment rate: 85%.
+ * - Proration: (Active employment months in the year / 12).
+ * - AGA: JSZ * applicable AGA rate.
+ */
+export function calculateExpectedAwoJsz(
+	year: number,
+	recordsInYear: MonthlyRecord[],
+	participant: ParticipantInfo
+): JszAuditItem {
+	// 1. Check entitlement: employment on 01.12.
+	const decRecord = recordsInYear.find(r => r.month === 12);
+	const endParsed = parseDateDMY(participant.runtimeEnd);
+	let isEmployedOnDec1st = false;
+	if (decRecord && (decRecord.monthUnits ?? 1.0) > 0) {
+		isEmployedOnDec1st = true;
+	} else if (endParsed) {
+		isEmployedOnDec1st = endParsed.year > year || (endParsed.year === year && (endParsed.month > 12 || (endParsed.month === 12 && endParsed.day >= 1)));
+	}
+
+	// 2. Count active months in this year
+	const activeMonthsInYear = round2(
+		recordsInYear.reduce((sum, r) => sum + (r.monthUnits !== undefined && r.monthUnits > 0 ? r.monthUnits : 1.0), 0)
+	);
+	const cappedMonths = Math.min(12, activeMonthsInYear);
+
+	// 3. Determine September salary (or first active month if started after September)
+	const sepRecord = recordsInYear.find(r => r.month === 9);
+	let septemberSalary = 0;
+	if (sepRecord && sepRecord.partTimeSalary > 0) {
+		septemberSalary = round2(sepRecord.partTimeSalary / (sepRecord.monthUnits || 1.0));
+	} else {
+		// Fallback to first active record or tariff table
+		const firstActive = recordsInYear.find(r => (r.monthUnits ?? 1.0) > 0);
+		if (firstActive && firstActive.partTimeSalary > 0) {
+			septemberSalary = round2(firstActive.partTimeSalary / (firstActive.monthUnits || 1.0));
+		} else {
+			const initialStep = parseInt((participant.tariffStep?.match(/\d+/) || ['1'])[0], 10) || 1;
+			const tariffInfo = getAwoTariffSalary(
+				participant.tariffGroup,
+				initialStep,
+				year,
+				9,
+				participant.weeklyHours,
+				participant.fullTimeHours || 39.0
+			);
+			septemberSalary = tariffInfo ? tariffInfo.partTimeSalary : 0;
+		}
+	}
+
+	// 4. Expected JSZ amount
+	const expectedJszAmount = isEmployedOnDec1st && cappedMonths > 0
+		? round2(septemberSalary * 0.85 * (cappedMonths / 12))
+		: 0;
+
+	// 5. Expected AGA rate
+	const agaRate = decRecord?.agaRealRate || sepRecord?.agaRealRate || recordsInYear[0]?.agaRealRate || participant.defaultAgaRate || 0.23815;
+	const expectedJszAga = round2(expectedJszAmount * agaRate);
+
+	// 6. Recorded values in Berechnungsblatt
+	const jszRecord = recordsInYear.find(r => r.jszAmount > 0 || r.isJszMonth);
+	const recordedJszAmount = jszRecord ? jszRecord.jszAmount : 0;
+	const recordedJszAga = jszRecord ? jszRecord.jszAgaAmount : 0;
+
+	const diffJszAmount = round2(recordedJszAmount - expectedJszAmount);
+	const diffJszAga = round2(recordedJszAga - expectedJszAga);
+
+	const isCompliant = Math.abs(diffJszAmount) <= 0.05 && (expectedJszAmount === 0 || Math.abs(diffJszAga) <= 0.05);
+
+	let explanation = '';
+	if (!isEmployedOnDec1st) {
+		explanation = `Kein JSZ-Anspruch für ${year}, da am 01.12. nicht beschäftigt.`;
+	} else if (cappedMonths < 12) {
+		const countStr = cappedMonths % 1 === 0 ? String(cappedMonths) : cappedMonths.toFixed(1).replace('.', ',');
+		explanation = `JSZ ${year}: anteilig für ${countStr} Monate (${countStr}/12), 85% von ${septemberSalary.toFixed(2)} € (Septembergehalt), Stichtag 01.12.`;
+	} else {
+		explanation = `JSZ ${year}: 85% von ${septemberSalary.toFixed(2)} € (Septembergehalt), Stichtag 01.12.`;
+	}
+
+	return {
+		year,
+		isEmployedOnDec1st,
+		activeMonthsInYear: cappedMonths,
+		septemberSalary,
+		expectedJszAmount,
+		recordedJszAmount,
+		diffJszAmount,
+		expectedJszAga,
+		recordedJszAga,
+		diffJszAga,
+		isCompliant,
+		explanation
+	};
+}
+
+/**
+ * Audits the uploaded Berechnungsblatt against official AWO Berlin Tariftabellen (ab 09/2025)
+ * and verifies Jahressonderzahlung calculations according to AWO Berlin tariff rules.
  */
 export function validateBerechnungsblattTariff(
 	records: MonthlyRecord[],
@@ -399,6 +499,7 @@ export function validateBerechnungsblattTariff(
 	let checkedCount = 0;
 	let skippedPriorTo2025Count = 0;
 
+	// 1. Audit Column F (Full-Time Salary) for every monthly record
 	for (const rec of records) {
 		// Only check records within available tariff data period (>= 09/2025)
 		if (rec.year * 100 + rec.month < 202509) {
@@ -446,15 +547,64 @@ export function validateBerechnungsblattTariff(
 		}
 	}
 
+	// 2. Audit Jahressonderzahlung for each calendar year that includes December or has JSZ rows
+	const uniqueYears = Array.from(new Set(records.map(r => r.year))).sort((a, b) => a - b);
+	const jszAudits: JszAuditItem[] = [];
+
+	for (const y of uniqueYears) {
+		const yearRecs = records.filter(r => r.year === y);
+		if (yearRecs.length === 0) continue;
+
+		const hasDec = yearRecs.some(r => r.month === 12);
+		const hasJszRow = yearRecs.some(r => r.jszAmount > 0 || r.isJszMonth);
+		// Only audit JSZ if December is in the dataset or a JSZ row was present
+		if (!hasDec && !hasJszRow) continue;
+
+		const audit = calculateExpectedAwoJsz(y, yearRecs, participant);
+		jszAudits.push(audit);
+
+		if (!audit.isCompliant) {
+			discrepancies.push({
+				recordDate: `31.12.${y}`,
+				year: y,
+				month: 12,
+				group: participant.tariffGroup,
+				step: participant.tariffStep || 'ES1',
+				recordedFteSalary: audit.recordedJszAmount,
+				expectedFteSalary: audit.expectedJszAmount,
+				recordedPartTimeSalary: audit.recordedJszAmount,
+				expectedPartTimeSalary: audit.expectedJszAmount,
+				diffFteSalary: audit.diffJszAmount,
+				diffPartTime: audit.diffJszAmount,
+				isDiscrepancy: true,
+				explanation: !audit.isEmployedOnDec1st && audit.recordedJszAmount > 0
+					? `Jahressonderzahlung ${y}: Anspruch entfällt, da am 01.12. nicht beschäftigt (Berechnet: ${audit.recordedJszAmount.toFixed(2)} € vs. Soll: 0,00 €)`
+					: `Jahressonderzahlung ${y}: Berechnet = ${audit.recordedJszAmount.toFixed(2)} € vs. AWO-Tarif (85% Septembergehalt) = ${audit.expectedJszAmount.toFixed(2)} € (Diff: ${audit.diffJszAmount > 0 ? '+' : ''}${audit.diffJszAmount.toFixed(2)} €)`
+			});
+		}
+	}
+
 	const isCompliant = discrepancies.length === 0;
+	const jszErrors = jszAudits.filter(a => !a.isCompliant).length;
+	const fteErrors = discrepancies.length - jszErrors;
+
+	let summaryText = '';
+	if (isCompliant) {
+		summaryText = `Alle ${checkedCount} geprüften Monate (ab 09/2025) und ${jszAudits.length} Jahressonderzahlungen stimmen exakt mit der AWO-Tariftabelle überein.`;
+	} else {
+		const parts: string[] = [];
+		if (fteErrors > 0) parts.push(`${fteErrors} Abweichung(en) in Spalte F (VZ-Brutto)`);
+		if (jszErrors > 0) parts.push(`${jszErrors} Abweichung(en) bei der Jahressonderzahlung`);
+		summaryText = `${discrepancies.length} Tarifabweichung(en) gefunden: ${parts.join(', ')}.`;
+	}
+
 	return {
 		isCompliant,
 		checkedCount,
 		skippedPriorTo2025Count,
 		discrepancyCount: discrepancies.length,
 		discrepancies,
-		summaryText: isCompliant
-			? `Alle ${checkedCount} geprüften Monate (ab 09/2025) stimmen in Spalte F exakt mit der AWO-Tariftabelle überein.`
-			: `${discrepancies.length} Abweichung(en) in Spalte F (VZ-Brutto) gegenüber der AWO-Tariftabelle gefunden.`
+		jszAudits,
+		summaryText
 	};
 }

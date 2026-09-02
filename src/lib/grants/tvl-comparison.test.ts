@@ -6,6 +6,8 @@ import { getAwoTariffSalary } from './awo-tariff-data';
 import { generateTvlComparisonWorkbook } from './tvl-template-exporter';
 import type { MonthlyRecord, ParticipantInfo, InsuranceFundDetails } from '#lib/types/grant';
 
+const round2 = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
+
 describe('TV-L Comparison Calculation Engine', () => {
 	it('calculates experience step at date accurately based on the sequential duration rule (ES s requires s years)', () => {
 		// Scenario A: Starting at ES1 on 01.01.2020
@@ -819,5 +821,127 @@ describe('TV-L Comparison Calculation Engine', () => {
 		expect(res.inputs.hasStepUpgrade).toBe(true);
 		expect(res.inputs.tariffGroupStepLeft).toBe('E2/2');
 		expect(res.inputs.tariffGroupStepRight).toBe('E2/3');
+	});
+
+	it('applies AWO Berlin tariff rules for Jahressonderzahlung (85% September, 01.12., proration) and adapts TV-L comments', () => {
+		const participantFullYear: ParticipantInfo = {
+			name: 'Erika Mustermann',
+			runtimeStart: '01.01.2026',
+			runtimeEnd: '31.12.2028',
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			tariffGroup: 'E2',
+			tariffStep: 'ES3',
+			sachkostenMonthly: 155,
+			childrenCount: 0,
+			healthInsuranceName: 'DAK',
+			defaultAgaRate: 0.2314
+		};
+
+		// 12 months for 2026
+		const fullYearRecords: MonthlyRecord[] = Array.from({ length: 12 }, (_, idx) => {
+			const m = idx + 1;
+			const lastDay = new Date(2026, m, 0).getDate();
+			const fteSalary = m < 9 ? 2844.86 : 2942.36; // Tariferhöhung in 09/2026
+			const partTimeSalary = round2(fteSalary * 30 / 39);
+			return {
+				date: `2026-${String(m).padStart(2, '0')}-${lastDay}`,
+				year: 2026,
+				month: m,
+				monthUnits: 1.0,
+				startDate: `01.${String(m).padStart(2, '0')}.2026`,
+				endDate: `${lastDay}.${String(m).padStart(2, '0')}.2026`,
+				fteSalary,
+				partTimeSalary,
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: partTimeSalary * 0.19,
+				jcTotalGross: partTimeSalary * 1.19,
+				jcDegressionPct: 80,
+				jcGrantAmount: partTimeSalary * 1.19 * 0.8,
+				agaRealRate: 0.2314,
+				agaRealAmount: partTimeSalary * 0.2314,
+				totalEmployerCost: partTimeSalary * 1.2314,
+				landSvShortfall: 0,
+				landDegressionAmount: 0,
+				jszAmount: m === 12 ? 1923.85 : 0, // 85% of September salary (2263.35 * 0.85 = 1923.85)
+				jszAgaAmount: m === 12 ? 445.18 : 0,
+				isJszMonth: m === 12,
+				sachkostenAmount: 155
+			};
+		});
+
+		// 1. Full year comparison: employed on 01.12., 12/12 months
+		const resFull = calculateTvlComparison(fullYearRecords, participantFullYear, 2026);
+		expect(resFull.inputs.bemerkungen).toBe(
+			'Tarif AWO Berlin 10.ÄTV + Tarifeinigung vom 05.05.2026, Jahressonderzahlung 85% vom Septembergehalt (Stichtag 01.12.)'
+		);
+		expect(resFull.inputs.istJszLeft).toBe(1923.85);
+
+		// 2. Partial year comparison (e.g. started 16.01 -> 11.5 months)
+		const partialRecords = fullYearRecords.map((r, i) => i === 0 ? { ...r, monthUnits: 0.5, startDate: '16.01.2026' } : r);
+		const participantPartial = { ...participantFullYear, runtimeStart: '16.01.2026' };
+		const resPartial = calculateTvlComparison(partialRecords, participantPartial, 2026);
+		expect(resPartial.inputs.bemerkungen).toBe(
+			'Tarif AWO Berlin 10.ÄTV + Tarifeinigung vom 05.05.2026, Jahressonderzahlung monatsanteilig (11,5/12) 85% vom Septembergehalt, da am 01.12. angestellt'
+		);
+
+		// 3. Employee exits before 01.12 (e.g. 30.11.2026) -> No JSZ entitlement
+		const exitBeforeDecRecords = fullYearRecords.filter(r => r.month <= 11);
+		const participantExitBeforeDec = { ...participantFullYear, runtimeEnd: '30.11.2026' };
+		const resExitBeforeDec = calculateTvlComparison(exitBeforeDecRecords, participantExitBeforeDec, 2026);
+		expect(resExitBeforeDec.inputs.bemerkungen).toBe(
+			'Tarif AWO Berlin 10.ÄTV + Tarifeinigung vom 05.05.2026, kein Anspruch auf Jahressonderzahlung (nicht am 01.12. angestellt)'
+		);
+		expect(resExitBeforeDec.inputs.istJszLeft).toBe(0);
+	});
+
+	it('detects JSZ discrepancies when Berechnungsblatt calculates JSZ without employment on 01.12. or with wrong amount', () => {
+		const participant: ParticipantInfo = {
+			name: 'Herr Test',
+			runtimeStart: '01.01.2026',
+			runtimeEnd: '30.11.2026', // Ends before 01.12!
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			tariffGroup: 'E2',
+			tariffStep: 'ES3',
+			sachkostenMonthly: 155,
+			childrenCount: 0,
+			healthInsuranceName: 'DAK',
+			defaultAgaRate: 0.2314
+		};
+
+		// Spreadsheet erroneously calculated JSZ although participant left in November
+		const wrongJszRecords: MonthlyRecord[] = [
+			{
+				date: '2026-11-30',
+				year: 2026,
+				month: 11,
+				monthUnits: 1.0,
+				startDate: '01.11.2026',
+				endDate: '30.11.2026',
+				fteSalary: 2942.36,
+				partTimeSalary: 2263.35,
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: 0,
+				jcTotalGross: 2263.35,
+				jcDegressionPct: 80,
+				jcGrantAmount: 1810.68,
+				agaRealRate: 0.2314,
+				agaRealAmount: 523.74,
+				totalEmployerCost: 2787.09,
+				landSvShortfall: 0,
+				landDegressionAmount: 0,
+				jszAmount: 1500.00, // Error: Should be 0!
+				jszAgaAmount: 347.10,
+				isJszMonth: true,
+				sachkostenAmount: 155
+			}
+		];
+
+		const res = calculateTvlComparison(wrongJszRecords, participant, 2026);
+		expect(res.tariffValidation?.isCompliant).toBe(false);
+		expect(res.tariffValidation?.discrepancies.some(d => d.explanation.includes('Jahressonderzahlung'))).toBe(true);
 	});
 });

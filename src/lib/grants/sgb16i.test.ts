@@ -657,4 +657,116 @@ describe('§16i SGB II / ZGS Berlin Transformation Engine', () => {
 		expect(resEnd.tabs[2].rows[0].calculationPeriodText).toBe('16.12.2024 - 15.06.2027');
 		expect(resEnd.controls.overallStatus).toBe('MATCH');
 	});
+
+	it('should generate correct Tab 2 Landesmittel Jahressonderzahlung rows with AWO Berlin tariff comments and exact calculation period', () => {
+		const participant: ParticipantInfo = {
+			name: 'Test Person',
+			runtimeStart: '16.01.2026',
+			runtimeEnd: '31.12.2027',
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			tariffGroup: 'EG 2',
+			tariffStep: 'ES 2',
+			sachkostenMonthly: 155,
+			childrenCount: 0,
+			healthInsuranceName: 'DAK',
+			defaultAgaRate: 0.2314
+		};
+
+		// 2026: 11.5 months (started 16.01.2026)
+		const records: MonthlyRecord[] = [
+			{
+				date: '2026-01-31',
+				year: 2026,
+				month: 1,
+				monthUnits: 0.5,
+				startDate: '16.01.2026',
+				endDate: '31.01.2026',
+				fteSalary: 2844.86,
+				partTimeSalary: 1094.18,
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: 0,
+				jcTotalGross: 1094.18,
+				jcDegressionPct: 100,
+				jcGrantAmount: 1094.18,
+				agaRealRate: 0.2314,
+				agaRealAmount: 253.19,
+				totalEmployerCost: 1347.37,
+				landSvShortfall: 45.30,
+				landDegressionAmount: 0,
+				jszAmount: 0,
+				jszAgaAmount: 0,
+				sachkostenAmount: 77.5
+			},
+			...[2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(m => {
+				const lastDay = new Date(2026, m, 0).getDate();
+				return {
+					date: `2026-${String(m).padStart(2, '0')}-${lastDay}`,
+					year: 2026,
+					month: m,
+					monthUnits: 1.0,
+					startDate: `01.${String(m).padStart(2, '0')}.2026`,
+					endDate: `${lastDay}.${String(m).padStart(2, '0')}.2026`,
+					fteSalary: 2844.86,
+					partTimeSalary: 2188.35,
+					weeklyHours: 30,
+					fullTimeHours: 39,
+					jcFlatRateAmount: 0,
+					jcTotalGross: 2188.35,
+					jcDegressionPct: 100,
+					jcGrantAmount: 2188.35,
+					agaRealRate: 0.2314,
+					agaRealAmount: 506.38,
+					totalEmployerCost: 2694.73,
+					landSvShortfall: 90.60,
+					landDegressionAmount: 0,
+					jszAmount: 0,
+					jszAgaAmount: 0,
+					sachkostenAmount: 155
+				};
+			}),
+			// December with JSZ
+			{
+				date: '2026-12-31',
+				year: 2026,
+				month: 12,
+				monthUnits: 1.0,
+				startDate: '01.12.2026',
+				endDate: '31.12.2026',
+				fteSalary: 2844.86,
+				partTimeSalary: 2188.35,
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				jcFlatRateAmount: 0,
+				jcTotalGross: 2188.35,
+				jcDegressionPct: 100,
+				jcGrantAmount: 2188.35,
+				agaRealRate: 0.2314,
+				agaRealAmount: 506.38,
+				totalEmployerCost: 2694.73,
+				landSvShortfall: 90.60,
+				landDegressionAmount: 0,
+				jszAmount: 1782.57, // 2188.35 * 0.85 * (11.5/12)
+				jszAgaAmount: 412.49,
+				isJszMonth: true,
+				sachkostenAmount: 155
+			}
+		];
+
+		const result = transformSgb16i(records, participant, { includeOffsetRows: false });
+
+		// Tab 1 is Landesmittel (index 1)
+		const jszRow = result.tabs[1].rows.find(r => r.category === 'jsz');
+		expect(jszRow).toBeDefined();
+		if (jszRow) {
+			expect(jszRow.calculationPeriodText).toBe('16.01.2026-31.12.2026');
+			expect(jszRow.explanationText).toBe(
+				'anteilig für 11,5 Monate (11,5/12), 85% vom Septembergehalt gem. AWO Berlin Tarif (10. ÄTV / TE 05.05.2026), Stichtag 01.12.'
+			);
+			expect(jszRow.costTypeText).toBe('Jahressonderzahlung 2026');
+			expect(jszRow.compoundOneLineText).toContain('anteilig für 11,5 Monate (11,5/12)');
+			expect(jszRow.compoundOneLineText).toContain('16.01.2026-31.12.2026');
+		}
+	});
 });

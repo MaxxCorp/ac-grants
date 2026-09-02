@@ -299,6 +299,7 @@ export interface TvlComparisonInputs {
 	istAbAprLeft: number;
 	besitzstandLeft: number;
 	vwlLeft: number;
+	istJszLeft?: number;
 	
 	// Right Section inputs (Unterjähriger Stufenaufstieg)
 	hasStepUpgrade: boolean;
@@ -329,6 +330,21 @@ export interface TvlComparisonInputs {
 	bearbeiterDate?: string;
 }
 
+export interface JszAuditItem {
+	year: number;
+	isEmployedOnDec1st: boolean;
+	activeMonthsInYear: number;
+	septemberSalary: number;
+	expectedJszAmount: number;
+	recordedJszAmount: number;
+	diffJszAmount: number;
+	expectedJszAga: number;
+	recordedJszAga: number;
+	diffJszAga: number;
+	isCompliant: boolean;
+	explanation: string;
+}
+
 export interface TariffDiscrepancy {
 	recordDate: string;
 	year: number;
@@ -351,6 +367,7 @@ export interface TariffValidationReport {
 	skippedPriorTo2025Count: number;
 	discrepancyCount: number;
 	discrepancies: TariffDiscrepancy[];
+	jszAudits?: JszAuditItem[];
 	summaryText: string;
 }
 
@@ -380,6 +397,8 @@ export interface TvlComparisonResult {
 	expectedIstAbAprLeft?: number;
 	expectedIstJanMarRight?: number;
 	expectedIstAbAprRight?: number;
+	expectedIstJszLeft?: number;
+	expectedIstJszRight?: number;
 }
 
 export interface GrantTransformationResult {
