@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { processExcelFile } from '#lib/grant.remote';
+	import { processExcelFile, processMultipleExcelFiles } from '#lib/grant.remote';
 	import type { GrantTransformationResult, RuntimeScope, RuntimeStartScope } from '#lib/types/grant';
 
 	let {
@@ -44,19 +44,70 @@
 		e.preventDefault();
 		isDragging = false;
 		if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-			const file = e.dataTransfer.files[0];
-			if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-				readFileAndProcess(file);
-			} else {
+			const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls'));
+			if (files.length === 0) {
 				errorMessage = 'Bitte nur Excel-Dateien (.xlsx) hochladen.';
+				return;
 			}
+			readFilesAndProcess(files);
 		}
 	}
 
 	function handleFileInputChange(e: Event) {
 		const target = e.target as HTMLInputElement;
 		if (target.files && target.files.length > 0) {
-			readFileAndProcess(target.files[0]);
+			const files = Array.from(target.files).filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls'));
+			if (files.length === 0) {
+				errorMessage = 'Bitte nur Excel-Dateien (.xlsx) hochladen.';
+				return;
+			}
+			readFilesAndProcess(files);
+		}
+	}
+
+	async function readFilesAndProcess(files: File[]) {
+		if (files.length === 1) {
+			return readFileAndProcess(files[0]);
+		}
+
+		try {
+			isProcessing = true;
+			errorMessage = null;
+			successFileName = null;
+
+			const filePayloads = await Promise.all(
+				files.map(async (file) => {
+					return new Promise<{ fileBase64: string; fileName: string }>((resolve, reject) => {
+						const reader = new FileReader();
+						reader.onload = (evt) => {
+							const resultStr = evt.target?.result as string;
+							const base64 = resultStr.split(',')[1] || resultStr;
+							resolve({ fileBase64: base64, fileName: file.name });
+						};
+						reader.onerror = () => reject(new Error(`Fehler beim Einlesen von ${file.name}`));
+						reader.readAsDataURL(file);
+					});
+				})
+			);
+
+			const res = await processMultipleExcelFiles({
+				files: filePayloads,
+				schemeId: selectedScheme,
+				includeOffsetRows: includeOffset,
+				runtimeScope,
+				customEndDate,
+				runtimeStartScope,
+				customStartDate,
+				restrictToExitDate,
+				restrictToYear: restrictYear
+			});
+
+			successFileName = `${files.length} Berechnungsblätter erfolgreich kombiniert`;
+			onResult(res);
+		} catch (err: any) {
+			errorMessage = err?.message || 'Fehler beim Verarbeiten mehrerer Excel-Dateien.';
+		} finally {
+			isProcessing = false;
 		}
 	}
 
@@ -121,6 +172,7 @@
 			type="file"
 			id="excelFileInput"
 			accept=".xlsx, .xls"
+			multiple
 			onchange={handleFileInputChange}
 			class="file-input"
 			disabled={isProcessing}
@@ -153,10 +205,10 @@
 					{:else if successFileName}
 						<span class="text-success">Erfolgreich geladen: {successFileName}</span>
 					{:else}
-						Excel-Berechnungsblatt ablegen oder neu generieren
+						Excel-Berechnungsblatt / Berechnungsblätter ablegen
 					{/if}
 				</h3>
-				<p>Unterstützt <code>.xlsx</code> Berechnungsbögen oder generiert ein neues 5-Jahres-Berechnungsblatt für neue Mitarbeiter/innen</p>
+				<p>Unterstützt einzelne oder mehrere <code>.xlsx</code> Berechnungsbögen gleichzeitig (Mehr-Teilnehmer-Projekte) oder generiert ein neues Berechnungsblatt</p>
 			</div>
 
 			<div class="actions-row">

@@ -40,14 +40,7 @@ export {
 	getEffectiveBgRate
 };
 
-/**
- * Generates a complete ExcelJS workbook for the 5-year Berechnungsblatt.
- */
-export async function generateBerechnungsblattExcel(options: BerechnungsblattGeneratorOptions): Promise<Buffer> {
-	const workbook = new ExcelJS.Workbook();
-	workbook.creator = 'AC-Grants Berechnungsblatt Generator';
-	workbook.created = new Date();
-
+export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: BerechnungsblattGeneratorOptions): void {
 	const start = parseDateInput(options.startDate);
 	const durationMonths = options.durationMonths || 60;
 	const end = calculateEndDate(start, durationMonths);
@@ -71,13 +64,6 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 	const runtimeStartStr = formatDateDMY(start);
 	const runtimeEndStr = formatDateDMY(end);
 	const runtimeLabel = `${runtimeStartStr} - ${runtimeEndStr}`;
-
-	// ==========================================
-	// 1. SHEET: GEHALT
-	// ==========================================
-	const wsGehalt = workbook.addWorksheet('Gehalt', {
-		views: [{ showGridLines: true }]
-	});
 
 	// Column Widths: includes BG-Kosten and Gesamtkosten inkl. BG
 	wsGehalt.columns = [
@@ -736,13 +722,9 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 		}
 	}
 
-	// ==========================================
-	// 2. SHEET: AGA (Krankenkassen-Beitragstabelle)
-	// ==========================================
-	const wsAga = workbook.addWorksheet('AGA', {
-		views: [{ showGridLines: true }]
-	});
+}
 
+export function populateAgaWorksheet(wsAga: ExcelJS.Worksheet): void {
 	wsAga.columns = [
 		{ key: 'A', width: 18 }, // Kasse
 		{ key: 'B', width: 4 },  // leer
@@ -836,8 +818,43 @@ export async function generateBerechnungsblattExcel(options: BerechnungsblattGen
 
 	wsAga.getCell(`A${agaRow + 2}`).value = '*für jedes weitere Kind sinkt der AN-Beitrag um 0,25%';
 	wsAga.getCell(`A${agaRow + 3}`).value = '**AG-Anteil 1,8%, Kinderlose AN-Anteil 2,4%';
+}
 
-	// Return binary buffer
+/**
+ * Generates an Excel workbook for multiple participants, creating a Gehalt sheet for each,
+ * followed by the shared AGA reference sheet.
+ */
+export async function generateMultiParticipantBerechnungsblattExcel(
+	optionsList: BerechnungsblattGeneratorOptions[]
+): Promise<Buffer> {
+	const workbook = new ExcelJS.Workbook();
+	workbook.creator = 'AC-Grants Berechnungsblatt Generator';
+	workbook.created = new Date();
+
+	for (let i = 0; i < optionsList.length; i++) {
+		const opts = optionsList[i];
+		const sanitizedName = (opts.employeeName || `Teilnehmer_${i + 1}`).trim().replace(/[^a-zA-Z0-9äöüÄÖÜß_-]/g, '_');
+		const sheetName = optionsList.length === 1 ? 'Gehalt' : `Gehalt - ${sanitizedName}`.slice(0, 31);
+		const wsGehalt = workbook.addWorksheet(sheetName, {
+			views: [{ showGridLines: true }]
+		});
+		populateGehaltWorksheet(wsGehalt, opts);
+	}
+
+	const wsAga = workbook.addWorksheet('AGA', {
+		views: [{ showGridLines: true }]
+	});
+	populateAgaWorksheet(wsAga);
+
 	const arrayBuffer = await workbook.xlsx.writeBuffer();
 	return Buffer.from(arrayBuffer);
+}
+
+/**
+ * Generates a complete ExcelJS workbook for a single 5-year Berechnungsblatt.
+ */
+export async function generateBerechnungsblattExcel(
+	options: BerechnungsblattGeneratorOptions
+): Promise<Buffer> {
+	return generateMultiParticipantBerechnungsblattExcel([options]);
 }

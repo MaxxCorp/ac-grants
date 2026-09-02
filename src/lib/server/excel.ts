@@ -141,7 +141,15 @@ export function parseNumber(val: unknown, defaultVal = 0): number {
 	return isNaN(parsed) ? defaultVal : parsed;
 }
 
+export interface ParsedParticipantData {
+	sheetName: string;
+	participant: ParticipantInfo;
+	records: MonthlyRecord[];
+	years: number[];
+}
+
 export interface ParsedExcelWorkbook {
+	participants: ParsedParticipantData[];
 	participant: ParticipantInfo;
 	records: MonthlyRecord[];
 	availableInsuranceRates: { name: string; agaRate: number }[];
@@ -154,14 +162,89 @@ export function parseExcelBuffer(buffer: Buffer | Uint8Array): ParsedExcelWorkbo
 	return parseWorkbook(workbook);
 }
 
-export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
-	const gehaltSheetName = workbook.SheetNames.find(n => n.toLowerCase().includes('gehalt')) || workbook.SheetNames[0];
-	const sheet = workbook.Sheets[gehaltSheetName];
+export function parseInsuranceFunds(workbook: XLSX.WorkBook): InsuranceFundDetails[] {
+	const insuranceFunds: InsuranceFundDetails[] = JSON.parse(JSON.stringify(DEFAULT_INSURANCE_FUNDS));
 
-	if (!sheet) {
-		throw new Error(`Sheet "${gehaltSheetName}" not found in workbook.`);
+	const agaSheetName = workbook.SheetNames.find(n => n.toLowerCase().includes('aga'));
+	if (agaSheetName && workbook.Sheets[agaSheetName]) {
+		const agaSheet = workbook.Sheets[agaSheetName];
+		// Read rows 5 to 16
+		for (let r = 5; r <= 16; r++) {
+			const insNameCell = agaSheet[`A${r}`];
+			const kvCell = agaSheet[`C${r}`];
+			const zusatzCell = agaSheet[`D${r}`];
+			const rvCell = agaSheet[`E${r}`];
+			const avCell = agaSheet[`F${r}`];
+			const u1Cell = agaSheet[`I${r}`];
+			const u2Cell = agaSheet[`K${r}`];
+			const u3Cell = agaSheet[`L${r}`];
+			const agRateCell = agaSheet[`O${r}`] || agaSheet[`R${r}`];
+
+			if (insNameCell && insNameCell.v) {
+				const name = String(insNameCell.v).trim();
+				if (!name) continue;
+
+				let totalRate = parseNumber(agRateCell ? agRateCell.v : undefined, 0);
+				if (totalRate > 1) totalRate = totalRate / 100;
+
+				let kv = parseNumber(kvCell ? kvCell.v : undefined, 14.6);
+				if (kv > 0.2) kv = kv / 100;
+				const kvRate = kv / 2; // AG Anteil
+
+				let zusatz = parseNumber(zusatzCell ? zusatzCell.v : undefined, 3.2);
+				if (zusatz > 0.1) zusatz = zusatz / 100;
+				const zusatzbeitragAg = zusatz / 2;
+
+				let rv = parseNumber(rvCell ? rvCell.v : undefined, 18.6);
+				if (rv > 0.2) rv = rv / 100;
+				const rvRate = rv / 2;
+
+				let av = parseNumber(avCell ? avCell.v : undefined, 2.6);
+				if (av > 0.1) av = av / 100;
+				const avRate = av / 2;
+
+				let u1 = parseNumber(u1Cell ? u1Cell.v : undefined, 1.3);
+				if (u1 > 0.05) u1 = u1 / 100;
+
+				let u2 = parseNumber(u2Cell ? u2Cell.v : undefined, 0.39);
+				if (u2 > 0.005) u2 = u2 / 100;
+
+				let u3 = parseNumber(u3Cell ? u3Cell.v : undefined, 0.15);
+				if (u3 > 0.002) u3 = u3 / 100;
+
+				const pvRate = 0.018;
+
+				const existing = insuranceFunds.find(i => i.name.toLowerCase() === name.toLowerCase());
+				const fundObj: InsuranceFundDetails = {
+					name,
+					kvRate,
+					zusatzbeitragTotal: zusatz,
+					zusatzbeitragAg,
+					rvRate,
+					avRate,
+					pvRate,
+					u1Rate: u1,
+					u2Rate: u2,
+					u3Rate: u3,
+					agaRate: totalRate > 0 ? totalRate : (existing ? existing.agaRate : 0.2314)
+				};
+
+				if (existing) {
+					Object.assign(existing, fundObj);
+				} else {
+					insuranceFunds.push(fundObj);
+				}
+			}
+		}
 	}
+	return insuranceFunds;
+}
 
+export function parseParticipantSheet(
+	sheet: XLSX.WorkSheet,
+	sheetName: string,
+	insuranceFunds: InsuranceFundDetails[] = DEFAULT_INSURANCE_FUNDS
+): ParsedParticipantData {
 	const getCellValue = (colLetter: string, rowNumber: number): unknown => {
 		const cell = sheet[`${colLetter}${rowNumber}`];
 		if (!cell) return undefined;
@@ -184,7 +267,11 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 	};
 
 	// Parse Participant Metadata from Row 2
-	const rawName = String(getCellValue('A', 2) || 'Teilnehmer/in').trim();
+	let rawName = String(getCellValue('A', 2) || '').trim();
+	if (!rawName) {
+		const sheetNameClean = sheetName.replace(/^gehalt[\s_-]*/i, '').trim();
+		rawName = sheetNameClean || 'Teilnehmer/in';
+	}
 	const rawEG = String(getCellValue('B', 2) || 'EG1').trim();
 	const rawES = normalizeTariffStep(getCellValue('C', 2));
 	const rawRuntime = String(getCellValue('F', 2) || '').trim();
@@ -308,13 +395,12 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 	let lastPendingJszAga = 0;
 	let lastPendingJszBg = 0;
 
-	// Loop through rows up to 130
 	for (let r = 4; r <= 130; r++) {
 		const colA = getCellValue('A', r);
 		const colF = getCellValue('F', r);
 		const colO = getCellValue('O', r);
 
-		// Check if this is a JSZ (Jahressonderzahlung) row
+		// Check if this is a JSZ row
 		if (colO && String(colO).includes('Jahressonderzahlung')) {
 			lastPendingJsz = parseNumber(getCellValue(colZgsShare, r), 0);
 			if (colBgCost) {
@@ -327,7 +413,6 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 		if (colO && String(colO).includes('AGA auf JSZ')) {
 			lastPendingJszAga = parseNumber(getCellValue(colZgsShare, r), 0);
 
-			// Attach JSZ to the previous monthly record (usually the last month of that year, e.g. Dec)
 			if (records.length > 0 && (lastPendingJsz > 0 || lastPendingJszAga > 0)) {
 				const lastRecord = records[records.length - 1];
 				lastRecord.jszAmount = lastPendingJsz;
@@ -349,7 +434,7 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 			if (!dateStr || year === 0) continue;
 
 			const fteSalary = parseNumber(colF, 0);
-			if (fteSalary <= 0) continue; // Skip zero/empty salary rows
+			if (fteSalary <= 0) continue;
 
 			const monthUnits = parseNumber(getCellValue('B', r), 1.0);
 			const safeMonthUnits = monthUnits > 0 ? monthUnits : 1.0;
@@ -358,10 +443,8 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 			let resolvedMonth = month;
 			let day = parseInt(dateStr.split('-')[2], 10);
 
-			// Heal copy-paste artifacts where a split row duplicated the previous full-month's date
 			if (records.length > 0) {
 				const prevRec = records[records.length - 1];
-				// If previous record was a full month of same year & month, and this row is 0.5 month
 				if (prevRec.year === resolvedYear && prevRec.month === resolvedMonth && prevRec.monthUnits >= 1.0 && safeMonthUnits < 1.0) {
 					resolvedMonth = resolvedMonth + 1;
 					if (resolvedMonth > 12) {
@@ -383,15 +466,12 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 				const isSecondHalfOfSameMonth = prevRec && prevRec.year === resolvedYear && prevRec.month === resolvedMonth && prevRec.monthUnits < 1.0;
 
 				if (isSecondHalfOfSameMonth) {
-					// Second half of month
 					rowStartDate = `16.${mStr}.${resolvedYear}`;
 					rowEndDate = `${String(lastDay).padStart(2, '0')}.${mStr}.${resolvedYear}`;
 				} else if (day <= 15) {
-					// First half of month
 					rowStartDate = `01.${mStr}.${resolvedYear}`;
 					rowEndDate = `15.${mStr}.${resolvedYear}`;
 				} else {
-					// Standalone or second half
 					rowStartDate = `16.${mStr}.${resolvedYear}`;
 					rowEndDate = `${String(lastDay).padStart(2, '0')}.${mStr}.${resolvedYear}`;
 				}
@@ -400,7 +480,6 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 				rowEndDate = `${String(lastDay).padStart(2, '0')}.${mStr}.${resolvedYear}`;
 			}
 
-			// Respect contract start and end if on boundary
 			if (participant.runtimeStart && participant.runtimeStart.endsWith(`.${mStr}.${resolvedYear}`)) {
 				const startDay = parseInt(participant.runtimeStart.split('.')[0], 10);
 				if (startDay > 1 && (!rowStartDate || rowStartDate.startsWith('01.'))) {
@@ -414,13 +493,11 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 				}
 			}
 
-			// Unscaled full monthly values (for 30h/wk full month)
 			const fullMonthlyPartTime = (fteSalary * weeklyHours) / 39;
 			const fullMonthlyFlatRate = fullMonthlyPartTime * 0.19;
 			const fullMonthlyJcTotalGross = fullMonthlyPartTime + fullMonthlyFlatRate;
 			const fullMonthlySvShortfall = fullMonthlyPartTime * (defaultAgaRate - 0.19);
 
-			// Actual scaled record values
 			const partTimeSalary = parseNumber(getCellValue('G', r), fullMonthlyPartTime * safeMonthUnits);
 			const jcFlatRateAmount = parseNumber(getCellValue('H', r), partTimeSalary * 0.19);
 			const jcTotalGross = parseNumber(getCellValue('I', r), partTimeSalary + jcFlatRateAmount);
@@ -440,7 +517,6 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 			const landDegressionAmount = parseNumber(getCellValue(colDegressionShare, r), 0);
 			const sachkostenAmount = parseNumber(getCellValue(colSkLand, r), sachkostenMonthly * safeMonthUnits);
 
-			// BG calculation
 			let bgAmount = 0;
 			let totalEmployerCostWithBg = totalEmployerCost;
 			let rowBgRate = defaultBgRate;
@@ -517,91 +593,73 @@ export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
 		participant.reclassifications = reclassifications;
 	}
 
-	// Parse available insurance funds and rates from AGA sheet if present
-	const insuranceFunds: InsuranceFundDetails[] = JSON.parse(JSON.stringify(DEFAULT_INSURANCE_FUNDS));
+	const years = Array.from(new Set(records.map(r => r.year))).sort((a, b) => a - b);
+	return {
+		sheetName,
+		participant,
+		records,
+		years
+	};
+}
 
-	const agaSheetName = workbook.SheetNames.find(n => n.toLowerCase().includes('aga'));
-	if (agaSheetName && workbook.Sheets[agaSheetName]) {
-		const agaSheet = workbook.Sheets[agaSheetName];
-		// Read rows 5 to 16
-		for (let r = 5; r <= 16; r++) {
-			const insNameCell = agaSheet[`A${r}`];
-			const kvCell = agaSheet[`C${r}`];
-			const zusatzCell = agaSheet[`D${r}`];
-			const rvCell = agaSheet[`E${r}`];
-			const avCell = agaSheet[`F${r}`];
-			const u1Cell = agaSheet[`I${r}`];
-			const u2Cell = agaSheet[`K${r}`];
-			const u3Cell = agaSheet[`L${r}`];
-			const agRateCell = agaSheet[`O${r}`] || agaSheet[`R${r}`];
+export function parseWorkbook(workbook: XLSX.WorkBook): ParsedExcelWorkbook {
+	const insuranceFunds = parseInsuranceFunds(workbook);
+	const availableInsuranceRates = insuranceFunds.map(f => ({ name: f.name, agaRate: f.agaRate }));
 
-			if (insNameCell && insNameCell.v) {
-				const name = String(insNameCell.v).trim();
-				if (!name) continue;
+	// Detect participant sheets (exclude metadata and reference sheets)
+	const excludedKeywords = ['aga', 'beitrag', 'krankenkasse', 'tvl', 'tv-l', 'tabelle', 'anleitung', 'hilfe', 'info'];
+	const candidateSheetNames = workbook.SheetNames.filter(name => {
+		const lower = name.toLowerCase();
+		return !excludedKeywords.some(kw => lower.includes(kw));
+	});
 
-				let totalRate = parseNumber(agRateCell ? agRateCell.v : undefined, 0);
-				if (totalRate > 1) totalRate = totalRate / 100;
+	const participantSheetNames: string[] = [];
+	for (const name of candidateSheetNames) {
+		const sheet = workbook.Sheets[name];
+		if (!sheet) continue;
+		const lower = name.toLowerCase();
 
-				let kv = parseNumber(kvCell ? kvCell.v : undefined, 14.6);
-				if (kv > 0.2) kv = kv / 100;
-				const kvRate = kv / 2; // AG Anteil
-
-				let zusatz = parseNumber(zusatzCell ? zusatzCell.v : undefined, 3.2);
-				if (zusatz > 0.1) zusatz = zusatz / 100;
-				const zusatzbeitragAg = zusatz / 2;
-
-				let rv = parseNumber(rvCell ? rvCell.v : undefined, 18.6);
-				if (rv > 0.2) rv = rv / 100;
-				const rvRate = rv / 2;
-
-				let av = parseNumber(avCell ? avCell.v : undefined, 2.6);
-				if (av > 0.1) av = av / 100;
-				const avRate = av / 2;
-
-				let u1 = parseNumber(u1Cell ? u1Cell.v : undefined, 1.3);
-				if (u1 > 0.05) u1 = u1 / 100;
-
-				let u2 = parseNumber(u2Cell ? u2Cell.v : undefined, 0.39);
-				if (u2 > 0.005) u2 = u2 / 100;
-
-				let u3 = parseNumber(u3Cell ? u3Cell.v : undefined, 0.15);
-				if (u3 > 0.002) u3 = u3 / 100;
-
-				const pvRate = 0.018;
-
-				const existing = insuranceFunds.find(i => i.name.toLowerCase() === name.toLowerCase());
-				const fundObj: InsuranceFundDetails = {
-					name,
-					kvRate,
-					zusatzbeitragTotal: zusatz,
-					zusatzbeitragAg,
-					rvRate,
-					avRate,
-					pvRate,
-					u1Rate: u1,
-					u2Rate: u2,
-					u3Rate: u3,
-					agaRate: totalRate > 0 ? totalRate : (existing ? existing.agaRate : 0.2314)
-				};
-
-				if (existing) {
-					Object.assign(existing, fundObj);
-				} else {
-					insuranceFunds.push(fundObj);
-				}
+		if (lower.includes('gehalt')) {
+			participantSheetNames.push(name);
+		} else {
+			// Check row 2 for participant headers
+			const d2 = String(sheet['D2']?.v || sheet['D2']?.w || '').toLowerCase();
+			const e2 = String(sheet['E2']?.v || sheet['E2']?.w || '').toLowerCase();
+			const f2 = String(sheet['F2']?.v || sheet['F2']?.w || '').toLowerCase();
+			if (d2.includes('laufzeit') || e2.includes('laufzeit') || f2.includes('.') || sheet['F4']?.v !== undefined) {
+				participantSheetNames.push(name);
 			}
 		}
 	}
 
-	const availableInsuranceRates = insuranceFunds.map(f => ({ name: f.name, agaRate: f.agaRate }));
-	const years = Array.from(new Set(records.map(r => r.year))).sort((a, b) => a - b);
+	const sheetsToParse = participantSheetNames.length > 0
+		? participantSheetNames
+		: [workbook.SheetNames.find(n => n.toLowerCase().includes('gehalt')) || workbook.SheetNames[0]];
+
+	const participants: ParsedParticipantData[] = [];
+	for (const sName of sheetsToParse) {
+		const s = workbook.Sheets[sName];
+		if (s) {
+			const parsed = parseParticipantSheet(s, sName, insuranceFunds);
+			(parsed.participant as any).insuranceFunds = insuranceFunds;
+			participants.push(parsed);
+		}
+	}
+
+	if (participants.length === 0) {
+		throw new Error('Kein Berechnungsblatt in der Arbeitsmappe gefunden.');
+	}
+
+	const allYears = Array.from(new Set(participants.flatMap(p => p.years))).sort((a, b) => a - b);
 
 	return {
-		participant,
-		records,
+		participants,
+		participant: participants[0].participant,
+		records: participants[0].records,
 		availableInsuranceRates,
 		insuranceFunds,
-		years
+		years: allYears
 	};
 }
+
 

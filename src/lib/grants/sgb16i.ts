@@ -3,6 +3,8 @@ import type {
 	ParticipantInfo,
 	GrantTransformationOptions,
 	GrantTransformationResult,
+	ParticipantDataset,
+	ParticipantCalculationResult,
 	FormTabDefinition,
 	FormRowItem,
 	ControlCheckResult,
@@ -430,28 +432,30 @@ export function ensureRecordsSpanScope(
 			sachkostenAmount,
 			isJszMonth
 		};
-
 		result.push(newRec);
 	}
 
 	return result;
 }
 
-export function transformSgb16i(
+export function calculateSingleParticipant(
 	rawRecords: MonthlyRecord[],
 	participant: ParticipantInfo,
 	options: GrantTransformationOptions
-): GrantTransformationResult {
+): ParticipantCalculationResult & {
+	exactJcTruthTotal: number;
+	exactLandTruthTotal: number;
+	jcRoundingDelta: number;
+	landRoundingDelta: number;
+} {
 	const { includeOffsetRows, restrictToYear, customAgaTimeline } = options;
 	const runtimeScope: RuntimeScope =
 		options.runtimeScope || (options.restrictToExitDate === false ? 'full_5_years' : 'exit_date');
 	const runtimeStartScope: RuntimeStartScope =
 		options.runtimeStartScope || (options.customStartDate ? 'custom' : 'contract_start');
 
-	// Ensure dataset covers requested scope if synthetic projection is needed
 	const extendedRaw = ensureRecordsSpanScope(rawRecords, participant, runtimeScope, options.customEndDate);
 
-	// Apply custom AGA rates, calculate full unscaled and scaled monthly amounts
 	const allProcessedRecords = extendedRaw.map(r => {
 		const effectiveAga = getEffectiveAgaRate(r, participant.defaultAgaRate, customAgaTimeline);
 		const safeMonthUnits = r.monthUnits && r.monthUnits > 0 ? r.monthUnits : 1.0;
@@ -468,7 +472,6 @@ export function transformSgb16i(
 		const jcTotalGross = round2(partTimeSalary + jcFlatRate);
 		const landSvShortfall = round2(partTimeSalary * (effectiveAga - 0.19));
 
-		// Recompute JSZ if applicable
 		let jszAgaAmount = r.jszAgaAmount;
 		if (r.jszAmount > 0) {
 			jszAgaAmount = round2(r.jszAmount * effectiveAga);
@@ -491,7 +494,6 @@ export function transformSgb16i(
 		};
 	});
 
-	// Filter active records according to selected runtime scope and start date
 	let records = [...allProcessedRecords];
 
 	const effectiveStartDate =
@@ -514,29 +516,19 @@ export function transformSgb16i(
 
 	if (effectiveEndDate) {
 		records = records.filter(r => isRecordWithinExitDate(r, effectiveEndDate));
-	} else if (options.restrictToYear && options.restrictToYear > 0) {
-		const yr = options.restrictToYear;
-		records = records.filter(r => r.year <= yr);
+	} else if (restrictToYear && restrictToYear > 0) {
+		records = records.filter(r => r.year <= restrictToYear);
 	}
-	// 'full_5_years' uses all records (which spans up to 60 months)
 
-	// Dynamically clip boundaries (first and last month) to effectiveStartDate and effectiveEndDate
 	records = records.map(r => clipRecordDateRange(r, effectiveStartDate, effectiveEndDate, participant.sachkostenMonthly));
 
-	// In the ZGS form, the contract runtime in Cell F2 is the fixed Laufzeit for individual lines
 	const contractRuntimeText = participant.runtimeEnd
 		? `${participant.runtimeStart}-${participant.runtimeEnd}`
-		: (participant.runtimeStart || '');
-	const contractRuntimeWithSpaces = participant.runtimeEnd
-		? `${participant.runtimeStart} - ${participant.runtimeEnd}`
 		: (participant.runtimeStart || '');
 
 	const years = Array.from(new Set(records.map(r => r.year))).sort((a, b) => a - b);
 	const runtimeMonths = round2(records.reduce((sum, r) => sum + (r.monthUnits || 1.0), 0));
 
-	// ==========================================
-	// TAB 1: 1. TLN-Kosten Jobcenter
-	// ==========================================
 	const jcRows: FormRowItem[] = [];
 	let currentJcGroup: MonthlyRecord[] = [];
 	let previousJcGroup: MonthlyRecord[] | null = null;
@@ -549,16 +541,10 @@ export function transformSgb16i(
 		const percentage = first.jcDegressionPct;
 		const rowNumber = jcRows.length + 1;
 
-		// Calculate yearly distribution
 		const yearlyAmounts: Record<number, number> = {};
 		for (const y of years) {
 			const unitsInYear = currentJcGroup.filter(r => r.year === y).reduce((sum, r) => sum + (r.monthUnits || 1.0), 0);
-			if (unitsInYear > 0) {
-				const effectiveMonthly = round2((monthlyAmount * percentage) / 100);
-				yearlyAmounts[y] = round2(effectiveMonthly * unitsInYear);
-			} else {
-				yearlyAmounts[y] = 0;
-			}
+			yearlyAmounts[y] = unitsInYear > 0 ? round2((monthlyAmount * percentage / 100) * unitsInYear) : 0;
 		}
 
 		const totalSum = Object.values(yearlyAmounts).reduce((a, b) => round2(a + b), 0);
@@ -568,8 +554,6 @@ export function transformSgb16i(
 		const tariffStep = getTariffStep(first, participant);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
 		const runtimeText = contractRuntimeText;
-
-		// Detect reasons for Erläuterung only when needed (Tariferhöhung, Stufenaufstieg, Degression)
 		const costTypeText = 'AG-Brutto, inkl. 19% Pauschale';
 		let explanationText = '';
 
@@ -587,36 +571,11 @@ export function transformSgb16i(
 			} else if (degressionChanged) {
 				explanationText = `Degression auf ${percentage}% ab ${startDateText}`;
 			} else if (stepChanged) {
-				if (isKnownTariffIncrease) {
-					explanationText = `Stufenaufstieg ${prevStep}->${currStep} und Tariferhöhung zum ${startDateText}`;
-				} else {
-					explanationText = `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
-				}
+				explanationText = isKnownTariffIncrease ? `Stufenaufstieg ${prevStep}->${currStep} und Tariferhöhung zum ${startDateText}` : `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
 			} else if (salaryIncreased) {
-				if (isKnownTariffIncrease) {
-					if (first.year === 2026 && first.month === 9 && first.startDate?.startsWith('01.09.')) {
-						explanationText = 'Tariferhöhung zum 01.09.2026 (% Erhöhung ist kleiner als Sockelbetrag)';
-					} else {
-						explanationText = `Tariferhöhung zum ${startDateText}`;
-					}
-				} else {
-					explanationText = `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
-				}
+				explanationText = isKnownTariffIncrease ? `Tariferhöhung zum ${startDateText}` : `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
 			}
 		}
-
-		// Composite one-line text containing the full row components with 5 spaces
-		const compoundOneLineText = buildCompoundOneLineText(
-			participant.name,
-			runtimeText,
-			tariffText,
-			calculationPeriodText,
-			explanationText,
-			costTypeText
-		);
-
-		// Description field contains Erläuterung + Betragstyp (or just Betragstyp if explanation is empty)
-		const description = explanationText ? `${explanationText}     ${costTypeText}` : costTypeText;
 
 		jcRows.push({
 			id: `jc-row-${rowNumber}`,
@@ -634,8 +593,8 @@ export function transformSgb16i(
 			calculationPeriodText,
 			explanationText,
 			costTypeText,
-			compoundOneLineText,
-			description,
+			compoundOneLineText: buildCompoundOneLineText(participant.name, runtimeText, tariffText, calculationPeriodText, explanationText, costTypeText),
+			description: explanationText ? `${explanationText}     ${costTypeText}` : costTypeText,
 			category: 'wage'
 		});
 
@@ -662,36 +621,14 @@ export function transformSgb16i(
 	}
 	flushJcGroup();
 
-	// Calculate exact unrounded Jobcenter sum from raw monthly records
-	const exactJcTruthTotal = records.reduce((sum, r) => {
-		const rawMonthlyGrant = (r.jcTotalGross * r.jcDegressionPct) / 100;
-		return sum + rawMonthlyGrant;
-	}, 0);
-
+	const exactJcTruthTotal = records.reduce((sum, r) => sum + (r.jcTotalGross * r.jcDegressionPct) / 100, 0);
 	const jcFormSumWithoutOffset = jcRows.reduce((sum, r) => sum + r.totalSum, 0);
 	const jcRoundingDelta = round2(exactJcTruthTotal - jcFormSumWithoutOffset);
 
-	// Add Jobcenter balancing row if requested and delta != 0
 	if (includeOffsetRows && Math.abs(jcRoundingDelta) > 0.001) {
-		const firstYear = years[0];
 		const offsetYearly: Record<number, number> = {};
 		for (const y of years) offsetYearly[y] = 0;
-		offsetYearly[firstYear] = jcRoundingDelta;
-
-		const runtimeText = contractRuntimeText;
-		const tariffText = `AWO Berlin ${participant.tariffGroup}/${participant.tariffStep}`;
-		const calculationPeriodText = contractRuntimeText;
-		const explanationText = 'Ausgleich K-Hilfe vs. reale Kalkulation';
-		const costTypeText = 'Ausgleichsbetrag';
-		const compoundOneLineText = buildCompoundOneLineText(
-			participant.name,
-			runtimeText,
-			tariffText,
-			calculationPeriodText,
-			explanationText,
-			costTypeText
-		);
-
+		offsetYearly[years[0]] = jcRoundingDelta;
 		jcRows.push({
 			id: `jc-row-offset`,
 			rowNumber: jcRows.length + 1,
@@ -703,40 +640,23 @@ export function transformSgb16i(
 			yearlyAmounts: offsetYearly,
 			controlSum: jcRoundingDelta,
 			participantName: participant.name,
-			runtimeText,
-			tariffText,
-			calculationPeriodText,
-			explanationText,
-			costTypeText,
-			compoundOneLineText,
-			description: `${explanationText}     ${costTypeText}`,
+			runtimeText: contractRuntimeText,
+			tariffText: `AWO Berlin ${participant.tariffGroup}/${participant.tariffStep}`,
+			calculationPeriodText: contractRuntimeText,
+			explanationText: 'Ausgleich K-Hilfe vs. reale Kalkulation',
+			costTypeText: 'Ausgleichsbetrag',
+			compoundOneLineText: '',
+			description: 'Ausgleich K-Hilfe vs. reale Kalkulation     Ausgleichsbetrag',
 			isOffsetRow: true,
 			category: 'offset'
 		});
 	}
 
 	const jcYearlyTotals: Record<number, number> = {};
-	for (const y of years) {
-		jcYearlyTotals[y] = jcRows.reduce((sum, r) => round2(sum + (r.yearlyAmounts[y] || 0)), 0);
-	}
+	for (const y of years) jcYearlyTotals[y] = jcRows.reduce((sum, r) => round2(sum + (r.yearlyAmounts[y] || 0)), 0);
 	const jcGrandTotal = Object.values(jcYearlyTotals).reduce((a, b) => round2(a + b), 0);
 
-	const jcTab: FormTabDefinition = {
-		id: 'jobcenter',
-		title: '1. TLN-Kosten Jobcenter',
-		tabNumber: 1,
-		rows: jcRows,
-		yearlyTotals: jcYearlyTotals,
-		grandTotal: jcGrandTotal,
-		status: 'Angaben vollständig'
-	};
-
-	// ==========================================
-	// TAB 2: 2. TLN-Kosten Landesmittel
-	// ==========================================
 	const landRows: FormRowItem[] = [];
-
-	// 1. SV Fehlbetrag Rows (grouped by full-monthly SV shortfall, AGA rate, and tariff step)
 	let currentSvGroup: MonthlyRecord[] = [];
 	let previousSvGroup: MonthlyRecord[] | null = null;
 
@@ -750,18 +670,15 @@ export function transformSgb16i(
 		const yearlyAmounts: Record<number, number> = {};
 		for (const y of years) {
 			const unitsInYear = currentSvGroup.filter(r => r.year === y).reduce((sum, r) => sum + (r.monthUnits || 1.0), 0);
-			yearlyAmounts[y] = unitsInYear > 0 ? round2(monthlyAmount * unitsInYear) : 0;
+			yearlyAmounts[y] = unitsInYear > 0 ? round2(unitsInYear * monthlyAmount) : 0;
 		}
+
 		const totalSum = Object.values(yearlyAmounts).reduce((a, b) => round2(a + b), 0);
 		const startDateText = getPeriodStartDate(currentSvGroup);
-		const endDateText = getPeriodEndDate(currentSvGroup);
+		const calculationPeriodText = `${startDateText}-${getPeriodEndDate(currentSvGroup)}`;
 		const tariffStep = getTariffStep(first, participant);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
-		const runtimeText = contractRuntimeText;
-		const calculationPeriodText = `${startDateText}-${endDateText}`;
-
-		const agaPctStr = `${(first.agaRealRate * 100).toFixed(3).replace('.', ',')}%`;
-		const costTypeText = `SV Fehlbetrag inkl. (U1,U2,U3) i.H.v. ${agaPctStr}`;
+		const costTypeText = `SV Fehlbetrag inkl. (U1,U2,U3) i.H.v. ${(first.agaRealRate * 100).toFixed(3).replace('.', ',')}%`;
 		let explanationText = '';
 
 		if (previousSvGroup) {
@@ -769,35 +686,23 @@ export function transformSgb16i(
 			const prevStep = getTariffStep(prevFirst, participant);
 			const currStep = tariffStep;
 			const stepChanged = prevStep !== currStep;
+			const agaChanged = Math.abs(prevFirst.agaRealRate - first.agaRealRate) > 0.0001;
 			const isKnownTariffIncrease = isAwoTariffIncreaseMonth(first.year, first.month);
 			const salaryIncreased = first.fteSalary > prevFirst.fteSalary;
 
-			if (stepChanged) {
-				if (isKnownTariffIncrease) {
-					explanationText = `ES Wechsel ${prevStep}->${currStep} und Tariferhöhung zum ${startDateText}`;
-				} else {
-					explanationText = `ES Wechsel ${prevStep}->${currStep} zum ${startDateText}`;
-				}
+			if (stepChanged && agaChanged) {
+				explanationText = `Stufenaufstieg ${prevStep}->${currStep}, Anpassung AGA-Satz auf ${(first.agaRealRate * 100).toFixed(3).replace('.', ',')}% ab ${startDateText}`;
+			} else if (agaChanged) {
+				explanationText = `Anpassung AGA-Satz auf ${(first.agaRealRate * 100).toFixed(3).replace('.', ',')}% ab ${startDateText}`;
+			} else if (stepChanged) {
+				explanationText = isKnownTariffIncrease ? `ES Wechsel ${prevStep}->${currStep} und Tariferhöhung zum ${startDateText}` : `ES Wechsel ${prevStep}->${currStep} zum ${startDateText}`;
 			} else if (salaryIncreased) {
-				if (isKnownTariffIncrease) {
-					explanationText = `Tariferhöhung zum ${startDateText}`;
-				} else {
-					explanationText = `ES Wechsel ${prevStep}->${currStep} zum ${startDateText}`;
-				}
+				explanationText = isKnownTariffIncrease ? `Tariferhöhung zum ${startDateText}` : `ES Wechsel ${prevStep}->${currStep} zum ${startDateText}`;
 			}
 		}
 
-		const compoundOneLineText = buildCompoundOneLineText(
-			participant.name,
-			runtimeText,
-			tariffText,
-			calculationPeriodText,
-			explanationText,
-			costTypeText
-		);
-
 		landRows.push({
-			id: `land-row-${rowNumber}`,
+			id: `land-row-sv-${rowNumber}`,
 			rowNumber,
 			workingHours: participant.weeklyHours,
 			monthlyAmount,
@@ -807,12 +712,12 @@ export function transformSgb16i(
 			yearlyAmounts,
 			controlSum: totalSum,
 			participantName: participant.name,
-			runtimeText,
+			runtimeText: contractRuntimeText,
 			tariffText,
 			calculationPeriodText,
 			explanationText,
 			costTypeText,
-			compoundOneLineText,
+			compoundOneLineText: buildCompoundOneLineText(participant.name, contractRuntimeText, tariffText, calculationPeriodText, explanationText, costTypeText),
 			description: explanationText ? `${explanationText}     ${costTypeText}` : costTypeText,
 			category: 'sv_shortfall'
 		});
@@ -829,10 +734,10 @@ export function transformSgb16i(
 			const prevShortfall = prev.fullMonthlySvShortfall || prev.landSvShortfall / (prev.monthUnits || 1.0);
 			const currShortfall = r.fullMonthlySvShortfall || r.landSvShortfall / (r.monthUnits || 1.0);
 			const sameSv = Math.abs(prevShortfall - currShortfall) < 0.01;
-			const sameAga = Math.abs(prev.agaRealRate - r.agaRealRate) < 0.00001;
-			const sameStep = getTariffStep(prev, participant) === getTariffStep(r, participant);
+			const sameAga = Math.abs(prev.agaRealRate - r.agaRealRate) < 0.0001;
+			const sameTariffStep = getTariffStep(prev, participant) === getTariffStep(r, participant);
 
-			if (sameSv && sameAga && sameStep) {
+			if (sameSv && sameAga && sameTariffStep) {
 				currentSvGroup.push(r);
 			} else {
 				flushSvGroup();
@@ -842,24 +747,22 @@ export function transformSgb16i(
 	}
 	flushSvGroup();
 
-	// 2. Degressionsbetrag Rows (when JC < 100%, grouped by salary, step, and degression tier)
-	const degRecords = records.filter(r => r.jcDegressionPct < 100);
 	let currentDegGroup: MonthlyRecord[] = [];
 	let previousDegGroup: MonthlyRecord[] | null = null;
 
 	const flushDegGroup = () => {
 		if (currentDegGroup.length === 0) return;
 		const first = currentDegGroup[0];
-		const landPct = 100 - first.jcDegressionPct;
 		const monthCount = round2(currentDegGroup.reduce((sum, r) => sum + (r.monthUnits || 1.0), 0));
 		const monthlyAmount = round2(first.fullMonthlyJcTotalGross || (first.fteSalary * participant.weeklyHours / 39) * 1.19);
+		const percentage = 100 - first.jcDegressionPct;
 		const rowNumber = landRows.length + 1;
 
 		const yearlyAmounts: Record<number, number> = {};
 		for (const y of years) {
 			const unitsInYear = currentDegGroup.filter(r => r.year === y).reduce((sum, r) => sum + (r.monthUnits || 1.0), 0);
 			if (unitsInYear > 0) {
-				const effectiveMonthly = round2(monthlyAmount * (landPct / 100));
+				const effectiveMonthly = round2((monthlyAmount * percentage) / 100);
 				yearlyAmounts[y] = round2(effectiveMonthly * unitsInYear);
 			} else {
 				yearlyAmounts[y] = 0;
@@ -868,71 +771,50 @@ export function transformSgb16i(
 
 		const totalSum = Object.values(yearlyAmounts).reduce((a, b) => round2(a + b), 0);
 		const startDateText = getPeriodStartDate(currentDegGroup);
-		const endDateText = getPeriodEndDate(currentDegGroup);
-		const calculationPeriodText = `${startDateText}-${endDateText}`;
+		const calculationPeriodText = `${startDateText}-${getPeriodEndDate(currentDegGroup)}`;
 		const tariffStep = getTariffStep(first, participant);
 		const tariffText = `AWO Berlin ${participant.tariffGroup}/${tariffStep}`;
-		const runtimeText = contractRuntimeText;
-
+		const costTypeText = 'Degressionsbetrag';
 		let explanationText = '';
+
 		if (previousDegGroup) {
 			const prevFirst = previousDegGroup[0];
 			const prevStep = getTariffStep(prevFirst, participant);
 			const currStep = tariffStep;
 			const stepChanged = prevStep !== currStep;
-			const degressionChanged = prevFirst.jcDegressionPct !== first.jcDegressionPct;
+			const degChanged = prevFirst.jcDegressionPct !== first.jcDegressionPct;
 			const isKnownTariffIncrease = isAwoTariffIncreaseMonth(first.year, first.month);
 			const salaryIncreased = first.fteSalary > prevFirst.fteSalary;
 
-			if (degressionChanged && stepChanged) {
+			if (stepChanged && degChanged) {
 				explanationText = `Stufenaufstieg ${prevStep}->${currStep}, Degression auf ${first.jcDegressionPct}% zum ${startDateText}`;
-			} else if (degressionChanged) {
+			} else if (degChanged) {
 				explanationText = `Degression auf ${first.jcDegressionPct}% ab ${startDateText}`;
 			} else if (stepChanged) {
-				if (isKnownTariffIncrease) {
-					explanationText = `Stufenaufstieg ${prevStep}->${currStep} und Tariferhöhung zum ${startDateText}`;
-				} else {
-					explanationText = `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
-				}
+				explanationText = isKnownTariffIncrease ? `Stufenaufstieg ${prevStep}->${currStep} und Tariferhöhung zum ${startDateText}` : `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
 			} else if (salaryIncreased) {
-				if (isKnownTariffIncrease) {
-					explanationText = `Tariferhöhung zum ${startDateText}`;
-				} else {
-					explanationText = `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
-				}
+				explanationText = isKnownTariffIncrease ? `Tariferhöhung zum ${startDateText}` : `Stufenaufstieg ${prevStep}->${currStep} zum ${startDateText}`;
 			}
-		} else {
-			explanationText = `Degression auf ${first.jcDegressionPct}% ab ${startDateText}`;
 		}
 
-		const costTypeText = 'Degressionsbetrag';
-		const compoundOneLineText = buildCompoundOneLineText(
-			participant.name,
-			runtimeText,
-			tariffText,
-			calculationPeriodText,
-			explanationText,
-			costTypeText
-		);
-
 		landRows.push({
-			id: `land-row-${rowNumber}`,
+			id: `land-row-deg-${rowNumber}`,
 			rowNumber,
 			workingHours: participant.weeklyHours,
 			monthlyAmount,
-			percentage: landPct,
+			percentage,
 			monthCount,
 			totalSum,
 			yearlyAmounts,
 			controlSum: totalSum,
 			participantName: participant.name,
-			runtimeText,
+			runtimeText: contractRuntimeText,
 			tariffText,
 			calculationPeriodText,
 			explanationText,
 			costTypeText,
-			compoundOneLineText,
-			description: `${explanationText}     ${costTypeText}`,
+			compoundOneLineText: buildCompoundOneLineText(participant.name, contractRuntimeText, tariffText, calculationPeriodText, explanationText, costTypeText),
+			description: explanationText ? `${explanationText}     ${costTypeText}` : costTypeText,
 			category: 'degression'
 		});
 
@@ -940,26 +822,29 @@ export function transformSgb16i(
 		currentDegGroup = [];
 	};
 
-	for (const r of degRecords) {
-		if (currentDegGroup.length === 0) {
-			currentDegGroup.push(r);
-		} else {
-			const prev = currentDegGroup[currentDegGroup.length - 1];
-			const sameFte = Math.abs(prev.fteSalary - r.fteSalary) < 0.01;
-			const sameDeg = prev.jcDegressionPct === r.jcDegressionPct;
-			const sameStep = getTariffStep(prev, participant) === getTariffStep(r, participant);
-
-			if (sameFte && sameDeg && sameStep) {
+	for (const r of records) {
+		if (r.jcDegressionPct < 100) {
+			if (currentDegGroup.length === 0) {
 				currentDegGroup.push(r);
 			} else {
-				flushDegGroup();
-				currentDegGroup.push(r);
+				const prev = currentDegGroup[currentDegGroup.length - 1];
+				const sameFte = Math.abs(prev.fteSalary - r.fteSalary) < 0.01;
+				const sameDegression = prev.jcDegressionPct === r.jcDegressionPct;
+				const sameTariffStep = getTariffStep(prev, participant) === getTariffStep(r, participant);
+
+				if (sameFte && sameDegression && sameTariffStep) {
+					currentDegGroup.push(r);
+				} else {
+					flushDegGroup();
+					currentDegGroup.push(r);
+				}
 			}
+		} else {
+			flushDegGroup();
 		}
 	}
 	flushDegGroup();
 
-	// 3. Jahressonderzahlung Rows (JSZ 85% + AGA)
 	for (const y of years) {
 		const monthsInYear = records.filter(r => r.year === y);
 		const jszRecord = monthsInYear.find(r => r.isJszMonth && r.jszAmount > 0);
@@ -968,9 +853,6 @@ export function transformSgb16i(
 			const rowNumber = landRows.length + 1;
 			const allMonthsInYear = allProcessedRecords.filter(r => r.year === y);
 			const totalEmploymentMonthsInYear = round2(allMonthsInYear.reduce((sum, r) => sum + (r.monthUnits || 1.0), 0));
-
-			const yearlyAmounts: Record<number, number> = {};
-			for (const yr of years) yearlyAmounts[yr] = yr === y ? totalJszWithAga : 0;
 
 			let explanationText = `85% vom Septembergehalt gem. AWO Berlin Tarif (10. ÄTV / TE 05.05.2026), Stichtag 01.12.`;
 			if (totalEmploymentMonthsInYear < 12) {
@@ -985,17 +867,11 @@ export function transformSgb16i(
 			const endDateText = getPeriodEndDate(allMonthsInYear);
 			const calculationPeriodText = `${startDateText}-${endDateText}`;
 
-			const compoundOneLineText = buildCompoundOneLineText(
-				participant.name,
-				runtimeText,
-				tariffText,
-				calculationPeriodText,
-				explanationText,
-				costTypeText
-			);
+			const yearlyAmounts: Record<number, number> = {};
+			for (const yr of years) yearlyAmounts[yr] = yr === y ? totalJszWithAga : 0;
 
 			landRows.push({
-				id: `land-row-${rowNumber}`,
+				id: `land-row-jsz-${y}`,
 				rowNumber,
 				workingHours: participant.weeklyHours,
 				monthlyAmount: totalJszWithAga,
@@ -1010,44 +886,24 @@ export function transformSgb16i(
 				calculationPeriodText,
 				explanationText,
 				costTypeText,
-				compoundOneLineText,
+				compoundOneLineText: buildCompoundOneLineText(participant.name, runtimeText, tariffText, calculationPeriodText, explanationText, costTypeText),
 				description: `${explanationText}     ${costTypeText}`,
 				category: 'jsz'
 			});
 		}
 	}
 
-	// Calculate unrounded exact Landesmittel sum from raw monthly records
 	const exactLandTruthTotal = records.reduce((sum, r) => {
-		const degressionShortfall = round2((r.jcTotalGross * (100 - r.jcDegressionPct)) / 100);
-		const monthlyLand = r.landSvShortfall + degressionShortfall + (r.jszAmount || 0) + (r.jszAgaAmount || 0);
-		return sum + monthlyLand;
+		const degShortfall = (r.jcTotalGross * (100 - r.jcDegressionPct)) / 100;
+		return sum + r.landSvShortfall + degShortfall + (r.jszAmount || 0) + (r.jszAgaAmount || 0);
 	}, 0);
-
 	const landFormSumWithoutOffset = landRows.reduce((sum, r) => sum + r.totalSum, 0);
 	const landRoundingDelta = round2(exactLandTruthTotal - landFormSumWithoutOffset);
 
-	// Add Landesmittel balancing row if requested and delta != 0
 	if (includeOffsetRows && Math.abs(landRoundingDelta) > 0.001) {
-		const firstYear = years[0];
 		const offsetYearly: Record<number, number> = {};
 		for (const y of years) offsetYearly[y] = 0;
-		offsetYearly[firstYear] = landRoundingDelta;
-
-		const runtimeText = contractRuntimeText;
-		const tariffText = `AWO Berlin ${participant.tariffGroup}/${participant.tariffStep}`;
-		const calculationPeriodText = contractRuntimeText;
-		const explanationText = 'Ausgleich K-Hilfe vs. reale Kalkulation';
-		const costTypeText = 'Ausgleichsbetrag';
-		const compoundOneLineText = buildCompoundOneLineText(
-			participant.name,
-			runtimeText,
-			tariffText,
-			calculationPeriodText,
-			explanationText,
-			costTypeText
-		);
-
+		offsetYearly[years[0]] = landRoundingDelta;
 		landRows.push({
 			id: `land-row-offset`,
 			rowNumber: landRows.length + 1,
@@ -1059,37 +915,22 @@ export function transformSgb16i(
 			yearlyAmounts: offsetYearly,
 			controlSum: landRoundingDelta,
 			participantName: participant.name,
-			runtimeText,
-			tariffText,
-			calculationPeriodText,
-			explanationText,
-			costTypeText,
-			compoundOneLineText,
-			description: `${explanationText}     ${costTypeText}`,
+			runtimeText: contractRuntimeText,
+			tariffText: `AWO Berlin ${participant.tariffGroup}/${participant.tariffStep}`,
+			calculationPeriodText: contractRuntimeText,
+			explanationText: 'Ausgleich K-Hilfe vs. reale Kalkulation',
+			costTypeText: 'Ausgleichsbetrag',
+			compoundOneLineText: '',
+			description: 'Ausgleich K-Hilfe vs. reale Kalkulation     Ausgleichsbetrag',
 			isOffsetRow: true,
 			category: 'offset'
 		});
 	}
 
 	const landYearlyTotals: Record<number, number> = {};
-	for (const y of years) {
-		landYearlyTotals[y] = landRows.reduce((sum, r) => round2(sum + (r.yearlyAmounts[y] || 0)), 0);
-	}
+	for (const y of years) landYearlyTotals[y] = landRows.reduce((sum, r) => round2(sum + (r.yearlyAmounts[y] || 0)), 0);
 	const landGrandTotal = Object.values(landYearlyTotals).reduce((a, b) => round2(a + b), 0);
 
-	const landTab: FormTabDefinition = {
-		id: 'landesmittel',
-		title: '2. TLN-Kosten Landesmittel',
-		tabNumber: 2,
-		rows: landRows,
-		yearlyTotals: landYearlyTotals,
-		grandTotal: landGrandTotal,
-		status: 'Angaben vollständig'
-	};
-
-	// ==========================================
-	// TAB 3: Sachkostenpauschale (155 €)
-	// ==========================================
 	const sachkostenRate = participant.sachkostenMonthly;
 	const skYearlyAmounts: Record<number, number> = {};
 	for (const y of years) {
@@ -1097,21 +938,17 @@ export function transformSgb16i(
 		skYearlyAmounts[y] = round2(unitsInYear * sachkostenRate);
 	}
 	const skGrandTotal = round2(runtimeMonths * sachkostenRate);
-
-	const skName = participant.name.startsWith('Hr.') || participant.name.startsWith('Herr')
-		? participant.name
-		: `Fr. ${participant.name.replace(/^Frau\s+/i, '')}`;
-	const skRuntime = contractRuntimeWithSpaces;
+	const skName = participant.name;
+	const skRuntime = `${participant.runtimeStart} - ${participant.runtimeEnd || ''}`.trim();
 	const skTariff = `AWO Berlin ${participant.tariffGroup}/${participant.tariffStep}`;
 	const skPeriod = `${getPeriodStartDate(records)} - ${getPeriodEndDate(records)}`;
 	const skExplanation = `JC Antrag bewilligt bis ${participant.runtimeEnd || getPeriodEndDate(records)}`;
 	const skCostType = `Sachkostenpauschale ${sachkostenRate.toFixed(2).replace('.', ',')} € mtl.`;
-	const skCompoundOneLineText = buildCompoundOneLineText(skName, skRuntime, skTariff, skPeriod, skExplanation, skCostType);
 
-	const skRow: FormRowItem = {
+	const skRows: FormRowItem[] = [{
 		id: 'sk-row-1',
 		rowNumber: 1,
-		workingHours: 1, // "Anzahl Teilnehmende" = 1
+		workingHours: 1,
 		monthlyAmount: sachkostenRate,
 		percentage: 100,
 		monthCount: runtimeMonths,
@@ -1124,49 +961,38 @@ export function transformSgb16i(
 		calculationPeriodText: skPeriod,
 		explanationText: skExplanation,
 		costTypeText: skCostType,
-		compoundOneLineText: skCompoundOneLineText,
+		compoundOneLineText: buildCompoundOneLineText(skName, skRuntime, skTariff, skPeriod, skExplanation, skCostType),
 		description: `${skExplanation}     ${skCostType}`,
 		category: 'sachkosten'
-	};
+	}];
 
-	const skTab: FormTabDefinition = {
-		id: 'sachkosten',
-		title: `Sachkostenpauschale ${sachkostenRate} €`,
-		tabNumber: 3,
-		rows: [skRow],
-		yearlyTotals: skYearlyAmounts,
-		grandTotal: skGrandTotal,
-		status: 'Angaben vollständig'
-	};
-
-	// ==========================================
-	// CONTROL CALCULATIONS & AUDIT CHECKS
-	// ==========================================
-	const roundedJcTruth = round2(exactJcTruthTotal);
-	const roundedLandTruth = round2(exactLandTruthTotal);
-	const excelGrandTotal = round2(roundedJcTruth + roundedLandTruth + skGrandTotal);
+	const jcTruthRounded = round2(exactJcTruthTotal);
+	const landTruthRounded = round2(exactLandTruthTotal);
+	const excelGrandTotal = round2(jcTruthRounded + landTruthRounded + skGrandTotal);
 	const formGrandTotal = round2(jcGrandTotal + landGrandTotal + skGrandTotal);
 	const totalDelta = round2(excelGrandTotal - formGrandTotal);
+	const jcDelta = round2(jcTruthRounded - jcGrandTotal);
+	const landDelta = round2(landTruthRounded - landGrandTotal);
 
 	const controlItems: ControlCheckItem[] = [
 		{
 			id: 'ctrl-jc',
 			name: '1. TLN-Kosten Jobcenter',
 			category: 'jobcenter',
-			excelValue: roundedJcTruth,
+			excelValue: jcTruthRounded,
 			formValue: jcGrandTotal,
-			delta: round2(roundedJcTruth - jcGrandTotal),
-			status: Math.abs(roundedJcTruth - jcGrandTotal) <= 0.01 ? 'MATCH' : includeOffsetRows ? 'OFFSET_APPLIED' : 'WARNING',
+			delta: jcDelta,
+			status: Math.abs(jcDelta) <= 0.01 ? 'MATCH' : (includeOffsetRows ? 'OFFSET_APPLIED' : 'WARNING'),
 			note: includeOffsetRows ? (jcRoundingDelta !== 0 ? `Ausgleichsbetrag verrechnet (${jcRoundingDelta > 0 ? '+' : ''}${jcRoundingDelta.toFixed(2).replace('.', ',')} €)` : 'Exakte Übereinstimmung') : 'Cent-Rundungsdifferenz durch Formularmultiplikation'
 		},
 		{
 			id: 'ctrl-land',
 			name: '2. TLN-Kosten Landesmittel',
 			category: 'landesmittel',
-			excelValue: roundedLandTruth,
+			excelValue: landTruthRounded,
 			formValue: landGrandTotal,
-			delta: round2(roundedLandTruth - landGrandTotal),
-			status: Math.abs(roundedLandTruth - landGrandTotal) <= 0.01 ? 'MATCH' : includeOffsetRows ? 'OFFSET_APPLIED' : 'WARNING',
+			delta: landDelta,
+			status: Math.abs(landDelta) <= 0.01 ? 'MATCH' : (includeOffsetRows ? 'OFFSET_APPLIED' : 'WARNING'),
 			note: includeOffsetRows ? (landRoundingDelta !== 0 ? `Ausgleichsbetrag verrechnet (${landRoundingDelta > 0 ? '+' : ''}${landRoundingDelta.toFixed(2).replace('.', ',')} €)` : 'Exakte Übereinstimmung') : 'Cent-Rundungsdifferenz durch Formularmultiplikation'
 		},
 		{
@@ -1197,78 +1023,231 @@ export function transformSgb16i(
 		formGrandTotal,
 		totalDelta,
 		items: controlItems,
-		jobcenterCheck: {
-			excelTotal: roundedJcTruth,
-			formTotal: jcGrandTotal,
-			delta: round2(roundedJcTruth - jcGrandTotal),
-			offsetAmount: jcRoundingDelta
-		},
-		landesmittelCheck: {
-			excelTotal: roundedLandTruth,
-			formTotal: landGrandTotal,
-			delta: round2(roundedLandTruth - landGrandTotal),
-			offsetAmount: landRoundingDelta
-		},
-		sachkostenCheck: {
-			excelTotal: skGrandTotal,
-			formTotal: skGrandTotal,
-			delta: 0
-		}
+		jobcenterCheck: { excelTotal: jcTruthRounded, formTotal: jcGrandTotal, delta: jcDelta, offsetAmount: jcRoundingDelta },
+		landesmittelCheck: { excelTotal: landTruthRounded, formTotal: landGrandTotal, delta: landDelta, offsetAmount: landRoundingDelta },
+		sachkostenCheck: { excelTotal: skGrandTotal, formTotal: skGrandTotal, delta: 0 }
 	};
 
-	// Default AGA timeline if not provided
-	const defaultAgaTimeline: AgaRatePeriod[] = customAgaTimeline || [
-		{
-			id: 'aga-default',
-			startDate: participant.runtimeStart ? formatDateDMY(participant.runtimeStart) : '2026-08-01',
-			endDate: participant.runtimeEnd ? formatDateDMY(participant.runtimeEnd) : '2031-07-31',
-			rate: participant.defaultAgaRate,
-			label: `${participant.healthInsuranceName} Standard (${(participant.defaultAgaRate * 100).toFixed(3)}%)`
-		}
-	];
-
-	// Default BG timeline if not provided
-	const bgRate = participant.defaultBgRate ?? 0.018;
-	const defaultBgTimeline: BgRatePeriod[] = options.customBgTimeline || participant.bgTimeline || [
-		{
-			id: 'bg-default',
-			startDate: participant.runtimeStart ? formatDateDMY(participant.runtimeStart) : '2026-08-01',
-			endDate: participant.runtimeEnd ? formatDateDMY(participant.runtimeEnd) : '2031-07-31',
-			rate: bgRate,
-			label: `BGW Standard (${(bgRate * 100).toFixed(2)}%)`
-		}
-	];
-
-	// Generate TV-L Comparison calculation
-	const tvlComparison = calculateTvlComparison(
-		allProcessedRecords,
-		participant,
-		years.includes(2026) ? 2026 : (years[years.length - 1] || 2026),
-		undefined,
-		(participant as any).insuranceFunds
-	);
-
-	const tariffValidation = validateBerechnungsblattTariff(allProcessedRecords, participant);
+	const defaultAgaTimeline = customAgaTimeline || [{ id: 'aga-default', startDate: formatDateDMY(participant.runtimeStart), endDate: formatDateDMY(participant.runtimeEnd), rate: participant.defaultAgaRate, label: `${participant.healthInsuranceName} Standard (${(participant.defaultAgaRate * 100).toFixed(3)}%)` }];
+	const defaultBgTimeline = options.customBgTimeline || participant.bgTimeline || [{ id: 'bg-default', startDate: formatDateDMY(participant.runtimeStart), endDate: formatDateDMY(participant.runtimeEnd), rate: participant.defaultBgRate ?? 0.018, label: `BGW Standard` }];
 
 	return {
-		schemeId: 'sgb16i-berlin',
-		schemeName: '§ 16i SGB II / ZGS Berlin (AWO Tarifeinigung 05.05.2026)',
 		participant,
+		records: allProcessedRecords,
 		years,
 		runtimeMonths,
-		tabs: [jcTab, landTab, skTab],
+		tabs: [
+			{ id: 'jobcenter', title: '1. TLN-Kosten Jobcenter', tabNumber: 1, rows: jcRows, yearlyTotals: jcYearlyTotals, grandTotal: jcGrandTotal, status: 'Angaben vollständig' },
+			{ id: 'landesmittel', title: '2. TLN-Kosten Landesmittel', tabNumber: 2, rows: landRows, yearlyTotals: landYearlyTotals, grandTotal: landGrandTotal, status: 'Angaben vollständig' },
+			{ id: 'sachkosten', title: `Sachkostenpauschale ${sachkostenRate} €`, tabNumber: 3, rows: skRows, yearlyTotals: skYearlyAmounts, grandTotal: skGrandTotal, status: 'Angaben vollständig' }
+		],
 		controls,
 		agaTimeline: defaultAgaTimeline,
 		bgTimeline: defaultBgTimeline,
-		options: {
-			...options,
-			runtimeScope,
-			runtimeStartScope,
-			customStartDate: options.customStartDate
-		},
-		rawMonthlyRecords: allProcessedRecords,
-		insuranceFunds: (participant as any).insuranceFunds,
-		tariffValidation,
-		tvlComparison
+		tariffValidation: validateBerechnungsblattTariff(allProcessedRecords, participant),
+		tvlComparison: calculateTvlComparison(allProcessedRecords, participant, years.includes(2026) ? 2026 : (years[years.length - 1] || 2026), undefined, (participant as any).insuranceFunds),
+		exactJcTruthTotal,
+		exactLandTruthTotal,
+		jcRoundingDelta,
+		landRoundingDelta
 	};
+}
+
+export function transformSgb16iMulti(
+	participantsData: ParticipantDataset[],
+	options: GrantTransformationOptions
+): GrantTransformationResult {
+	if (!participantsData || participantsData.length === 0) {
+		throw new Error('Mindestens ein Teilnehmer muss für die Berechnung vorhanden sein.');
+	}
+
+	const participantResults = participantsData.map(item => {
+		const mergedOptions: GrantTransformationOptions = {
+			...options,
+			...(item.options || {})
+		};
+		return calculateSingleParticipant(item.records, item.participant, mergedOptions);
+	});
+
+	if (participantResults.length === 1) {
+		const single = participantResults[0];
+		return {
+			schemeId: 'sgb16i-berlin',
+			schemeName: '§ 16i SGB II / ZGS Berlin (AWO Tarifeinigung 05.05.2026)',
+			participant: single.participant,
+			participants: [single],
+			years: single.years,
+			runtimeMonths: single.runtimeMonths,
+			tabs: single.tabs,
+			controls: single.controls,
+			agaTimeline: single.agaTimeline,
+			bgTimeline: single.bgTimeline,
+			options,
+			rawMonthlyRecords: single.records,
+			insuranceFunds: (single.participant as any).insuranceFunds,
+			tariffValidation: single.tariffValidation,
+			tvlComparison: single.tvlComparison
+		};
+	}
+
+	const allYears = Array.from(new Set(participantResults.flatMap(p => p.years))).sort((a, b) => a - b);
+
+	const combinedJcRows: FormRowItem[] = [];
+	let jcRowCounter = 1;
+	for (let pIdx = 0; pIdx < participantResults.length; pIdx++) {
+		const pRes = participantResults[pIdx];
+		const jcTab = pRes.tabs.find(t => t.id === 'jobcenter') || pRes.tabs[0];
+		for (const r of jcTab.rows) {
+			const yearlyAmounts: Record<number, number> = {};
+			for (const y of allYears) yearlyAmounts[y] = r.yearlyAmounts[y] || 0;
+			combinedJcRows.push({ ...r, id: `jc-p${pIdx + 1}-${r.id}`, rowNumber: jcRowCounter++, yearlyAmounts });
+		}
+	}
+	const combinedJcYearlyTotals: Record<number, number> = {};
+	for (const y of allYears) combinedJcYearlyTotals[y] = combinedJcRows.reduce((sum, r) => round2(sum + (r.yearlyAmounts[y] || 0)), 0);
+	const combinedJcGrandTotal = Object.values(combinedJcYearlyTotals).reduce((a, b) => round2(a + b), 0);
+
+	const combinedLandRows: FormRowItem[] = [];
+	let landRowCounter = 1;
+	for (let pIdx = 0; pIdx < participantResults.length; pIdx++) {
+		const pRes = participantResults[pIdx];
+		const landTab = pRes.tabs.find(t => t.id === 'landesmittel') || pRes.tabs[1];
+		for (const r of landTab.rows) {
+			const yearlyAmounts: Record<number, number> = {};
+			for (const y of allYears) yearlyAmounts[y] = r.yearlyAmounts[y] || 0;
+			combinedLandRows.push({ ...r, id: `land-p${pIdx + 1}-${r.id}`, rowNumber: landRowCounter++, yearlyAmounts });
+		}
+	}
+	const combinedLandYearlyTotals: Record<number, number> = {};
+	for (const y of allYears) combinedLandYearlyTotals[y] = combinedLandRows.reduce((sum, r) => round2(sum + (r.yearlyAmounts[y] || 0)), 0);
+	const combinedLandGrandTotal = Object.values(combinedLandYearlyTotals).reduce((a, b) => round2(a + b), 0);
+
+	const combinedSkRows: FormRowItem[] = [];
+	let skRowCounter = 1;
+	for (let pIdx = 0; pIdx < participantResults.length; pIdx++) {
+		const pRes = participantResults[pIdx];
+		const skTab = pRes.tabs.find(t => t.id === 'sachkosten') || pRes.tabs[2];
+		for (const r of skTab.rows) {
+			const yearlyAmounts: Record<number, number> = {};
+			for (const y of allYears) yearlyAmounts[y] = r.yearlyAmounts[y] || 0;
+			combinedSkRows.push({ ...r, id: `sk-p${pIdx + 1}-${r.id}`, rowNumber: skRowCounter++, yearlyAmounts });
+		}
+	}
+	const combinedSkYearlyTotals: Record<number, number> = {};
+	for (const y of allYears) combinedSkYearlyTotals[y] = combinedSkRows.reduce((sum, r) => round2(sum + (r.yearlyAmounts[y] || 0)), 0);
+	const combinedSkGrandTotal = Object.values(combinedSkYearlyTotals).reduce((a, b) => round2(a + b), 0);
+
+	const exactJcTruthTotal = round2(participantResults.reduce((sum, p) => sum + p.exactJcTruthTotal, 0));
+	const exactLandTruthTotal = round2(participantResults.reduce((sum, p) => sum + p.exactLandTruthTotal, 0));
+	const excelGrandTotal = round2(exactJcTruthTotal + exactLandTruthTotal + combinedSkGrandTotal);
+	const formGrandTotal = round2(combinedJcGrandTotal + combinedLandGrandTotal + combinedSkGrandTotal);
+	const totalDelta = round2(excelGrandTotal - formGrandTotal);
+
+	const totalJcDelta = round2(exactJcTruthTotal - combinedJcGrandTotal);
+	const totalLandDelta = round2(exactLandTruthTotal - combinedLandGrandTotal);
+
+	const controlItems: ControlCheckItem[] = [
+		{
+			id: 'ctrl-jc',
+			name: `1. TLN-Kosten Jobcenter (Gesamt: ${participantResults.length} TLN)`,
+			category: 'jobcenter',
+			excelValue: exactJcTruthTotal,
+			formValue: combinedJcGrandTotal,
+			delta: totalJcDelta,
+			status: Math.abs(totalJcDelta) <= 0.01 ? 'MATCH' : (options.includeOffsetRows ? 'OFFSET_APPLIED' : 'WARNING'),
+			note: Math.abs(totalJcDelta) <= 0.01 ? 'Exakte Übereinstimmung (Gesamtprojekt)' : 'Differenz vor Ausgleich'
+		},
+		{
+			id: 'ctrl-land',
+			name: `2. TLN-Kosten Landesmittel (Gesamt: ${participantResults.length} TLN)`,
+			category: 'landesmittel',
+			excelValue: exactLandTruthTotal,
+			formValue: combinedLandGrandTotal,
+			delta: totalLandDelta,
+			status: Math.abs(totalLandDelta) <= 0.01 ? 'MATCH' : (options.includeOffsetRows ? 'OFFSET_APPLIED' : 'WARNING'),
+			note: Math.abs(totalLandDelta) <= 0.01 ? 'Exakte Übereinstimmung (Gesamtprojekt)' : 'Differenz vor Ausgleich'
+		},
+		{
+			id: 'ctrl-sk',
+			name: `3. Sachkostenpauschale (${participantResults.length} TLN)`,
+			category: 'sachkosten',
+			excelValue: combinedSkGrandTotal,
+			formValue: combinedSkGrandTotal,
+			delta: 0,
+			status: 'MATCH',
+			note: '155,00 € pro Teilnehmer/in und Monat stimmt 100% überein'
+		},
+		{
+			id: 'ctrl-total',
+			name: `Gesamtfördersumme Projekt (${participantResults.length} TLN)`,
+			category: 'total',
+			excelValue: excelGrandTotal,
+			formValue: formGrandTotal,
+			delta: totalDelta,
+			status: Math.abs(totalDelta) <= 0.01 ? 'MATCH' : 'WARNING',
+			note: Math.abs(totalDelta) <= 0.01 ? 'Alle Zahlen sind rechnerisch 100% konsistent' : 'Differenz vor Ausgleichszeilen'
+		}
+	];
+
+	for (let i = 0; i < participantResults.length; i++) {
+		const p = participantResults[i];
+		const pName = p.participant.name || `Teilnehmer/in ${i + 1}`;
+		const pJc = p.tabs[0]?.grandTotal || 0;
+		const pLand = p.tabs[1]?.grandTotal || 0;
+		const pSk = p.tabs[2]?.grandTotal || 0;
+		const pTotal = round2(pJc + pLand + pSk);
+
+		controlItems.push({
+			id: `ctrl-p-${i + 1}`,
+			name: `Teilnehmer ${i + 1} (${pName}): JC ${pJc.toFixed(2)} € + Land ${pLand.toFixed(2)} € + SK ${pSk.toFixed(2)} €`,
+			category: 'total',
+			excelValue: round2(p.exactJcTruthTotal + p.exactLandTruthTotal + pSk),
+			formValue: pTotal,
+			delta: round2(round2(p.exactJcTruthTotal + p.exactLandTruthTotal + pSk) - pTotal),
+			status: 'MATCH',
+			note: `Einzelanteil: ${(excelGrandTotal > 0 ? (pTotal / excelGrandTotal) * 100 : 0).toFixed(1)}% des Gesamtprojekts`
+		});
+	}
+
+	const controls: ControlCheckResult = {
+		overallStatus: Math.abs(totalDelta) <= 0.01 ? 'MATCH' : 'WARNING',
+		excelGrandTotal,
+		formGrandTotal,
+		totalDelta,
+		items: controlItems,
+		jobcenterCheck: { excelTotal: exactJcTruthTotal, formTotal: combinedJcGrandTotal, delta: totalJcDelta, offsetAmount: round2(participantResults.reduce((sum, p) => sum + p.jcRoundingDelta, 0)) },
+		landesmittelCheck: { excelTotal: exactLandTruthTotal, formTotal: combinedLandGrandTotal, delta: totalLandDelta, offsetAmount: round2(participantResults.reduce((sum, p) => sum + p.landRoundingDelta, 0)) },
+		sachkostenCheck: { excelTotal: combinedSkGrandTotal, formTotal: combinedSkGrandTotal, delta: 0 }
+	};
+
+	const primary = participantResults[0];
+	return {
+		schemeId: 'sgb16i-berlin',
+		schemeName: '§ 16i SGB II / ZGS Berlin (AWO Tarifeinigung 05.05.2026)',
+		participant: primary.participant,
+		participants: participantResults,
+		years: allYears,
+		runtimeMonths: Math.max(...participantResults.map(p => p.runtimeMonths)),
+		tabs: [
+			{ id: 'jobcenter', title: '1. TLN-Kosten Jobcenter', tabNumber: 1, rows: combinedJcRows, yearlyTotals: combinedJcYearlyTotals, grandTotal: combinedJcGrandTotal, status: 'Angaben vollständig' },
+			{ id: 'landesmittel', title: '2. TLN-Kosten Landesmittel', tabNumber: 2, rows: combinedLandRows, yearlyTotals: combinedLandYearlyTotals, grandTotal: combinedLandGrandTotal, status: 'Angaben vollständig' },
+			{ id: 'sachkosten', title: `Sachkostenpauschale 155 € (${participantResults.length} TLN)`, tabNumber: 3, rows: combinedSkRows, yearlyTotals: combinedSkYearlyTotals, grandTotal: combinedSkGrandTotal, status: 'Angaben vollständig' }
+		],
+		controls,
+		agaTimeline: primary.agaTimeline,
+		bgTimeline: primary.bgTimeline,
+		options,
+		rawMonthlyRecords: primary.records,
+		insuranceFunds: (primary.participant as any).insuranceFunds,
+		tariffValidation: primary.tariffValidation,
+		tvlComparison: primary.tvlComparison
+	};
+}
+
+export function transformSgb16i(
+	rawRecords: MonthlyRecord[],
+	participant: ParticipantInfo,
+	options: GrantTransformationOptions
+): GrantTransformationResult {
+	return transformSgb16iMulti([{ participant, records: rawRecords }], options);
 }

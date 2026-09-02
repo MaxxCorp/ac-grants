@@ -12,13 +12,19 @@
 		isOpen = $bindable(false),
 		onClose,
 		onResult,
+		onAppendParticipant = undefined,
+		hasExistingProject = false,
 		selectedScheme = 'sgb16i-berlin'
 	}: {
 		isOpen: boolean;
 		onClose: () => void;
 		onResult: (res: GrantTransformationResult, fileName?: string) => void;
+		onAppendParticipant?: (res: GrantTransformationResult) => void;
+		hasExistingProject?: boolean;
 		selectedScheme?: string;
 	} = $props();
+
+	let projectAction = $state<'append' | 'replace'>('append');
 
 	// Default start date: First day of next month relative to current date
 	function getDefaultStartDate(): string {
@@ -236,7 +242,11 @@
 			downloadBase64(response.fileBase64, response.fileName);
 
 			if (loadDirectly) {
-				onResult(response.result, response.fileName);
+				if (hasExistingProject && projectAction === 'append' && onAppendParticipant) {
+					onAppendParticipant(response.result);
+				} else {
+					onResult(response.result, response.fileName);
+				}
 				isOpen = false;
 			}
 		} catch (err: any) {
@@ -296,6 +306,28 @@
 							<line x1="12" y1="16" x2="12.01" y2="16"></line>
 						</svg>
 						<span>{errorMessage}</span>
+					</div>
+				{/if}
+
+				{#if hasExistingProject}
+					<div class="project-action-box">
+						<span class="action-box-title">Integration in das aktuelle Projekt:</span>
+						<div class="action-box-radios">
+							<label class="action-radio-label {projectAction === 'append' ? 'active' : ''}">
+								<input type="radio" name="projAction" value="append" bind:group={projectAction} />
+								<div class="radio-content">
+									<strong>👥 Zum bestehenden Projekt hinzufügen</strong>
+									<span>Erstellt ein Mehr-Teilnehmer-Projekt mit kombinierter Kalkulationshilfe & TV-L Vergleich</span>
+								</div>
+							</label>
+							<label class="action-radio-label {projectAction === 'replace' ? 'active' : ''}">
+								<input type="radio" name="projAction" value="replace" bind:group={projectAction} />
+								<div class="radio-content">
+									<strong>🔄 Als neues Einzelprojekt laden</strong>
+									<span>Ersetzt die bisherigen Daten vollständig durch diesen neuen Teilnehmer</span>
+								</div>
+							</label>
+						</div>
 					</div>
 				{/if}
 
@@ -1612,5 +1644,75 @@
 			width: 100%;
 			justify-content: center;
 		}
+	}
+
+	/* Project Action Radio Group */
+	.project-action-box {
+		background: rgba(30, 41, 59, 0.7);
+		border: 1px solid rgba(56, 189, 248, 0.3);
+		border-radius: 10px;
+		padding: 1rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.action-box-title {
+		display: block;
+		font-size: 0.82rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: #38bdf8;
+		margin-bottom: 0.75rem;
+	}
+
+	.action-box-radios {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+		gap: 0.75rem;
+	}
+
+	.action-radio-label {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		padding: 0.75rem;
+		border-radius: 8px;
+		background: rgba(15, 23, 42, 0.6);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.action-radio-label:hover {
+		background: rgba(51, 65, 85, 0.8);
+		border-color: rgba(255, 255, 255, 0.2);
+	}
+
+	.action-radio-label.active {
+		background: rgba(14, 165, 233, 0.15);
+		border-color: #38bdf8;
+		box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+	}
+
+	.action-radio-label input[type="radio"] {
+		margin-top: 0.2rem;
+		accent-color: #38bdf8;
+	}
+
+	.radio-content {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.radio-content strong {
+		font-size: 0.88rem;
+		color: #f8fafc;
+	}
+
+	.radio-content span {
+		font-size: 0.78rem;
+		color: #94a3b8;
+		line-height: 1.35;
 	}
 </style>

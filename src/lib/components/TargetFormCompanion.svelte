@@ -17,6 +17,21 @@
 
 	const activeTab = $derived(result.tabs.find(t => t.id === activeTabId) || result.tabs[0]);
 
+	let selectedParticipantFilter = $state<string>('all');
+	const participantNames = $derived<string[]>(
+		result.participants && result.participants.length > 0
+			? Array.from(new Set(result.participants.map(p => p.participant.name || 'Teilnehmer')))
+			: [result.participant.name || 'Teilnehmer']
+	);
+
+	const displayedRows = $derived<FormRowItem[]>(
+		!activeTab || !activeTab.rows
+			? []
+			: (selectedParticipantFilter === 'all'
+				? activeTab.rows
+				: activeTab.rows.filter(r => r.participantName === selectedParticipantFilter))
+	);
+
 	export interface CategoryMeta {
 		id: string;
 		label: string;
@@ -204,7 +219,7 @@
 				<span class="light green"></span>
 			</div>
 			<span class="window-title">
-				Kalkulationshilfe : 4.1.3.1 - Einkommen TLN & Sachkosten ({result.participant.name})
+				Kalkulationshilfe : 4.1.3.1 - Einkommen TLN & Sachkosten ({participantNames.length > 1 ? `Gesamtprojekt: ${participantNames.length} Teilnehmende` : result.participant.name})
 			</span>
 		</div>
 
@@ -340,6 +355,32 @@
 			</div>
 		</div>
 
+		{#if participantNames.length > 1}
+			<!-- Multi-Participant Row Filter Toolbar -->
+			<div class="participant-filter-bar">
+				<span class="filter-label">Filter nach Teilnehmenden:</span>
+				<div class="filter-pills">
+					<button
+						type="button"
+						class="filter-pill {selectedParticipantFilter === 'all' ? 'active' : ''}"
+						onclick={() => (selectedParticipantFilter = 'all')}
+					>
+						👥 Alle ({activeTab.rows.length} Zeilen)
+					</button>
+					{#each participantNames as pName}
+						{@const pCount = activeTab.rows.filter(r => r.participantName === pName).length}
+						<button
+							type="button"
+							class="filter-pill {selectedParticipantFilter === pName ? 'active' : ''}"
+							onclick={() => (selectedParticipantFilter = pName)}
+						>
+							👤 {pName} ({pCount})
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
+
 		<div class="table-container">
 			<table class="target-table">
 				<thead>
@@ -348,31 +389,31 @@
 						<th class="th-hours th-control-header" title="Steuerungseingabe: Wochenarbeitszeit / TLN-Nummer">
 							<span class="th-content"><span class="th-tag control-tag">⚙</span>Std./Wo.</span>
 						</th>
-						<th class="th-amount th-data-header" title="Datenfeld: Monatlicher AG-Bruttobetrag">
-							<span class="th-content">AG Brutto</span>
+						<th class="th-amount th-data-header" title="Datenfeld: Monatsbetrag vor Multiplikation">
+							<span class="th-content"><span class="th-tag data-tag">#</span>AG Brutto mtl.</span>
 						</th>
-						<th class="th-pct th-control-header" title="Steuerungseingabe: Fördersatz in %">
-							<span class="th-content"><span class="th-tag control-tag">⚙</span>Förder-%</span>
+						<th class="th-pct th-control-header" title="Steuerungseingabe: Förderquote / Kostenanteil">
+							<span class="th-content"><span class="th-tag control-tag">⚙</span>Anteil %</span>
 						</th>
-						<th class="th-months th-control-header" title="Steuerungseingabe: Anzahl der Fördermonate im Berechnungszeitraum">
+						<th class="th-months th-control-header" title="Steuerungseingabe: Dauer in vollen/anteiligen Monaten">
 							<span class="th-content"><span class="th-tag control-tag">⚙</span>Monate</span>
 						</th>
-						<th class="th-sum th-sum-header" title="Gesamtförderbetrag dieser Zeile">
-							<span class="th-content"><span class="th-tag sum-tag">∑</span>Summe</span>
+						<th class="th-sum" title="Ergebnis: Formular-Zeilensumme">
+							<span class="th-content"><span class="th-tag sum-tag">∑</span>Zeilensumme</span>
 						</th>
 						{#each result.years as y}
-							<th class="th-year th-data-header" title="Datenfeld: Jahresanteil {y}">
-								<span class="th-content">{y}</span>
+							<th class="th-year th-data-header" title="Aufteilung auf Kalenderjahr {y}">
+								<span class="th-content"><span class="th-tag data-tag">#</span>{y}</span>
 							</th>
 						{/each}
-						<th class="th-ctrl th-control-sum-header" title="Kontrollsumme: Quersumme zur mathematischen Konsistenzprüfung">
-							<span class="th-content"><span class="th-tag ctrl-sum-tag">✓</span>Kontrolle</span>
+						<th class="th-ctrl th-ctrl-sum" title="Prüfwert: Summe der Jahresbeträge">
+							<span class="th-content"><span class="th-tag ctrl-tag">✓</span>Kontrolle</span>
 						</th>
 						<th class="th-row-action" title="Alle Werte dieser Zeile kopieren">Aktion</th>
 					</tr>
 				</thead>
 				<tbody>
-					{#each activeTab.rows as row, idx (row.id)}
+					{#each displayedRows as row, idx (row.id)}
 						{@const rowCategory = row.category || (row.isOffsetRow ? 'offset' : 'wage')}
 						{@const catInfo = getCategoryInfo(rowCategory)}
 						{@const rowExplanation = getRowExplanation(row)}
@@ -384,12 +425,19 @@
 						<!-- 1. Numeric Values Data Row -->
 						<tr class="data-row row-cat-{rowCategory} {isEven ? 'row-even' : 'row-odd'} {row.isOffsetRow ? 'offset-row' : ''} {isLastCopied ? 'last-copied-row' : ''}">
 							<td class="td-row-num">
-								<span class="row-badge badge-{rowCategory} {isLastCopied ? 'badge-highlight' : ''}" title="{catInfo.label} - Förderzeile {row.rowNumber}">
-									{#if isLastCopied}
-										<span class="active-dot" title="Zuletzt kopierte Zeile">●</span>
+								<div class="row-num-container">
+									<span class="row-badge badge-{rowCategory} {isLastCopied ? 'badge-highlight' : ''}" title="{catInfo.label} - Förderzeile {row.rowNumber}">
+										{#if isLastCopied}
+											<span class="active-dot" title="Zuletzt kopierte Zeile">●</span>
+										{/if}
+										{row.rowNumber}
+									</span>
+									{#if participantNames.length > 1 && row.participantName}
+										<span class="row-participant-pill" title="Teilnehmer: {row.participantName}">
+											👤 {row.participantName}
+										</span>
 									{/if}
-									{row.rowNumber}
-								</span>
+								</div>
 							</td>
 
 							<!-- Arbeitszeit / Stunden (Steuerungseingabe) -->
@@ -1955,5 +2003,80 @@
 		font-family: monospace;
 		font-size: 0.8rem;
 		max-height: 220px;
+	}
+
+	/* Multi-Participant Toolbar & Row Badge Styles */
+	.participant-filter-bar {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.6rem 1rem;
+		background: rgba(15, 23, 42, 0.7);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 8px;
+		margin-bottom: 0.75rem;
+		flex-wrap: wrap;
+	}
+
+	.filter-label {
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: #94a3b8;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.filter-pills {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.filter-pill {
+		padding: 0.35rem 0.75rem;
+		border-radius: 6px;
+		background: rgba(30, 41, 59, 0.7);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		color: #cbd5e1;
+		font-size: 0.8rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.filter-pill:hover {
+		background: rgba(51, 65, 85, 0.9);
+		border-color: rgba(255, 255, 255, 0.25);
+		color: #ffffff;
+	}
+
+	.filter-pill.active {
+		background: rgba(56, 189, 248, 0.2);
+		border-color: #38bdf8;
+		color: #38bdf8;
+		font-weight: 700;
+		box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+	}
+
+	.row-num-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.25rem;
+	}
+
+	.row-participant-pill {
+		display: inline-block;
+		max-width: 130px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		font-size: 0.68rem;
+		font-weight: 600;
+		padding: 0.1rem 0.4rem;
+		background: rgba(56, 189, 248, 0.15);
+		border: 1px solid rgba(56, 189, 248, 0.3);
+		border-radius: 4px;
+		color: #38bdf8;
 	}
 </style>

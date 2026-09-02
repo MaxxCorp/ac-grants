@@ -25,8 +25,9 @@ export const getAvailableSchemes = query(async () => {
 export const recalculateGrant = command(
 	v.object({
 		schemeId: v.optional(v.string(), 'sgb16i-berlin'),
-		records: v.array(v.any()),
-		participant: v.any(),
+		records: v.optional(v.array(v.any())),
+		participant: v.optional(v.any()),
+		participants: v.optional(v.array(v.any())),
 		options: v.object({
 			includeOffsetRows: v.boolean(),
 			runtimeScope: v.optional(v.string()),
@@ -61,10 +62,14 @@ export const recalculateGrant = command(
 	}),
 	async (payload): Promise<GrantTransformationResult> => {
 		const scheme = getGrantScheme(payload.schemeId);
-		const records = payload.records as MonthlyRecord[];
-		const participant = payload.participant as ParticipantInfo;
 		const options = payload.options as GrantTransformationOptions;
 
+		if (payload.participants && payload.participants.length > 0 && scheme.transformMulti) {
+			return scheme.transformMulti(payload.participants, options);
+		}
+
+		const records = (payload.records || []) as MonthlyRecord[];
+		const participant = (payload.participant || {}) as ParticipantInfo;
 		return scheme.transform(records, participant, options);
 	}
 );
@@ -86,11 +91,10 @@ export const processExcelFile = command(
 	async ({ fileBase64, fileName, schemeId, includeOffsetRows, runtimeScope, customEndDate, runtimeStartScope, customStartDate, restrictToExitDate, restrictToYear }): Promise<GrantTransformationResult> => {
 		try {
 			const buffer = Buffer.from(fileBase64, 'base64');
-			const { participant, records, insuranceFunds } = parseExcelBuffer(buffer);
-			(participant as any).insuranceFunds = insuranceFunds;
+			const parsedWb = parseExcelBuffer(buffer);
 			const scheme = getGrantScheme(schemeId);
 
-			const result = scheme.transform(records, participant, {
+			const options: GrantTransformationOptions = {
 				includeOffsetRows: includeOffsetRows ?? true,
 				runtimeScope: (runtimeScope as any) || (restrictToExitDate === false ? 'full_5_years' : 'exit_date'),
 				customEndDate,
@@ -98,11 +102,93 @@ export const processExcelFile = command(
 				customStartDate,
 				restrictToExitDate: restrictToExitDate ?? true,
 				restrictToYear
-			});
+			};
+
+			if (parsedWb.participants && parsedWb.participants.length > 1 && scheme.transformMulti) {
+				const datasets = parsedWb.participants.map(p => {
+					(p.participant as any).insuranceFunds = parsedWb.insuranceFunds;
+					return {
+						participant: p.participant,
+						records: p.records
+					};
+				});
+				const result = scheme.transformMulti(datasets, options);
+				result.insuranceFunds = parsedWb.insuranceFunds;
+				return result;
+			}
+
+			const { participant, records, insuranceFunds } = parsedWb;
+			(participant as any).insuranceFunds = insuranceFunds;
+			const result = scheme.transform(records, participant, options);
 			result.insuranceFunds = insuranceFunds;
 			return result;
 		} catch (err: any) {
 			throw new Error(`Fehler beim Parsen der Excel-Datei "${fileName}": ${err?.message || err}`);
+		}
+	}
+);
+
+// Remote Command: Batch multi-file spreadsheet processor
+export const processMultipleExcelFiles = command(
+	v.object({
+		files: v.array(
+			v.object({
+				fileBase64: v.string(),
+				fileName: v.string()
+			})
+		),
+		schemeId: v.optional(v.string(), 'sgb16i-berlin'),
+		includeOffsetRows: v.optional(v.boolean(), true),
+		runtimeScope: v.optional(v.string(), 'exit_date'),
+		customEndDate: v.optional(v.string()),
+		runtimeStartScope: v.optional(v.string(), 'contract_start'),
+		customStartDate: v.optional(v.string()),
+		restrictToExitDate: v.optional(v.boolean(), true),
+		restrictToYear: v.optional(v.number())
+	}),
+	async ({ files, schemeId, includeOffsetRows, runtimeScope, customEndDate, runtimeStartScope, customStartDate, restrictToExitDate, restrictToYear }): Promise<GrantTransformationResult> => {
+		try {
+			if (!files || files.length === 0) {
+				throw new Error('Keine Dateien zum Verarbeiten übergeben.');
+			}
+
+			const allDatasets: any[] = [];
+			let sharedInsuranceFunds: any;
+
+			for (const f of files) {
+				const buffer = Buffer.from(f.fileBase64, 'base64');
+				const parsedWb = parseExcelBuffer(buffer);
+				if (!sharedInsuranceFunds && parsedWb.insuranceFunds && parsedWb.insuranceFunds.length > 0) {
+					sharedInsuranceFunds = parsedWb.insuranceFunds;
+				}
+				for (const p of parsedWb.participants) {
+					(p.participant as any).insuranceFunds = parsedWb.insuranceFunds;
+					allDatasets.push({
+						participant: p.participant,
+						records: p.records
+					});
+				}
+			}
+
+			const scheme = getGrantScheme(schemeId);
+			const options: GrantTransformationOptions = {
+				includeOffsetRows: includeOffsetRows ?? true,
+				runtimeScope: (runtimeScope as any) || (restrictToExitDate === false ? 'full_5_years' : 'exit_date'),
+				customEndDate,
+				runtimeStartScope: (runtimeStartScope as any) || 'contract_start',
+				customStartDate,
+				restrictToExitDate: restrictToExitDate ?? true,
+				restrictToYear
+			};
+
+			const result = scheme.transformMulti
+				? scheme.transformMulti(allDatasets, options)
+				: scheme.transform(allDatasets[0].records, allDatasets[0].participant, options);
+
+			result.insuranceFunds = sharedInsuranceFunds;
+			return result;
+		} catch (err: any) {
+			throw new Error(`Fehler beim Verarbeiten mehrerer Excel-Dateien: ${err?.message || err}`);
 		}
 	}
 );

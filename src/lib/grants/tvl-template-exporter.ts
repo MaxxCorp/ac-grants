@@ -143,9 +143,67 @@ export function downloadTvlExcelFile(result: TvlComparisonResult, customFileName
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = url;
-	a.download = customFileName || `Vergleichsberechnung_TV-L_${result.year}_${result.inputs.participantName.replace(/\s+/g, '_')}.xlsx`;
+	const sanitizedName = (result.inputs.participantName || 'Teilnehmer').replace(/[^a-zA-Z0-9äöüÄÖÜß_-]/g, '_');
+	a.download = customFileName || `Vergleichsberechnung_TV-L_${result.year}_${sanitizedName}.xlsx`;
 	document.body.appendChild(a);
 	a.click();
 	document.body.removeChild(a);
 	URL.revokeObjectURL(url);
 }
+
+/**
+ * Downloads individual TV-L Vergleichsberechnung Excel files for all participants with a slight delay between downloads.
+ */
+export async function downloadAllTvlExcelFiles(results: TvlComparisonResult[]): Promise<void> {
+	for (let i = 0; i < results.length; i++) {
+		const res = results[i];
+		downloadTvlExcelFile(res);
+		if (i < results.length - 1) {
+			await new Promise(resolve => setTimeout(resolve, 300));
+		}
+	}
+}
+
+/**
+ * Generates an all-in-one multi-sheet workbook containing a TV-L Vergleichsberechnung sheet for each participant.
+ */
+export function generateMultiParticipantTvlWorkbook(results: TvlComparisonResult[]): Uint8Array {
+	const wb = XLSX.utils.book_new();
+
+	for (let i = 0; i < results.length; i++) {
+		const res = results[i];
+		const singleWbBytes = generateTvlComparisonWorkbook(res);
+		const singleWb = XLSX.read(singleWbBytes, { type: 'array' });
+		const sheet = singleWb.Sheets['Vergleichsberechnung'] || singleWb.Sheets[singleWb.SheetNames[0]];
+
+		let sheetName = res.inputs.participantName
+			? `TV-L ${res.inputs.participantName}`.slice(0, 31).replace(/[\\/?*[\]:]/g, '_')
+			: `TV-L TLN ${i + 1}`;
+		if (wb.SheetNames.includes(sheetName)) {
+			sheetName = `TV-L ${i + 1} ${res.inputs.participantName || ''}`.slice(0, 31).replace(/[\\/?*[\]:]/g, '_');
+		}
+
+		XLSX.utils.book_append_sheet(wb, sheet, sheetName);
+	}
+
+	const wbOut = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+	return new Uint8Array(wbOut);
+}
+
+/**
+ * Downloads a combined multi-sheet TV-L Vergleichsberechnung Excel file for all project participants.
+ */
+export function downloadMultiParticipantTvlWorkbook(results: TvlComparisonResult[], fileName?: string): void {
+	const bytes = generateMultiParticipantTvlWorkbook(results);
+	const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	const yr = results[0]?.year || 2026;
+	a.download = fileName || `Vergleichsberechnungen_TV-L_${yr}_Gesamtprojekt_${results.length}_TLN.xlsx`;
+	document.body.appendChild(a);
+	a.click();
+	document.body.removeChild(a);
+	URL.revokeObjectURL(url);
+}
+

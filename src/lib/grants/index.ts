@@ -1,5 +1,5 @@
-import type { GrantSchemeDefinition, MonthlyRecord, ParticipantInfo, GrantTransformationOptions, GrantTransformationResult } from '#lib/types/grant';
-import { transformSgb16i } from './sgb16i.js';
+import type { GrantSchemeDefinition, MonthlyRecord, ParticipantInfo, GrantTransformationOptions, GrantTransformationResult, ParticipantDataset } from '#lib/types/grant';
+import { transformSgb16i, transformSgb16iMulti } from './sgb16i.js';
 
 export const GRANT_SCHEMES: GrantSchemeDefinition[] = [
 	{
@@ -12,6 +12,9 @@ export const GRANT_SCHEMES: GrantSchemeDefinition[] = [
 		standardJcFlatRatePct: 19,
 		transform: (records: MonthlyRecord[], participant: ParticipantInfo, options: GrantTransformationOptions): GrantTransformationResult => {
 			return transformSgb16i(records, participant, options);
+		},
+		transformMulti: (participants: ParticipantDataset[], options: GrantTransformationOptions): GrantTransformationResult => {
+			return transformSgb16iMulti(participants, options);
 		}
 	}
 ];

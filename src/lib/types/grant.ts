@@ -432,10 +432,30 @@ export interface TvlComparisonResult {
 	expectedIstJszRight?: number;
 }
 
+export interface ParticipantDataset {
+	participant: ParticipantInfo;
+	records: MonthlyRecord[];
+	options?: Partial<GrantTransformationOptions>;
+}
+
+export interface ParticipantCalculationResult {
+	participant: ParticipantInfo;
+	records: MonthlyRecord[];
+	years: number[];
+	runtimeMonths: number;
+	tabs: FormTabDefinition[];
+	controls: ControlCheckResult;
+	agaTimeline: AgaRatePeriod[];
+	bgTimeline?: BgRatePeriod[];
+	tariffValidation?: TariffValidationReport;
+	tvlComparison?: TvlComparisonResult;
+}
+
 export interface GrantTransformationResult {
 	schemeId: string;
 	schemeName: string;
 	participant: ParticipantInfo;
+	participants?: ParticipantCalculationResult[];
 	years: number[];
 	runtimeMonths: number;
 	tabs: FormTabDefinition[];
@@ -462,5 +482,10 @@ export interface GrantSchemeDefinition {
 		participant: ParticipantInfo,
 		options: GrantTransformationOptions
 	) => GrantTransformationResult;
+	transformMulti?: (
+		participants: ParticipantDataset[],
+		options: GrantTransformationOptions
+	) => GrantTransformationResult;
 }
+
 

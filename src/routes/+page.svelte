@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getAvailableSchemes, recalculateGrant } from '#lib/grant.remote';
-	import { transformSgb16i } from '#lib/grants/sgb16i';
-	import type { GrantTransformationResult, AgaRatePeriod, RuntimeScope, RuntimeStartScope, MonthlyRecord, ParticipantInfo } from '#lib/types/grant';
+	import { getAvailableSchemes, recalculateGrant, processExcelFile } from '#lib/grant.remote';
+	import { transformSgb16i, transformSgb16iMulti } from '#lib/grants/sgb16i';
+	import type { GrantTransformationResult, AgaRatePeriod, RuntimeScope, RuntimeStartScope, MonthlyRecord, ParticipantInfo, ParticipantDataset } from '#lib/types/grant';
 	import FileUpload from '#lib/components/FileUpload.svelte';
 	import ControlDashboard from '#lib/components/ControlDashboard.svelte';
 	import AwoTariffAuditCard from '#lib/components/AwoTariffAuditCard.svelte';
@@ -21,23 +21,15 @@
 	let isRecalculating = $state(false);
 	let isGeneratorOpen = $state(false);
 
-	function loadDemoData() {
-		const participant: ParticipantInfo = {
-			name: 'Musterteilnehmer/in',
-			tariffGroup: 'EG2',
-			tariffStep: 'ES1',
-			runtimeStart: '01.08.2026',
-			runtimeEnd: '31.07.2031',
-			weeklyHours: 30,
-			fullTimeHours: 39,
-			sachkostenMonthly: 155,
-			childrenCount: 1,
-			healthInsuranceName: 'AOK Nordost (15,9%)',
-			defaultAgaRate: 0.23815
-		};
-
+	function buildParticipantRecords(
+		startYear: number,
+		startMonth: number,
+		weeklyHours: number,
+		baseSalaries: { yr1: number; yr2: number; yr3: number },
+		agaRate: number
+	): MonthlyRecord[] {
 		const records: MonthlyRecord[] = [];
-		let currentDate = new Date(2026, 7, 1);
+		let currentDate = new Date(startYear, startMonth - 1, 1);
 
 		for (let i = 0; i < 60; i++) {
 			const y = currentDate.getFullYear();
@@ -45,8 +37,8 @@
 			const lastDay = new Date(y, m, 0).getDate();
 			const mStr = String(m).padStart(2, '0');
 
-			const fteSalary = y < 2027 ? 2576.77 : y < 2029 ? 2688.48 : 2774.73;
-			const partTimeSalary = (fteSalary * 30) / 39;
+			const fteSalary = y < 2027 ? baseSalaries.yr1 : y < 2029 ? baseSalaries.yr2 : baseSalaries.yr3;
+			const partTimeSalary = (fteSalary * weeklyHours) / 39;
 			const jcFlatRate = partTimeSalary * 0.19;
 			const jcTotalGross = partTimeSalary + jcFlatRate;
 			const degPct = i < 24 ? 100 : i < 36 ? 90 : i < 48 ? 80 : 70;
@@ -60,27 +52,71 @@
 				endDate: `${String(lastDay).padStart(2, '0')}.${mStr}.${y}`,
 				fteSalary,
 				partTimeSalary,
-				weeklyHours: 30,
+				weeklyHours,
 				fullTimeHours: 39,
 				jcFlatRateAmount: jcFlatRate,
 				jcTotalGross,
 				jcDegressionPct: degPct,
 				jcGrantAmount: (jcTotalGross * degPct) / 100,
-				agaRealRate: 0.23815,
-				agaRealAmount: partTimeSalary * 0.23815,
-				totalEmployerCost: partTimeSalary * 1.23815,
-				landSvShortfall: partTimeSalary * (0.23815 - 0.19),
+				agaRealRate: agaRate,
+				agaRealAmount: partTimeSalary * agaRate,
+				totalEmployerCost: partTimeSalary * (1 + agaRate),
+				landSvShortfall: partTimeSalary * (agaRate - 0.19),
 				landDegressionAmount: (jcTotalGross * (100 - degPct)) / 100,
-				jszAmount: m === 12 ? 1800 : 0,
-				jszAgaAmount: m === 12 ? 1800 * 0.23815 : 0,
+				jszAmount: m === 12 ? Math.round(partTimeSalary * 0.85 * 100) / 100 : 0,
+				jszAgaAmount: m === 12 ? Math.round(partTimeSalary * 0.85 * agaRate * 100) / 100 : 0,
 				isJszMonth: m === 12,
 				sachkostenAmount: 155
 			});
 
 			currentDate = new Date(y, m, 1);
 		}
+		return records;
+	}
 
-		const res = transformSgb16i(records, participant, {
+	function loadDemoData() {
+		// Participant 1: Max Mustermann (EG2/ES1, 30h, AOK Nordost)
+		const p1: ParticipantInfo = {
+			name: 'Max Mustermann',
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			runtimeStart: '01.08.2026',
+			runtimeEnd: '31.07.2031',
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			sachkostenMonthly: 155,
+			childrenCount: 1,
+			healthInsuranceName: 'AOK Nordost (15,9%)',
+			defaultAgaRate: 0.23815,
+			jobcenterId: 'JC-BER-2026-081',
+			zgsId: 'ZGS-PR-4011'
+		};
+		const records1 = buildParticipantRecords(2026, 8, 30, { yr1: 2576.77, yr2: 2688.48, yr3: 2774.73 }, 0.23815);
+
+		// Participant 2: Erika Musterfrau (EG3/ES2, 35h, Barmer)
+		const p2: ParticipantInfo = {
+			name: 'Erika Musterfrau',
+			tariffGroup: 'EG3',
+			tariffStep: 'ES2',
+			runtimeStart: '01.10.2026',
+			runtimeEnd: '30.09.2031',
+			weeklyHours: 35,
+			fullTimeHours: 39,
+			sachkostenMonthly: 155,
+			childrenCount: 0,
+			healthInsuranceName: 'Barmer (16,79%)',
+			defaultAgaRate: 0.2324,
+			jobcenterId: 'JC-BER-2026-082',
+			zgsId: 'ZGS-PR-4011'
+		};
+		const records2 = buildParticipantRecords(2026, 10, 35, { yr1: 2750.00, yr2: 2860.00, yr3: 2980.00 }, 0.2324);
+
+		const demoDatasets: ParticipantDataset[] = [
+			{ participant: p1, records: records1 },
+			{ participant: p2, records: records2 }
+		];
+
+		const res = transformSgb16iMulti(demoDatasets, {
 			includeOffsetRows: includeOffset,
 			runtimeStartScope,
 			customStartDate: runtimeStartScope === 'custom' ? customStartDate : undefined,
@@ -152,10 +188,17 @@
 		if (currentResult) {
 			isRecalculating = true;
 			try {
+				const hasMulti = currentResult.participants && currentResult.participants.length > 0;
 				const updated = await recalculateGrant({
 					schemeId: selectedSchemeId,
 					records: currentResult.rawMonthlyRecords,
 					participant: currentResult.participant,
+					participants: hasMulti
+						? currentResult.participants!.map(p => ({
+							participant: p.participant,
+							records: p.records
+						}))
+						: undefined,
 					options: {
 						includeOffsetRows: includeOffset,
 						runtimeStartScope,
@@ -178,10 +221,17 @@
 		if (currentResult) {
 			isRecalculating = true;
 			try {
+				const hasMulti = currentResult.participants && currentResult.participants.length > 0;
 				const updated = await recalculateGrant({
 					schemeId: selectedSchemeId,
 					records: currentResult.rawMonthlyRecords,
 					participant: currentResult.participant,
+					participants: hasMulti
+						? currentResult.participants!.map(p => ({
+							participant: p.participant,
+							records: p.records
+						}))
+						: undefined,
 					options: {
 						includeOffsetRows: includeOffset,
 						runtimeStartScope,
@@ -197,6 +247,98 @@
 			} finally {
 				isRecalculating = false;
 			}
+		}
+	}
+
+	async function removeParticipant(index: number) {
+		if (!currentResult?.participants || currentResult.participants.length <= 1) return;
+		const remaining = currentResult.participants.filter((_, i) => i !== index);
+		isRecalculating = true;
+		try {
+			const updated = await recalculateGrant({
+				schemeId: selectedSchemeId,
+				participants: remaining.map(p => ({
+					participant: p.participant,
+					records: p.records
+				})),
+				options: {
+					includeOffsetRows: includeOffset,
+					runtimeStartScope,
+					customStartDate: runtimeStartScope === 'custom' ? customStartDate : undefined,
+					runtimeScope,
+					customEndDate: runtimeScope === 'custom' ? customEndDate : undefined
+				}
+			});
+			currentResult = updated;
+		} catch (err) {
+			console.error('Error removing participant:', err);
+		} finally {
+			isRecalculating = false;
+		}
+	}
+
+	async function handleAppendParticipantFromGenerator(newRes: GrantTransformationResult) {
+		const existingDatasets: ParticipantDataset[] = currentResult?.participants && currentResult.participants.length > 0
+			? currentResult.participants.map(p => ({ participant: p.participant, records: p.records }))
+			: (currentResult ? [{ participant: currentResult.participant, records: currentResult.rawMonthlyRecords }] : []);
+
+		const newDatasets: ParticipantDataset[] = newRes.participants && newRes.participants.length > 0
+			? newRes.participants.map(p => ({ participant: p.participant, records: p.records }))
+			: [{ participant: newRes.participant, records: newRes.rawMonthlyRecords }];
+
+		const combinedDatasets = [...existingDatasets, ...newDatasets];
+
+		isRecalculating = true;
+		try {
+			const updated = await recalculateGrant({
+				schemeId: selectedSchemeId,
+				participants: combinedDatasets,
+				options: {
+					includeOffsetRows: includeOffset,
+					runtimeStartScope,
+					customStartDate: runtimeStartScope === 'custom' ? customStartDate : undefined,
+					runtimeScope,
+					customEndDate: runtimeScope === 'custom' ? customEndDate : undefined
+				}
+			});
+			currentResult = updated;
+		} catch (err) {
+			console.error('Error adding generated participant:', err);
+		} finally {
+			isRecalculating = false;
+		}
+	}
+
+	async function handleAppendFileInput(e: Event) {
+		const target = e.target as HTMLInputElement;
+		if (target.files && target.files.length > 0) {
+			const file = target.files[0];
+			const reader = new FileReader();
+			reader.onload = async (evt) => {
+				try {
+					isRecalculating = true;
+					const resultStr = evt.target?.result as string;
+					const base64 = resultStr.split(',')[1] || resultStr;
+					const newRes = await processExcelFile({
+						fileBase64: base64,
+						fileName: file.name,
+						schemeId: selectedSchemeId,
+						includeOffsetRows: includeOffset,
+						runtimeScope,
+						customEndDate,
+						runtimeStartScope,
+						customStartDate
+					});
+
+					await handleAppendParticipantFromGenerator(newRes);
+				} catch (err) {
+					console.error('Error appending participant from file:', err);
+				} finally {
+					isRecalculating = false;
+					target.value = '';
+				}
+			};
+			reader.readAsDataURL(file);
 		}
 	}
 </script>
@@ -393,11 +535,57 @@
 		<!-- Active Calculation Results -->
 		{#if currentResult}
 			<section class="results-section">
+				<!-- Participant Management Toolbar -->
+				<div class="participant-mgmt-toolbar">
+					<div class="mgmt-left">
+						<div class="mgmt-title-wrap">
+							<span class="mgmt-icon">👥</span>
+							<span class="mgmt-title">Projekt-Teilnehmende ({currentResult.participants?.length || 1}):</span>
+						</div>
+						<div class="mgmt-chips">
+							{#if currentResult.participants && currentResult.participants.length > 1}
+								{#each currentResult.participants as pData, idx}
+									<div class="participant-mgmt-chip">
+										<span class="chip-avatar">👤</span>
+										<span class="chip-name">{pData.participant.name || `TLN ${idx + 1}`}</span>
+										<span class="chip-badge">{pData.participant.tariffGroup}/{pData.participant.tariffStep} ({pData.participant.weeklyHours}h)</span>
+										<button
+											type="button"
+											class="chip-remove-btn"
+											onclick={() => removeParticipant(idx)}
+											title="{pData.participant.name} aus dem Projekt entfernen"
+										>
+											×
+										</button>
+									</div>
+								{/each}
+							{:else}
+								<div class="participant-mgmt-chip">
+									<span class="chip-avatar">👤</span>
+									<span class="chip-name">{currentResult.participant.name}</span>
+									<span class="chip-badge">{currentResult.participant.tariffGroup}/{currentResult.participant.tariffStep} ({currentResult.participant.weeklyHours}h)</span>
+								</div>
+							{/if}
+						</div>
+					</div>
+
+					<div class="mgmt-actions">
+						<label class="btn-mgmt-action add-file-btn" title="Weiteres Berechnungsblatt zum aktuellen Projekt hinzufügen">
+							<input type="file" accept=".xlsx, .xls" class="hidden-file-input" onchange={handleAppendFileInput} />
+							➕ Berechnungsblatt hinzufügen
+						</label>
+						<button type="button" class="btn-mgmt-action add-gen-btn" onclick={() => (isGeneratorOpen = true)} title="Weiteren Teilnehmer im Projekt neu generieren">
+							➕ Weiteren TLN generieren
+						</button>
+					</div>
+				</div>
+
 				<!-- AWO Tariff Audit & Human Error Detection -->
 				<AwoTariffAuditCard
 					validation={currentResult.tariffValidation}
 					participant={currentResult.participant}
 					records={currentResult.rawMonthlyRecords}
+					participants={currentResult.participants}
 				/>
 
 				<!-- Time-Dependent Employer Social Contribution (AGA) Matrix -->
@@ -411,6 +599,7 @@
 				<ControlDashboard
 					controls={currentResult.controls}
 					participant={currentResult.participant}
+					participants={currentResult.participants}
 					{includeOffset}
 					onToggleOffset={handleToggleOffset}
 				/>
@@ -425,6 +614,8 @@
 			bind:isOpen={isGeneratorOpen}
 			onClose={() => (isGeneratorOpen = false)}
 			onResult={handleResult}
+			onAppendParticipant={handleAppendParticipantFromGenerator}
+			hasExistingProject={currentResult !== null}
 			selectedScheme={selectedSchemeId}
 		/>
 	</main>
@@ -711,5 +902,147 @@
 	@keyframes fadeIn {
 		from { opacity: 0; transform: translateY(6px); }
 		to { opacity: 1; transform: translateY(0); }
+	}
+
+	/* Participant Management Toolbar */
+	.participant-mgmt-toolbar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 1rem;
+		padding: 1rem 1.25rem;
+		background: rgba(15, 23, 42, 0.8);
+		border: 1px solid rgba(56, 189, 248, 0.25);
+		border-radius: 12px;
+		margin-bottom: 1.5rem;
+		box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+	}
+
+	.mgmt-left {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.mgmt-title-wrap {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.mgmt-icon {
+		font-size: 1.2rem;
+	}
+
+	.mgmt-title {
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: #e2e8f0;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.mgmt-chips {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.participant-mgmt-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.35rem 0.75rem;
+		background: rgba(30, 41, 59, 0.9);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 8px;
+		color: #f1f5f9;
+		font-size: 0.825rem;
+	}
+
+	.chip-avatar {
+		font-size: 0.9rem;
+	}
+
+	.chip-name {
+		font-weight: 600;
+	}
+
+	.chip-badge {
+		font-size: 0.72rem;
+		color: #94a3b8;
+		background: rgba(0, 0, 0, 0.25);
+		padding: 0.15rem 0.4rem;
+		border-radius: 4px;
+	}
+
+	.chip-remove-btn {
+		background: transparent;
+		border: none;
+		color: #94a3b8;
+		font-size: 1.1rem;
+		cursor: pointer;
+		line-height: 1;
+		padding: 0 0.15rem;
+		border-radius: 4px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.15s ease;
+	}
+
+	.chip-remove-btn:hover {
+		color: #ef4444;
+		background: rgba(239, 68, 68, 0.15);
+	}
+
+	.mgmt-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.65rem;
+		flex-wrap: wrap;
+	}
+
+	.hidden-file-input {
+		display: none;
+	}
+
+	.btn-mgmt-action {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.45rem 0.85rem;
+		border-radius: 6px;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.add-file-btn {
+		background: rgba(56, 189, 248, 0.15);
+		border: 1px solid rgba(56, 189, 248, 0.35);
+		color: #38bdf8;
+	}
+
+	.add-file-btn:hover {
+		background: rgba(56, 189, 248, 0.25);
+		border-color: #38bdf8;
+		color: #ffffff;
+	}
+
+	.add-gen-btn {
+		background: rgba(129, 140, 248, 0.15);
+		border: 1px solid rgba(129, 140, 248, 0.35);
+		color: #a5b4fc;
+	}
+
+	.add-gen-btn:hover {
+		background: rgba(129, 140, 248, 0.25);
+		border-color: #818cf8;
+		color: #ffffff;
 	}
 </style>

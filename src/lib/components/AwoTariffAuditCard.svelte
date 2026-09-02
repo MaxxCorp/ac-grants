@@ -1,16 +1,24 @@
 <script lang="ts">
-	import type { TariffValidationReport, ParticipantInfo, MonthlyRecord } from '#lib/types/grant';
+	import type { TariffValidationReport, ParticipantInfo, MonthlyRecord, ParticipantCalculationResult } from '#lib/types/grant';
 	import { getAwoTariffSalary, determineParticipantStepForRecord } from '#lib/grants/awo-tariff-data';
 
 	let {
 		validation,
 		participant,
-		records
+		records,
+		participants
 	}: {
 		validation?: TariffValidationReport;
 		participant: ParticipantInfo;
 		records: MonthlyRecord[];
+		participants?: ParticipantCalculationResult[];
 	} = $props();
+
+	let selectedIdx = $state(0);
+	const activePData = $derived(participants && participants.length > 0 ? (participants[selectedIdx] || participants[0]) : null);
+	const activeParticipant = $derived(activePData ? activePData.participant : participant);
+	const activeRecords = $derived(activePData ? activePData.records : records);
+	const activeValidation = $derived(activePData ? activePData.tariffValidation : validation);
 
 	let showDetails = $state(false);
 	let filterView = $state<'all' | 'discrepancies'>('discrepancies');
@@ -26,18 +34,18 @@
 
 	// Build a complete audit list of all records >= 09/2025
 	const auditRows = $derived.by(() => {
-		if (!records || records.length === 0) return [];
-		return records
+		if (!activeRecords || activeRecords.length === 0) return [];
+		return activeRecords
 			.filter(r => r.year * 100 + r.month >= 202509)
 			.map(r => {
-				const step = determineParticipantStepForRecord(participant, r);
+				const step = determineParticipantStepForRecord(activeParticipant, r);
 				const awo = getAwoTariffSalary(
-					participant.tariffGroup,
+					activeParticipant.tariffGroup,
 					step,
 					r.year,
 					r.month,
-					r.weeklyHours || participant.weeklyHours,
-					r.fullTimeHours || participant.fullTimeHours || 39.0
+					r.weeklyHours || activeParticipant.weeklyHours,
+					r.fullTimeHours || activeParticipant.fullTimeHours || 39.0
 				);
 				const expectedFte = awo ? awo.fteSalary : 0;
 				const diffFte = Math.round((r.fteSalary - expectedFte + Number.EPSILON) * 100) / 100;
@@ -54,7 +62,7 @@
 					isDiscrepant,
 					periodLabel: awo ? awo.periodLabel : '–',
 					recordedPt: r.partTimeSalary,
-					expectedPt: awo ? Math.round(((expectedFte / 39) * (r.weeklyHours || participant.weeklyHours) + Number.EPSILON) * 100) / 100 : 0
+					expectedPt: awo ? Math.round(((expectedFte / 39) * (r.weeklyHours || activeParticipant.weeklyHours) + Number.EPSILON) * 100) / 100 : 0
 				};
 			});
 	});
@@ -67,13 +75,32 @@
 	});
 </script>
 
-{#if validation}
-	<div class="audit-card {validation.isCompliant ? 'audit-compliant' : 'audit-warning'}">
+{#if activeValidation}
+	<div class="audit-card {activeValidation.isCompliant ? 'audit-compliant' : 'audit-warning'}">
+		{#if participants && participants.length > 1}
+			<div class="audit-p-switcher">
+				<span class="audit-p-label">Gegenprüfung für Teilnehmer/in:</span>
+				<div class="audit-p-pills">
+					{#each participants as p, idx}
+						<button
+							type="button"
+							class="audit-p-btn {selectedIdx === idx ? 'active' : ''} {p.tariffValidation?.isCompliant ? 'status-ok' : 'status-warn'}"
+							onclick={() => (selectedIdx = idx)}
+						>
+							<span>{p.tariffValidation?.isCompliant ? '✓' : '⚠️'}</span>
+							<span class="p-name">{p.participant.name || `TLN ${idx + 1}`}</span>
+							<span class="audit-p-eg">({p.participant.tariffGroup}/{p.participant.tariffStep})</span>
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
+
 		<!-- Header -->
 		<div class="audit-header">
 			<div class="audit-title-area">
 				<div class="status-icon">
-					{#if validation.isCompliant}
+					{#if activeValidation.isCompliant}
 						<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
 							<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
 							<polyline points="22 4 12 14.01 9 11.01"></polyline>
@@ -89,17 +116,20 @@
 
 				<div>
 					<div class="audit-badge-row">
-						<span class="badge {validation.isCompliant ? 'badge-green' : 'badge-amber'}">
-							{validation.isCompliant ? 'AWO-Tariftreue: 100% Konform' : `${validation.discrepancyCount} Tarifabweichung(en)`}
+						<span class="badge {activeValidation.isCompliant ? 'badge-green' : 'badge-amber'}">
+							{activeValidation.isCompliant ? 'AWO-Tariftreue: 100% Konform' : `${activeValidation.discrepancyCount} Tarifabweichung(en)`}
 						</span>
-						{#if validation.jszAudits && validation.jszAudits.length > 0}
-							{@const jszOk = validation.jszAudits.every(a => a.isCompliant)}
+						{#if activeValidation.jszAudits && activeValidation.jszAudits.length > 0}
+							{@const jszOk = activeValidation.jszAudits.every(a => a.isCompliant)}
 							<span class="badge {jszOk ? 'badge-purple' : 'badge-amber'}">
 								{jszOk ? '✓ JSZ (85% AWO) 100% Konform' : '⚠️ JSZ Abweichung'}
 							</span>
 						{/if}
 						<span class="badge-sub">
 							Gegenprüfung Spalte F (VZ-Brutto) & Jahressonderzahlung nach TV AWO Berlin (10. ÄTV / TE 05.05.2026)
+							{#if participants && participants.length > 1}
+								• <strong>{activeParticipant.name}</strong> ({activeParticipant.tariffGroup}/{activeParticipant.tariffStep})
+							{/if}
 						</span>
 					</div>
 					<h3 class="audit-heading">AWO Berlin Tarif-Plausibilitätsprüfung</h3>
@@ -128,18 +158,18 @@
 		<div class="audit-metrics-grid">
 			<div class="metric-box">
 				<span class="metric-label">Prüfungsstatus (ab 09/2025)</span>
-				<span class="metric-val {validation.isCompliant ? 'text-emerald' : 'text-amber'}">
-					{validation.isCompliant ? '✓ Fehlerfrei' : `⚠️ ${validation.discrepancyCount} Abweichungen`}
+				<span class="metric-val {activeValidation.isCompliant ? 'text-emerald' : 'text-amber'}">
+					{activeValidation.isCompliant ? '✓ Fehlerfrei' : `⚠️ ${activeValidation.discrepancyCount} Abweichungen`}
 				</span>
 				<span class="metric-sub">VZ-Brutto & JSZ geprüft</span>
 			</div>
 
 			<div class="metric-box">
 				<span class="metric-label">Jahressonderzahlung (AWO 85%)</span>
-				{#if validation.jszAudits && validation.jszAudits.length > 0}
-					{@const jszOkCount = validation.jszAudits.filter(a => a.isCompliant).length}
-					<span class="metric-val font-mono {jszOkCount === validation.jszAudits.length ? 'text-emerald' : 'text-amber'}">
-						{jszOkCount}/{validation.jszAudits.length} Jahre konform
+				{#if activeValidation.jszAudits && activeValidation.jszAudits.length > 0}
+					{@const jszOkCount = activeValidation.jszAudits.filter(a => a.isCompliant).length}
+					<span class="metric-val font-mono {jszOkCount === activeValidation.jszAudits.length ? 'text-emerald' : 'text-amber'}">
+						{jszOkCount}/{activeValidation.jszAudits.length} Jahre konform
 					</span>
 					<span class="metric-sub">Stichtag 01.12. & Septembergehalt</span>
 				{:else}
@@ -150,20 +180,20 @@
 
 			<div class="metric-box">
 				<span class="metric-label">Geprüfte Monate (ab 09/2025)</span>
-				<span class="metric-val font-mono">{validation.checkedCount} Monate</span>
+				<span class="metric-val font-mono">{activeValidation.checkedCount} Monate</span>
 				<span class="metric-sub">09/2025 bis 12/2028</span>
 			</div>
 
 			<div class="metric-box">
 				<span class="metric-label">Monate vor 09/2025</span>
-				<span class="metric-val font-mono">{validation.skippedPriorTo2025Count} Monate</span>
+				<span class="metric-val font-mono">{activeValidation.skippedPriorTo2025Count} Monate</span>
 				<span class="metric-sub">Keine Tariftabelle hinterlegt</span>
 			</div>
 
 			<div class="metric-box">
 				<span class="metric-label">Eingruppierung</span>
-				<span class="metric-val font-mono">{participant.tariffGroup}/{participant.tariffStep}</span>
-				<span class="metric-sub">{participant.weeklyHours}h / 39,0h Teilzeit</span>
+				<span class="metric-val font-mono">{activeParticipant.tariffGroup}/{activeParticipant.tariffStep}</span>
+				<span class="metric-sub">{activeParticipant.weeklyHours}h / 39,0h Teilzeit</span>
 			</div>
 		</div>
 
@@ -178,7 +208,7 @@
 							class="btn-filter {filterView === 'discrepancies' ? 'active' : ''}"
 							onclick={() => (filterView = 'discrepancies')}
 						>
-							Nur Abweichungen ({validation.discrepancyCount})
+							Nur Abweichungen ({activeValidation.discrepancyCount})
 						</button>
 						<button
 							type="button"
@@ -193,7 +223,7 @@
 				{#if displayedRows.length === 0}
 					<div class="empty-notice">
 						{#if filterView === 'discrepancies'}
-							✓ Keine Abweichungen gefunden! Alle {validation.checkedCount} Monate stimmen exakt mit der AWO-Tariftabelle überein.
+							✓ Keine Abweichungen gefunden! Alle {activeValidation.checkedCount} Monate stimmen exakt mit der AWO-Tariftabelle überein.
 						{:else}
 							Keine Datensätze ab 09/2025 vorhanden.
 						{/if}
@@ -216,7 +246,7 @@
 								{#each displayedRows as row}
 									<tr class={row.isDiscrepant ? 'row-discrepant' : ''}>
 										<td class="font-mono">{String(row.month).padStart(2, '0')}/{row.year}</td>
-										<td>{participant.tariffGroup}/ES {row.step}</td>
+										<td>{activeParticipant.tariffGroup}/ES {row.step}</td>
 										<td class="text-muted">{row.periodLabel}</td>
 										<td class="text-right font-mono font-medium">{formatCurrency(row.recordedFte)}</td>
 										<td class="text-right font-mono font-medium">{formatCurrency(row.expectedFte)}</td>
@@ -237,7 +267,7 @@
 					</div>
 				{/if}
 
-				{#if validation.jszAudits && validation.jszAudits.length > 0}
+				{#if activeValidation.jszAudits && activeValidation.jszAudits.length > 0}
 					<div class="table-toolbar" style="margin-top: 1.5rem;">
 						<span class="table-title">🎁 Detailprüfung Jahressonderzahlung nach AWO Berlin Tarif (10. ÄTV / TE 05.05.2026):</span>
 					</div>
@@ -256,7 +286,7 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each validation.jszAudits as jsz}
+								{#each activeValidation.jszAudits as jsz}
 									<tr class={!jsz.isCompliant ? 'row-discrepant' : ''}>
 										<td class="font-mono font-bold">{jsz.year}</td>
 										<td>
@@ -562,4 +592,62 @@
 	.th-num { text-align: right; }
 	.th-center { text-align: center; }
 	.text-center { text-align: center; }
+
+	/* Multi-Participant Switcher */
+	.audit-p-switcher {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.6rem 1rem;
+		background: rgba(15, 23, 42, 0.6);
+		border-radius: 8px;
+		margin-bottom: 1rem;
+		border: 1px solid rgba(255, 255, 255, 0.06);
+		flex-wrap: wrap;
+	}
+
+	.audit-p-label {
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: #94a3b8;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.audit-p-pills {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.audit-p-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.35rem 0.75rem;
+		background: rgba(30, 41, 59, 0.8);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 6px;
+		color: #cbd5e1;
+		font-size: 0.8rem;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.audit-p-btn:hover {
+		background: rgba(51, 65, 85, 0.9);
+		color: #ffffff;
+	}
+
+	.audit-p-btn.active {
+		background: rgba(56, 189, 248, 0.2);
+		border-color: #38bdf8;
+		color: #ffffff;
+		font-weight: 700;
+	}
+
+	.audit-p-eg {
+		font-size: 0.72rem;
+		color: #94a3b8;
+	}
 </style>

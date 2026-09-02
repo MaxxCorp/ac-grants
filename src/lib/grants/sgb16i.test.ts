@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { transformSgb16i, buildCompoundOneLineText, isRecordWithinExitDate, isRecordWithinStartDate, parseDateComponents, getTariffStep, calculateMonthUnits, clipRecordDateRange } from '#lib/grants/sgb16i';
+import { transformSgb16i, transformSgb16iMulti, buildCompoundOneLineText, isRecordWithinExitDate, isRecordWithinStartDate, parseDateComponents, getTariffStep, calculateMonthUnits, clipRecordDateRange } from '#lib/grants/sgb16i';
 import { normalizeTariffStep } from '#lib/server/excel';
-import type { MonthlyRecord, ParticipantInfo } from '#lib/types/grant';
+import type { MonthlyRecord, ParticipantInfo, ParticipantDataset } from '#lib/types/grant';
 
 describe('§16i SGB II / ZGS Berlin Transformation Engine', () => {
 	it('should correctly parse date components and filter records within exit date and start date', () => {
@@ -768,5 +768,192 @@ describe('§16i SGB II / ZGS Berlin Transformation Engine', () => {
 			expect(jszRow.compoundOneLineText).toContain('anteilig für 11,5 Monate (11,5/12)');
 			expect(jszRow.compoundOneLineText).toContain('16.01.2026-31.12.2026');
 		}
+	});
+
+	describe('Multi-Participant Project Transformation Engine (transformSgb16iMulti)', () => {
+		function createTestRecords(
+			startYear: number,
+			monthsCount: number,
+			weeklyHours: number,
+			salary: number,
+			agaRate: number
+		): MonthlyRecord[] {
+			const recs: MonthlyRecord[] = [];
+			let d = new Date(startYear, 0, 1);
+			for (let i = 0; i < monthsCount; i++) {
+				const y = d.getFullYear();
+				const m = d.getMonth() + 1;
+				const lastDay = new Date(y, m, 0).getDate();
+				const mStr = String(m).padStart(2, '0');
+				const pt = (salary * weeklyHours) / 39;
+				const jcFlat = pt * 0.19;
+				const jcGross = pt + jcFlat;
+				const deg = i < 24 ? 100 : 90;
+
+				recs.push({
+					date: `${y}-${mStr}-${String(lastDay).padStart(2, '0')}`,
+					year: y,
+					month: m,
+					monthUnits: 1.0,
+					startDate: `01.${mStr}.${y}`,
+					endDate: `${String(lastDay).padStart(2, '0')}.${mStr}.${y}`,
+					fteSalary: salary,
+					partTimeSalary: pt,
+					weeklyHours,
+					fullTimeHours: 39,
+					jcFlatRateAmount: jcFlat,
+					jcTotalGross: jcGross,
+					jcDegressionPct: deg,
+					jcGrantAmount: (jcGross * deg) / 100,
+					agaRealRate: agaRate,
+					agaRealAmount: pt * agaRate,
+					totalEmployerCost: pt * (1 + agaRate),
+					landSvShortfall: pt * (agaRate - 0.19),
+					landDegressionAmount: (jcGross * (100 - deg)) / 100,
+					jszAmount: m === 12 ? pt * 0.85 : 0,
+					jszAgaAmount: m === 12 ? pt * 0.85 * agaRate : 0,
+					isJszMonth: m === 12,
+					sachkostenAmount: 155
+				});
+				d = new Date(y, m, 1);
+			}
+			return recs;
+		}
+
+		it('should aggregate two participants sequentially into Tab 1, Tab 2, and Tab 3', () => {
+			const p1: ParticipantInfo = {
+				name: 'Teilnehmer A',
+				tariffGroup: 'EG2',
+				tariffStep: 'ES1',
+				runtimeStart: '01.01.2026',
+				runtimeEnd: '31.12.2027',
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				sachkostenMonthly: 155,
+				childrenCount: 0,
+				healthInsuranceName: 'AOK',
+				defaultAgaRate: 0.235
+			};
+			const recs1 = createTestRecords(2026, 24, 30, 2500, 0.235);
+
+			const p2: ParticipantInfo = {
+				name: 'Teilnehmer B',
+				tariffGroup: 'EG3',
+				tariffStep: 'ES2',
+				runtimeStart: '01.01.2027',
+				runtimeEnd: '31.12.2028',
+				weeklyHours: 35,
+				fullTimeHours: 39,
+				sachkostenMonthly: 155,
+				childrenCount: 1,
+				healthInsuranceName: 'Barmer',
+				defaultAgaRate: 0.230
+			};
+			const recs2 = createTestRecords(2027, 24, 35, 2800, 0.230);
+
+			const datasets: ParticipantDataset[] = [
+				{ participant: p1, records: recs1 },
+				{ participant: p2, records: recs2 }
+			];
+
+			const multiResult = transformSgb16iMulti(datasets, { includeOffsetRows: false });
+
+			// 1. Participant count and list
+			expect(multiResult.participants).toHaveLength(2);
+			expect(multiResult.participants?.[0].participant.name).toBe('Teilnehmer A');
+			expect(multiResult.participants?.[1].participant.name).toBe('Teilnehmer B');
+
+			// 2. Years should cover the union: 2026, 2027, 2028
+			expect(multiResult.years).toEqual([2026, 2027, 2028]);
+
+			// 3. Tab 1 (Jobcenter) rows must be sequentially numbered 1, 2, ...
+			const jcRows = multiResult.tabs[0].rows;
+			expect(jcRows.length).toBeGreaterThan(0);
+			jcRows.forEach((row, idx) => {
+				expect(row.rowNumber).toBe(idx + 1);
+				expect(row.participantName).toBeDefined();
+			});
+
+			const p1JcRows = jcRows.filter(r => r.participantName === 'Teilnehmer A');
+			const p2JcRows = jcRows.filter(r => r.participantName === 'Teilnehmer B');
+			expect(p1JcRows.length).toBeGreaterThan(0);
+			expect(p2JcRows.length).toBeGreaterThan(0);
+
+			// 4. Tab 2 (Landesmittel) rows must also be sequentially numbered
+			const landRows = multiResult.tabs[1].rows;
+			expect(landRows.length).toBeGreaterThan(0);
+			landRows.forEach((row, idx) => {
+				expect(row.rowNumber).toBe(idx + 1);
+			});
+
+			// 5. Tab 3 (Sachkosten) must have exactly 1 row per participant
+			const skRows = multiResult.tabs[2].rows;
+			expect(skRows).toHaveLength(2);
+			expect(skRows[0].rowNumber).toBe(1);
+			expect(skRows[0].participantName).toBe('Teilnehmer A');
+			expect(skRows[0].workingHours).toBe(1); // Denotes participant count
+			expect(skRows[0].monthlyAmount).toBe(155.0);
+
+			expect(skRows[1].rowNumber).toBe(2);
+			expect(skRows[1].participantName).toBe('Teilnehmer B');
+			expect(skRows[1].workingHours).toBe(1);
+			expect(skRows[1].monthlyAmount).toBe(155.0);
+
+			// 6. Grand totals check: Sum of individual participant totals must match multiResult total
+			const p1Single = transformSgb16i(recs1, p1, { includeOffsetRows: false });
+			const p2Single = transformSgb16i(recs2, p2, { includeOffsetRows: false });
+
+			const expectedJcTotal = p1Single.tabs[0].grandTotal + p2Single.tabs[0].grandTotal;
+			const expectedLandTotal = p1Single.tabs[1].grandTotal + p2Single.tabs[1].grandTotal;
+			const expectedSkTotal = p1Single.tabs[2].grandTotal + p2Single.tabs[2].grandTotal;
+
+			expect(multiResult.tabs[0].grandTotal).toBeCloseTo(expectedJcTotal, 2);
+			expect(multiResult.tabs[1].grandTotal).toBeCloseTo(expectedLandTotal, 2);
+			expect(multiResult.tabs[2].grandTotal).toBeCloseTo(expectedSkTotal, 2);
+
+			const expectedGrandTotal = expectedJcTotal + expectedLandTotal + expectedSkTotal;
+			expect(multiResult.controls.formGrandTotal).toBeCloseTo(expectedGrandTotal, 2);
+		});
+
+		it('should include per-participant breakdown checks in control results', () => {
+			const p1: ParticipantInfo = {
+				name: 'Max',
+				tariffGroup: 'EG2',
+				tariffStep: 'ES1',
+				runtimeStart: '01.01.2026',
+				runtimeEnd: '31.12.2026',
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				sachkostenMonthly: 155,
+				childrenCount: 0,
+				healthInsuranceName: 'AOK',
+				defaultAgaRate: 0.235
+			};
+			const recs1 = createTestRecords(2026, 12, 30, 2500, 0.235);
+
+			const p2: ParticipantInfo = {
+				name: 'Erika',
+				tariffGroup: 'EG2',
+				tariffStep: 'ES1',
+				runtimeStart: '01.01.2026',
+				runtimeEnd: '31.12.2026',
+				weeklyHours: 30,
+				fullTimeHours: 39,
+				sachkostenMonthly: 155,
+				childrenCount: 0,
+				healthInsuranceName: 'AOK',
+				defaultAgaRate: 0.235
+			};
+			const recs2 = createTestRecords(2026, 12, 30, 2500, 0.235);
+
+			const result = transformSgb16iMulti([
+				{ participant: p1, records: recs1 },
+				{ participant: p2, records: recs2 }
+			], { includeOffsetRows: true });
+
+			expect(result.controls.overallStatus).toBe('MATCH');
+			expect(result.controls.items.some(it => it.name.includes('Teilnehmer 1 (Max)'))).toBe(true);
+			expect(result.controls.items.some(it => it.name.includes('Teilnehmer 2 (Erika)'))).toBe(true);
+		});
 	});
 });

@@ -1,13 +1,40 @@
 <script lang="ts">
-	import type { GrantTransformationResult, InsuranceFundDetails, TvlComparisonInputs, TvlComparisonResult } from '#lib/types/grant';
+	import type { GrantTransformationResult, InsuranceFundDetails, TvlComparisonInputs, TvlComparisonResult, ParticipantCalculationResult } from '#lib/types/grant';
 	import { calculateTvlComparison } from '#lib/grants/tvl-comparison';
-	import { downloadTvlExcelFile } from '#lib/grants/tvl-template-exporter';
+	import {
+		downloadTvlExcelFile,
+		downloadAllTvlExcelFiles,
+		downloadMultiParticipantTvlWorkbook
+	} from '#lib/grants/tvl-template-exporter';
 
 	let {
 		result
 	}: {
 		result: GrantTransformationResult;
 	} = $props();
+
+	// Support multiple participants in project
+	const participantList = $derived<ParticipantCalculationResult[]>(
+		result.participants && result.participants.length > 0
+			? result.participants
+			: [{
+				participant: result.participant,
+				records: result.rawMonthlyRecords,
+				years: result.years,
+				runtimeMonths: result.runtimeMonths,
+				tabs: result.tabs,
+				controls: result.controls,
+				agaTimeline: result.agaTimeline,
+				bgTimeline: result.bgTimeline,
+				tariffValidation: result.tariffValidation,
+				tvlComparison: result.tvlComparison
+			}]
+	);
+
+	let selectedParticipantIndex = $state(0);
+	const activeParticipantData = $derived(participantList[selectedParticipantIndex] || participantList[0]);
+	const activeParticipant = $derived(activeParticipantData.participant);
+	const activeRecords = $derived(activeParticipantData.records);
 
 	// Active year selection
 	const availableYears = $derived(result.years && result.years.length > 0 ? result.years : [2026]);
@@ -18,22 +45,61 @@
 			: (availableYears.includes(2026) ? 2026 : (availableYears[availableYears.length - 1] || 2026))
 	);
 
-	// Custom inputs state for real-time adjustments
+	// Custom inputs state for real-time adjustments (tracked per participant)
 	let customInputs = $state<Partial<TvlComparisonInputs>>({});
+	let customInputsByParticipant = $state<Record<number, Partial<TvlComparisonInputs>>>({});
+
+	function switchParticipant(newIndex: number) {
+		customInputsByParticipant[selectedParticipantIndex] = { ...customInputs };
+		selectedParticipantIndex = newIndex;
+		customInputs = customInputsByParticipant[newIndex] ? { ...customInputsByParticipant[newIndex] } : {};
+	}
 
 	// Derived insurance funds
 	const insuranceFunds = $derived<InsuranceFundDetails[]>(result.insuranceFunds || []);
 
-	// Active TV-L calculation result
+	// Active TV-L calculation result for currently selected participant
 	const tvl = $derived.by<TvlComparisonResult>(() => {
 		return calculateTvlComparison(
-			result.rawMonthlyRecords,
-			result.participant,
+			activeRecords,
+			activeParticipant,
 			selectedYear,
 			customInputs,
 			insuranceFunds
 		);
 	});
+
+	// Precalculate TV-L for ALL participants in project for current active year
+	const allTvlResults = $derived.by<TvlComparisonResult[]>(() => {
+		return participantList.map((pData, idx) => {
+			const pInputs = idx === selectedParticipantIndex ? customInputs : (customInputsByParticipant[idx] || {});
+			return calculateTvlComparison(
+				pData.records,
+				pData.participant,
+				selectedYear,
+				pInputs,
+				insuranceFunds
+			);
+		});
+	});
+
+	const allParticipantsCompliant = $derived(allTvlResults.every(r => r.isBesserstellungsverbotCompliant));
+	const nonCompliantParticipants = $derived(allTvlResults.filter(r => !r.isBesserstellungsverbotCompliant));
+
+	let isDownloadingBatch = $state(false);
+
+	async function handleDownloadAllFiles() {
+		isDownloadingBatch = true;
+		try {
+			await downloadAllTvlExcelFiles(allTvlResults);
+		} finally {
+			isDownloadingBatch = false;
+		}
+	}
+
+	function handleDownloadCombinedWorkbook() {
+		downloadMultiParticipantTvlWorkbook(allTvlResults);
+	}
 
 	// Copy feedback state
 	let copiedField = $state<string | null>(null);
@@ -173,12 +239,84 @@
 </script>
 
 <div class="tvl-container">
+	{#if participantList.length > 1}
+		<!-- Multi-Participant Project TV-L Compliance & Selection Card -->
+		<div class="multi-tvl-summary-card {allParticipantsCompliant ? 'all-ok' : 'has-warning'}">
+			<div class="multi-tvl-header">
+				<div class="multi-tvl-title-row">
+					<span class="multi-tvl-badge">{allParticipantsCompliant ? '✓ PROJEKT KONFORM' : '⚠️ PRÜFUNG ERFORDERLICH'}</span>
+					<h3>TV-L Vergleichsberechnungen Gesamtprojekt ({participantList.length} Teilnehmende)</h3>
+				</div>
+				<p class="multi-tvl-desc">
+					{#if allParticipantsCompliant}
+						Für <strong>alle {participantList.length} Teilnehmenden</strong> ist das Besserstellungsverbot im Jahr {selectedYear} eingehalten (AWO Tarif ≤ TV-L). Die Einzeldateien können nachfolgend für den ZGS-Upload generiert werden.
+					{:else}
+						Bei <strong>{nonCompliantParticipants.length} von {participantList.length} Teilnehmenden</strong> übersteigt das Ist-Entgelt den TV-L Vergleichswert. Bitte Eingruppierungen oder Abweichungen prüfen.
+					{/if}
+				</p>
+			</div>
+
+			<!-- Participant Switcher Tabs -->
+			<div class="participant-tabs-bar">
+				<span class="tabs-label">Aktive Person:</span>
+				<div class="participant-pills-list">
+					{#each participantList as pData, idx}
+						{@const pRes = allTvlResults[idx]}
+						<button
+							type="button"
+							class="participant-selector-btn {selectedParticipantIndex === idx ? 'active' : ''} {pRes?.isBesserstellungsverbotCompliant ? 'status-ok' : 'status-warn'}"
+							onclick={() => switchParticipant(idx)}
+						>
+							<span class="p-status-icon">{pRes?.isBesserstellungsverbotCompliant ? '✓' : '⚠️'}</span>
+							<span class="p-name-text">{pData.participant.name || `Teilnehmer/in ${idx + 1}`}</span>
+							<span class="p-meta-text">({pData.participant.tariffGroup}/{pData.participant.tariffStep} · {pData.participant.weeklyHours}h)</span>
+							<span class="p-diff-badge {pRes && pRes.totalDifference <= 0 ? 'badge-green' : 'badge-red'}">
+								{pRes && pRes.totalDifference <= 0 ? '' : '+'}{formatCurrency(pRes?.totalDifference || 0)}
+							</span>
+						</button>
+					{/each}
+				</div>
+			</div>
+
+			<!-- Batch Download Bar -->
+			<div class="batch-export-bar">
+				<div class="batch-info">
+					<span>ZGS-Upload: <strong>{participantList.length} TV-L Excel-Dateien</strong> für Förderjahr {selectedYear}</span>
+				</div>
+				<div class="batch-buttons">
+					<button
+						type="button"
+						class="btn-batch-download"
+						onclick={handleDownloadAllFiles}
+						disabled={isDownloadingBatch}
+						title="Lädt für jeden Teilnehmer eine separate Excel-Datei herunter (für den ZGS-Upload)"
+					>
+						{isDownloadingBatch ? '⏳ Lade herunter...' : `📦 Alle ${participantList.length} TV-L Dateien herunterladen (Batch)`}
+					</button>
+					<button
+						type="button"
+						class="btn-combined-download"
+						onclick={handleDownloadCombinedWorkbook}
+						title="Erstellt eine zusammengefasste Arbeitsmappe mit je einem Reiter pro Teilnehmer"
+					>
+						📑 Kombinierte TV-L Arbeitsmappe
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	<!-- Top Bar: Title, Year Tabs & Quick Actions -->
 	<div class="tvl-header">
 		<div class="header-left">
 			<div class="badge-title">
 				<span class="badge-icon">⚖️</span>
 				<h2>Vergleichsberechnung nach TV-L</h2>
+				{#if participantList.length > 1}
+					<span class="active-participant-badge">
+						👤 {activeParticipant.name || `Teilnehmer/in ${selectedParticipantIndex + 1}`} ({activeParticipant.tariffGroup}/{activeParticipant.tariffStep})
+					</span>
+				{/if}
 			</div>
 			<p class="header-desc">
 				Gegenüberstellung des gezahlten Ist-Entgelts zum TV-L Tarif zur Einhaltung des <strong>Besserstellungsverbots</strong>
@@ -224,13 +362,13 @@
 					{/if}
 				</button>
 
-				<button type="button" class="btn-download-excel" onclick={handleDownload}>
+				<button type="button" class="btn-download-excel" onclick={handleDownload} title="Excel-Datei für diese/n Teilnehmer/in herunterladen">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
 						<polyline points="7 10 12 15 17 10"></polyline>
 						<line x1="12" y1="15" x2="12" y2="3"></line>
 					</svg>
-					Excel (.xlsx) exportieren
+					Excel ({activeParticipant.name || `TLN ${selectedParticipantIndex + 1}`})
 				</button>
 			</div>
 		</div>
@@ -1703,5 +1841,225 @@
 		font-size: 0.7rem;
 		color: #64748b;
 		font-family: monospace;
+	}
+
+	/* Multi-Participant Overview & Switcher Styles */
+	.active-participant-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.2rem 0.6rem;
+		background: rgba(56, 189, 248, 0.15);
+		border: 1px solid rgba(56, 189, 248, 0.3);
+		border-radius: 9999px;
+		color: #38bdf8;
+		font-size: 0.8rem;
+		font-weight: 600;
+	}
+
+	.multi-tvl-summary-card {
+		margin-bottom: 1.25rem;
+		padding: 1.25rem 1.5rem;
+		border-radius: 12px;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		transition: all 0.2s ease;
+	}
+
+	.multi-tvl-summary-card.all-ok {
+		background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(15, 23, 42, 0.95) 100%);
+		border-color: rgba(16, 185, 129, 0.3);
+	}
+
+	.multi-tvl-summary-card.has-warning {
+		background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(15, 23, 42, 0.95) 100%);
+		border-color: rgba(245, 158, 11, 0.35);
+	}
+
+	.multi-tvl-header {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.multi-tvl-title-row {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.multi-tvl-title-row h3 {
+		margin: 0;
+		font-size: 1.1rem;
+		font-weight: 700;
+		color: #f8fafc;
+	}
+
+	.multi-tvl-badge {
+		font-size: 0.72rem;
+		font-weight: 800;
+		letter-spacing: 0.05em;
+		padding: 0.2rem 0.55rem;
+		border-radius: 6px;
+		background: rgba(16, 185, 129, 0.2);
+		color: #34d399;
+		border: 1px solid rgba(52, 211, 153, 0.4);
+	}
+
+	.multi-tvl-summary-card.has-warning .multi-tvl-badge {
+		background: rgba(245, 158, 11, 0.2);
+		color: #fbbf24;
+		border-color: rgba(251, 191, 36, 0.4);
+	}
+
+	.multi-tvl-desc {
+		margin: 0;
+		font-size: 0.85rem;
+		color: #94a3b8;
+		line-height: 1.4;
+	}
+
+	.participant-tabs-bar {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		padding-top: 0.5rem;
+		border-top: 1px solid rgba(255, 255, 255, 0.07);
+	}
+
+	.tabs-label {
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: #64748b;
+	}
+
+	.participant-pills-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.6rem;
+	}
+
+	.participant-selector-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		padding: 0.5rem 0.85rem;
+		background: rgba(30, 41, 59, 0.8);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 8px;
+		color: #cbd5e1;
+		font-size: 0.82rem;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.participant-selector-btn:hover {
+		background: rgba(51, 65, 85, 0.9);
+		border-color: rgba(255, 255, 255, 0.25);
+		color: #f8fafc;
+	}
+
+	.participant-selector-btn.active {
+		background: rgba(56, 189, 248, 0.2);
+		border-color: #38bdf8;
+		color: #f8fafc;
+		box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+	}
+
+	.p-status-icon {
+		font-size: 0.85rem;
+	}
+
+	.p-name-text {
+		font-weight: 700;
+	}
+
+	.p-meta-text {
+		font-size: 0.74rem;
+		color: #94a3b8;
+	}
+
+	.p-diff-badge {
+		font-size: 0.72rem;
+		font-weight: 700;
+		padding: 0.1rem 0.4rem;
+		border-radius: 4px;
+		font-family: monospace;
+	}
+
+	.p-diff-badge.badge-green {
+		background: rgba(16, 185, 129, 0.2);
+		color: #34d399;
+	}
+
+	.p-diff-badge.badge-red {
+		background: rgba(239, 68, 68, 0.2);
+		color: #f87171;
+	}
+
+	.batch-export-bar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		padding: 0.75rem 1rem;
+		background: rgba(15, 23, 42, 0.7);
+		border-radius: 8px;
+		border: 1px solid rgba(255, 255, 255, 0.06);
+	}
+
+	.batch-info {
+		font-size: 0.82rem;
+		color: #cbd5e1;
+	}
+
+	.batch-buttons {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.btn-batch-download {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.45rem 0.85rem;
+		background: linear-gradient(135deg, #059669 0%, #047857 100%);
+		border: 1px solid #10b981;
+		border-radius: 6px;
+		color: #ffffff;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.btn-batch-download:hover:not(:disabled) {
+		background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+		box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+	}
+
+	.btn-combined-download {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.45rem 0.85rem;
+		background: rgba(30, 41, 59, 0.8);
+		border: 1px solid rgba(56, 189, 248, 0.4);
+		border-radius: 6px;
+		color: #38bdf8;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.btn-combined-download:hover {
+		background: rgba(56, 189, 248, 0.15);
+		border-color: #38bdf8;
 	}
 </style>

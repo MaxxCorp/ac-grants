@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import ExcelJS from 'exceljs';
 import {
 	generateBerechnungsblattExcel,
+	generateMultiParticipantBerechnungsblattExcel,
 	calculateMilestones,
 	COLOR_STUFENAUFSTIEG,
 	COLOR_TARIFERHOEHUNG,
@@ -9,7 +10,8 @@ import {
 	COLOR_UMGRUPPIERUNG
 } from './excel-generator';
 import { parseExcelBuffer } from './excel';
-import { transformSgb16i } from '#lib/grants/sgb16i';
+import { transformSgb16i, transformSgb16iMulti } from '#lib/grants/sgb16i';
+import { generateMultiParticipantTvlWorkbook } from '#lib/grants/tvl-template-exporter';
 import type { BerechnungsblattGeneratorOptions } from '#lib/types/grant';
 
 describe('Berechnungsblatt Generator', () => {
@@ -356,5 +358,70 @@ describe('Berechnungsblatt Generator', () => {
 		});
 		expect(result.controls.overallStatus).toBe('MATCH');
 		expect(result.controls.totalDelta).toBe(0);
+	});
+
+	it('generates and parses a multi-participant workbook with multiple sheets and exports TV-L', async () => {
+		const opt1: BerechnungsblattGeneratorOptions = {
+			employeeName: 'Max Mustermann',
+			startDate: '2026-08-01',
+			durationMonths: 60,
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			healthInsuranceName: 'AOK Nordost',
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			sachkostenMonthly: 155
+		};
+
+		const opt2: BerechnungsblattGeneratorOptions = {
+			employeeName: 'Erika Musterfrau',
+			startDate: '2026-10-01',
+			durationMonths: 60,
+			tariffGroup: 'EG3',
+			tariffStep: 'ES2',
+			healthInsuranceName: 'Barmer',
+			weeklyHours: 35,
+			fullTimeHours: 39,
+			sachkostenMonthly: 155
+		};
+
+		// 1. Generate multi-participant Excel workbook
+		const buf = await generateMultiParticipantBerechnungsblattExcel([opt1, opt2]);
+		expect(buf).toBeInstanceOf(Uint8Array);
+		expect(buf.length).toBeGreaterThan(1000);
+
+		// 2. Parse workbook with multi-sheet detection
+		const parsed = parseExcelBuffer(buf);
+		expect(parsed.participants).toHaveLength(2);
+		expect(parsed.participants[0].participant.name).toBe('Max Mustermann');
+		expect(parsed.participants[0].sheetName).toContain('Max_Mustermann');
+		expect(parsed.participants[0].records.length).toBe(60);
+
+		expect(parsed.participants[1].participant.name).toBe('Erika Musterfrau');
+		expect(parsed.participants[1].sheetName).toContain('Erika_Musterfrau');
+		expect(parsed.participants[1].records.length).toBe(60);
+
+		// 3. Multi-participant transformation
+		const result = transformSgb16iMulti(parsed.participants, { includeOffsetRows: true });
+		expect(result.participants).toHaveLength(2);
+		expect(result.tabs[0].rows.length).toBeGreaterThan(0);
+		expect(result.tabs[1].rows.length).toBeGreaterThan(0);
+		expect(result.tabs[2].rows).toHaveLength(2);
+		expect(result.controls.overallStatus).toBe('MATCH');
+
+		// 4. Multi-participant TV-L comparison workbook generation
+		const tvlResults = result.participants!.map(p => p.tvlComparison!).filter(Boolean);
+		expect(tvlResults).toHaveLength(2);
+
+		const tvlBuf = generateMultiParticipantTvlWorkbook(tvlResults);
+		expect(tvlBuf).toBeInstanceOf(Uint8Array);
+		expect(tvlBuf.length).toBeGreaterThan(1000);
+
+		// Read TV-L workbook back with ExcelJS to verify sheet names
+		const tvlWb = new ExcelJS.Workbook();
+		await tvlWb.xlsx.load(tvlBuf as any);
+		expect(tvlWb.worksheets.length).toBe(2);
+		expect(tvlWb.worksheets[0].name).toContain('Max');
+		expect(tvlWb.worksheets[1].name).toContain('Erika');
 	});
 });

@@ -1,14 +1,16 @@
 <script lang="ts">
-	import type { ControlCheckResult, ParticipantInfo } from '#lib/types/grant';
+	import type { ControlCheckResult, ParticipantInfo, ParticipantCalculationResult } from '#lib/types/grant';
 
 	let {
 		controls,
 		participant,
+		participants,
 		includeOffset = true,
 		onToggleOffset
 	}: {
 		controls: ControlCheckResult;
 		participant: ParticipantInfo;
+		participants?: ParticipantCalculationResult[];
 		includeOffset?: boolean;
 		onToggleOffset?: (val: boolean) => void;
 	} = $props();
@@ -43,11 +45,17 @@
 					{/if}
 				</span>
 
-				<span class="participant-badge">
-					<strong>{participant.name}</strong> • {participant.tariffGroup}/{participant.tariffStep} ({participant.weeklyHours}h/Woche) • KK: {participant.healthInsuranceName}
-					{#if participant.jobcenterId} • JC: <code>{participant.jobcenterId}</code>{/if}
-					{#if participant.zgsId} • ZGS: <code>{participant.zgsId}</code>{/if}
-				</span>
+				{#if participants && participants.length > 1}
+					<span class="participant-badge">
+						<strong>👥 Gesamtprojekt ({participants.length} Teilnehmende):</strong> {participants.map(p => p.participant.name).join(', ')}
+					</span>
+				{:else}
+					<span class="participant-badge">
+						<strong>{participant.name}</strong> • {participant.tariffGroup}/{participant.tariffStep} ({participant.weeklyHours}h/Woche) • KK: {participant.healthInsuranceName}
+						{#if participant.jobcenterId} • JC: <code>{participant.jobcenterId}</code>{/if}
+						{#if participant.zgsId} • ZGS: <code>{participant.zgsId}</code>{/if}
+					</span>
+				{/if}
 			</div>
 			<h2>Plausibilitäts- & Kontrollrechnungs-Dashboard</h2>
 		</div>
@@ -104,13 +112,62 @@
 		</div>
 
 		<div class="metric-card">
-			<div class="metric-label">3. Sachkostenpauschale (Fi BiB)</div>
+			<div class="metric-label">3. Sachkostenpauschale</div>
 			<div class="metric-value">{formatCurrency(controls.sachkostenCheck.formTotal)}</div>
 			<div class="metric-sub">
-				{formatCurrency(participant.sachkostenMonthly)} / Teilnehmer / Monat
+				155,00 € mtl. pro Teilnehmer
 			</div>
 		</div>
 	</div>
+
+	{#if participants && participants.length > 1}
+		<!-- Itemized Participant Overview for Multi-Participant Projects -->
+		<div class="participants-breakdown-section">
+			<div class="section-title-row">
+				<span class="section-icon">👥</span>
+				<h3>Aufschlüsselung nach Teilnehmenden ({participants.length} Personen)</h3>
+			</div>
+			<div class="participant-cards-grid">
+				{#each participants as p, idx}
+					{@const pJc = p.tabs[0]?.grandTotal || 0}
+					{@const pLand = p.tabs[1]?.grandTotal || 0}
+					{@const pSk = p.tabs[2]?.grandTotal || 0}
+					{@const pTotal = pJc + pLand + pSk}
+					{@const pShare = controls.formGrandTotal > 0 ? (pTotal / controls.formGrandTotal) * 100 : 0}
+					<div class="p-breakdown-card">
+						<div class="p-card-header">
+							<div class="p-avatar">👤</div>
+							<div class="p-header-info">
+								<span class="p-card-name">{p.participant.name || `Teilnehmer/in ${idx + 1}`}</span>
+								<span class="p-card-sub">
+									{p.participant.tariffGroup}/{p.participant.tariffStep} • {p.participant.weeklyHours}h/Wo. • {p.runtimeMonths} Monate
+								</span>
+							</div>
+							<div class="p-share-badge">{pShare.toFixed(1)}%</div>
+						</div>
+						<div class="p-card-metrics">
+							<div class="p-metric-item">
+								<span class="p-metric-label">Jobcenter:</span>
+								<span class="p-metric-val font-mono">{formatCurrency(pJc)}</span>
+							</div>
+							<div class="p-metric-item">
+								<span class="p-metric-label">Landesmittel:</span>
+								<span class="p-metric-val font-mono">{formatCurrency(pLand)}</span>
+							</div>
+							<div class="p-metric-item">
+								<span class="p-metric-label">Sachkosten:</span>
+								<span class="p-metric-val font-mono">{formatCurrency(pSk)}</span>
+							</div>
+							<div class="p-metric-item total">
+								<span class="p-metric-label">Gesamtanteil:</span>
+								<span class="p-metric-val font-mono highlight">{formatCurrency(pTotal)}</span>
+							</div>
+						</div>
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	<!-- Detailed Audit Table -->
 	<div class="audit-section">
@@ -398,5 +455,108 @@
 
 	.text-sm {
 		font-size: 0.8rem;
+	}
+
+	/* Multi-Participant Breakdown Grid */
+	.participants-breakdown-section {
+		margin-bottom: 1.5rem;
+		padding: 1.25rem;
+		background: rgba(30, 41, 59, 0.4);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 12px;
+	}
+
+	.section-title-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.section-title-row h3 {
+		margin: 0;
+		font-size: 1rem;
+		font-weight: 700;
+		color: #f1f5f9;
+	}
+
+	.participant-cards-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		gap: 1rem;
+	}
+
+	.p-breakdown-card {
+		background: rgba(15, 23, 42, 0.7);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 10px;
+		padding: 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.p-card-header {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding-bottom: 0.65rem;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+	}
+
+	.p-avatar {
+		font-size: 1.25rem;
+	}
+
+	.p-header-info {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+	}
+
+	.p-card-name {
+		font-weight: 700;
+		font-size: 0.92rem;
+		color: #f8fafc;
+	}
+
+	.p-card-sub {
+		font-size: 0.75rem;
+		color: #94a3b8;
+	}
+
+	.p-share-badge {
+		font-size: 0.75rem;
+		font-weight: 800;
+		padding: 0.2rem 0.5rem;
+		background: rgba(56, 189, 248, 0.15);
+		border: 1px solid rgba(56, 189, 248, 0.3);
+		color: #38bdf8;
+		border-radius: 9999px;
+	}
+
+	.p-card-metrics {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+
+	.p-metric-item {
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.82rem;
+		color: #cbd5e1;
+	}
+
+	.p-metric-item.total {
+		margin-top: 0.35rem;
+		padding-top: 0.5rem;
+		border-top: 1px dashed rgba(255, 255, 255, 0.1);
+		font-weight: 700;
+	}
+
+	.p-metric-val.highlight {
+		color: #38bdf8;
+		font-size: 0.95rem;
 	}
 </style>
