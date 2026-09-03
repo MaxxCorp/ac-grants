@@ -2,11 +2,13 @@
 	import { onMount } from 'svelte';
 	import { getAvailableSchemes, recalculateGrant, processExcelFile } from '#lib/grant.remote';
 	import { transformSgb16i, transformSgb16iMulti } from '#lib/grants/sgb16i';
+	import { transformBerlinerJobCoachingMulti, generateStandardJobCoachingDemoDatasets } from '#lib/grants/berliner-jobcoaching';
 	import type { GrantTransformationResult, AgaRatePeriod, RuntimeScope, RuntimeStartScope, MonthlyRecord, ParticipantInfo, ParticipantDataset } from '#lib/types/grant';
 	import FileUpload from '#lib/components/FileUpload.svelte';
 	import ControlDashboard from '#lib/components/ControlDashboard.svelte';
 	import AwoTariffAuditCard from '#lib/components/AwoTariffAuditCard.svelte';
 	import TargetFormCompanion from '#lib/components/TargetFormCompanion.svelte';
+	import JobCoachingPortalCompanion from '#lib/components/JobCoachingPortalCompanion.svelte';
 	import AgaTimelineEditor from '#lib/components/AgaTimelineEditor.svelte';
 	import BerechnungsblattGeneratorModal from '#lib/components/BerechnungsblattGeneratorModal.svelte';
 
@@ -75,6 +77,26 @@
 	}
 
 	function loadDemoData() {
+		if (selectedSchemeId === 'berliner-jobcoaching') {
+			runtimeStartScope = 'custom';
+			customStartDate = '01.01.2027';
+			runtimeScope = 'custom';
+			customEndDate = '31.12.2027';
+
+			const jcDatasets = generateStandardJobCoachingDemoDatasets(2027);
+
+			const res = transformBerlinerJobCoachingMulti(jcDatasets, {
+				includeOffsetRows: includeOffset,
+				runtimeStartScope: 'custom',
+				customStartDate: '01.01.2027',
+				runtimeScope: 'custom',
+				customEndDate: '31.12.2027'
+			});
+
+			handleResult(res);
+			return;
+		}
+
 		// Participant 1: Max Mustermann (EG2/ES1, 30h, AOK Nordost)
 		const p1: ParticipantInfo = {
 			name: 'Max Mustermann',
@@ -218,6 +240,17 @@
 	}
 
 	async function triggerRecalculate() {
+		if (selectedSchemeId === 'berliner-jobcoaching') {
+			if (!customStartDate) {
+				runtimeStartScope = 'custom';
+				customStartDate = '01.01.2027';
+			}
+			if (!customEndDate) {
+				runtimeScope = 'custom';
+				customEndDate = '31.12.2027';
+			}
+		}
+
 		if (currentResult) {
 			isRecalculating = true;
 			try {
@@ -247,6 +280,38 @@
 			} finally {
 				isRecalculating = false;
 			}
+		}
+	}
+
+	async function handleUpdateJobCoachingOptions(opts: any) {
+		if (!currentResult) return;
+		isRecalculating = true;
+		try {
+			const hasMulti = currentResult.participants && currentResult.participants.length > 0;
+			const updated = await recalculateGrant({
+				schemeId: selectedSchemeId,
+				records: currentResult.rawMonthlyRecords,
+				participant: currentResult.participant,
+				participants: hasMulti
+					? currentResult.participants!.map(p => ({
+							participant: p.participant,
+							records: p.records
+						}))
+					: undefined,
+				options: {
+					includeOffsetRows: includeOffset,
+					runtimeStartScope,
+					customStartDate: runtimeStartScope === 'custom' ? customStartDate : undefined,
+					runtimeScope,
+					customEndDate: runtimeScope === 'custom' ? customEndDate : undefined,
+					...opts
+				}
+			});
+			currentResult = updated;
+		} catch (err) {
+			console.error('JobCoaching options recalculation error:', err);
+		} finally {
+			isRecalculating = false;
 		}
 	}
 
@@ -588,12 +653,14 @@
 					participants={currentResult.participants}
 				/>
 
-				<!-- Time-Dependent Employer Social Contribution (AGA) Matrix -->
-				<AgaTimelineEditor
-					timeline={currentResult.agaTimeline}
-					participant={currentResult.participant}
-					onUpdateTimeline={handleUpdateTimeline}
-				/>
+				<!-- Time-Dependent Employer Social Contribution (AGA) Matrix (for SGB 16i) -->
+				{#if currentResult.schemeId !== 'berliner-jobcoaching'}
+					<AgaTimelineEditor
+						timeline={currentResult.agaTimeline}
+						participant={currentResult.participant}
+						onUpdateTimeline={handleUpdateTimeline}
+					/>
+				{/if}
 
 				<!-- Confidence & Audit Dashboard -->
 				<ControlDashboard
@@ -605,7 +672,14 @@
 				/>
 
 				<!-- Target Form Companion with 1-Click Clipboard Copying -->
-				<TargetFormCompanion result={currentResult} />
+				{#if currentResult.schemeId === 'berliner-jobcoaching'}
+					<JobCoachingPortalCompanion
+						result={currentResult}
+						onUpdateOptions={handleUpdateJobCoachingOptions}
+					/>
+				{:else}
+					<TargetFormCompanion result={currentResult} />
+				{/if}
 			</section>
 		{/if}
 

@@ -13,7 +13,8 @@ import {
 	DEFAULT_INSURANCE_FUNDS,
 	getTvlTariffEntry,
 	getAllTvlTariffCodes,
-	normalizeTvlTariffCode
+	normalizeTvlTariffCode,
+	TVL_TARIFF_BY_YEAR
 } from '#lib/grants/tvl-tariff-data';
 import { getAwoTariffSalary, validateBerechnungsblattTariff, determineParticipantStepForRecord, calculateExpectedAwoJsz } from '#lib/grants/awo-tariff-data';
 
@@ -132,7 +133,7 @@ export function calculatePeriod(
 	}
 ): TvlPeriodCalculation {
 	const year = options?.year || 2026;
-	const switchMonth = options?.switchMonth || 4;
+	const switchMonth = options?.switchMonth || (TVL_TARIFF_BY_YEAR[year]?.switchMonth ?? 4);
 	const tariffEntry = getTvlTariffEntry(year, tariffCode) || {
 		code: tariffCode,
 		valJanMar: 2853.24,
@@ -697,7 +698,7 @@ export function calculateTvlComparison(
 		u3Rate,
 
 		bemerkungen: customInputs?.bemerkungen || defaultBemerkungen,
-		bearbeiterName: customInputs?.bearbeiterName || 'Maxim Müller',
+		bearbeiterName: customInputs?.bearbeiterName || 'M. Muster',
 		bearbeiterDate: customInputs?.bearbeiterDate || `31.08.${year}`
 	};
 

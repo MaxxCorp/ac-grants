@@ -1620,11 +1620,1469 @@ export const TVL_TARIFF_ENTRIES_2026: TvlTariffEntry[] = [
 /**
  * Registry of tariffs by year
  */
+
+export const TVL_TARIFF_ENTRIES_2027: TvlTariffEntry[] = [
+	{
+		"code": "E15Ü/1",
+		"valJanMar": 6857.14,
+		"jszPct": 0.3253,
+		"valAbApr": 6994.28,
+		"sueZulage": 0
+	},
+	{
+		"code": "E15Ü/2",
+		"valJanMar": 7587.33,
+		"jszPct": 0.3253,
+		"valAbApr": 7739.08,
+		"sueZulage": 0
+	},
+	{
+		"code": "E15Ü/3",
+		"valJanMar": 8280.33,
+		"jszPct": 0.3253,
+		"valAbApr": 8445.94,
+		"sueZulage": 0
+	},
+	{
+		"code": "E15Ü/4",
+		"valJanMar": 8734.83,
+		"jszPct": 0.3253,
+		"valAbApr": 8909.53,
+		"sueZulage": 0
+	},
+	{
+		"code": "E15Ü/5",
+		"valJanMar": 8846.64,
+		"jszPct": 0.3253,
+		"valAbApr": 9023.57,
+		"sueZulage": 0
+	},
+	{
+		"code": "E15/1",
+		"valJanMar": 5658.38,
+		"jszPct": 0.3253,
+		"valAbApr": 5771.55,
+		"sueZulage": 0
+	},
+	{
+		"code": "E15/2",
+		"valJanMar": 6067.3,
+		"jszPct": 0.3253,
+		"valAbApr": 6188.65,
+		"sueZulage": 0
+	},
+	{
+		"code": "E15/3",
+		"valJanMar": 6283.38,
+		"jszPct": 0.3253,
+		"valAbApr": 6409.05,
+		"sueZulage": 0
+	},
+	{
+		"code": "E15/4",
+		"valJanMar": 7050.89,
+		"jszPct": 0.3253,
+		"valAbApr": 7191.91,
+		"sueZulage": 0
+	},
+	{
+		"code": "E15/5",
+		"valJanMar": 7632.07,
+		"jszPct": 0.3253,
+		"valAbApr": 7784.71,
+		"sueZulage": 0
+	},
+	{
+		"code": "E15/6",
+		"valJanMar": 7854.52,
+		"jszPct": 0.3253,
+		"valAbApr": 8011.61,
+		"sueZulage": 0
+	},
+	{
+		"code": "E14/1",
+		"valJanMar": 5143.59,
+		"jszPct": 0.3253,
+		"valAbApr": 5246.46,
+		"sueZulage": 0
+	},
+	{
+		"code": "E14/2",
+		"valJanMar": 5515.9,
+		"jszPct": 0.3253,
+		"valAbApr": 5626.22,
+		"sueZulage": 0
+	},
+	{
+		"code": "E14/3",
+		"valJanMar": 5821.41,
+		"jszPct": 0.3253,
+		"valAbApr": 5937.84,
+		"sueZulage": 0
+	},
+	{
+		"code": "E14/4",
+		"valJanMar": 6283.38,
+		"jszPct": 0.3253,
+		"valAbApr": 6409.05,
+		"sueZulage": 0
+	},
+	{
+		"code": "E14/5",
+		"valJanMar": 6991.23,
+		"jszPct": 0.3253,
+		"valAbApr": 7131.05,
+		"sueZulage": 0
+	},
+	{
+		"code": "E14/6",
+		"valJanMar": 7194.48,
+		"jszPct": 0.3253,
+		"valAbApr": 7338.37,
+		"sueZulage": 0
+	},
+	{
+		"code": "E13Ü/2",
+		"valJanMar": 5106.09,
+		"jszPct": 0.4647,
+		"valAbApr": 5208.21,
+		"sueZulage": 0
+	},
+	{
+		"code": "E13Ü/3",
+		"valJanMar": 5366.89,
+		"jszPct": 0.4647,
+		"valAbApr": 5474.23,
+		"sueZulage": 0
+	},
+	{
+		"code": "E13Ü/4",
+		"valJanMar": 6283.38,
+		"jszPct": 0.4647,
+		"valAbApr": 6409.05,
+		"sueZulage": 0
+	},
+	{
+		"code": "E13Ü/5",
+		"valJanMar": 6991.23,
+		"jszPct": 0.4647,
+		"valAbApr": 7131.05,
+		"sueZulage": 0
+	},
+	{
+		"code": "E13Ü/6",
+		"valJanMar": 7194.48,
+		"jszPct": 0.4647,
+		"valAbApr": 7338.37,
+		"sueZulage": 0
+	},
+	{
+		"code": "E13/1",
+		"valJanMar": 4759.37,
+		"jszPct": 0.4647,
+		"valAbApr": 4854.56,
+		"sueZulage": 0
+	},
+	{
+		"code": "E13/2",
+		"valJanMar": 5106.09,
+		"jszPct": 0.4647,
+		"valAbApr": 5208.21,
+		"sueZulage": 0
+	},
+	{
+		"code": "E13/3",
+		"valJanMar": 5366.89,
+		"jszPct": 0.4647,
+		"valAbApr": 5474.23,
+		"sueZulage": 0
+	},
+	{
+		"code": "E13/4",
+		"valJanMar": 5873.56,
+		"jszPct": 0.4647,
+		"valAbApr": 5991.03,
+		"sueZulage": 0
+	},
+	{
+		"code": "E13/5",
+		"valJanMar": 6573.97,
+		"jszPct": 0.4647,
+		"valAbApr": 6705.45,
+		"sueZulage": 0
+	},
+	{
+		"code": "E13/6",
+		"valJanMar": 6764.69,
+		"jszPct": 0.4647,
+		"valAbApr": 6899.98,
+		"sueZulage": 0
+	},
+	{
+		"code": "E12/1",
+		"valJanMar": 4310.9,
+		"jszPct": 0.4647,
+		"valAbApr": 4397.12,
+		"sueZulage": 0
+	},
+	{
+		"code": "E12/2",
+		"valJanMar": 4599.41,
+		"jszPct": 0.4647,
+		"valAbApr": 4691.4,
+		"sueZulage": 0
+	},
+	{
+		"code": "E12/3",
+		"valJanMar": 5210.41,
+		"jszPct": 0.4647,
+		"valAbApr": 5314.62,
+		"sueZulage": 0
+	},
+	{
+		"code": "E12/4",
+		"valJanMar": 5746.9,
+		"jszPct": 0.4647,
+		"valAbApr": 5861.84,
+		"sueZulage": 0
+	},
+	{
+		"code": "E12/5",
+		"valJanMar": 6439.85,
+		"jszPct": 0.4647,
+		"valAbApr": 6568.65,
+		"sueZulage": 0
+	},
+	{
+		"code": "E12/6",
+		"valJanMar": 6626.54,
+		"jszPct": 0.4647,
+		"valAbApr": 6759.07,
+		"sueZulage": 0
+	},
+	{
+		"code": "E11/1",
+		"valJanMar": 4178.35,
+		"jszPct": 0.7435,
+		"valAbApr": 4261.92,
+		"sueZulage": 0
+	},
+	{
+		"code": "E11/2",
+		"valJanMar": 4444.86,
+		"jszPct": 0.7435,
+		"valAbApr": 4533.76,
+		"sueZulage": 0
+	},
+	{
+		"code": "E11/3",
+		"valJanMar": 4748.43,
+		"jszPct": 0.7435,
+		"valAbApr": 4843.4,
+		"sueZulage": 0
+	},
+	{
+		"code": "E11/4",
+		"valJanMar": 5210.41,
+		"jszPct": 0.7435,
+		"valAbApr": 5314.62,
+		"sueZulage": 0
+	},
+	{
+		"code": "E11/5",
+		"valJanMar": 5881.02,
+		"jszPct": 0.7435,
+		"valAbApr": 5998.64,
+		"sueZulage": 0
+	},
+	{
+		"code": "E11/6",
+		"valJanMar": 6050.95,
+		"jszPct": 0.7435,
+		"valAbApr": 6171.97,
+		"sueZulage": 0
+	},
+	{
+		"code": "E10/1",
+		"valJanMar": 4038.42,
+		"jszPct": 0.7435,
+		"valAbApr": 4119.19,
+		"sueZulage": 0
+	},
+	{
+		"code": "E10/2",
+		"valJanMar": 4299.95,
+		"jszPct": 0.7435,
+		"valAbApr": 4385.95,
+		"sueZulage": 0
+	},
+	{
+		"code": "E10/3",
+		"valJanMar": 4599.41,
+		"jszPct": 0.7435,
+		"valAbApr": 4691.4,
+		"sueZulage": 0
+	},
+	{
+		"code": "E10/4",
+		"valJanMar": 4904.89,
+		"jszPct": 0.7435,
+		"valAbApr": 5002.99,
+		"sueZulage": 0
+	},
+	{
+		"code": "E10/5",
+		"valJanMar": 5486.13,
+		"jszPct": 0.7435,
+		"valAbApr": 5595.85,
+		"sueZulage": 0
+	},
+	{
+		"code": "E10/6",
+		"valJanMar": 5644.2,
+		"jszPct": 0.7435,
+		"valAbApr": 5757.08,
+		"sueZulage": 0
+	},
+	{
+		"code": "E9b/1",
+		"valJanMar": 3620.1,
+		"jszPct": 0.7435,
+		"valAbApr": 3692.5,
+		"sueZulage": 0
+	},
+	{
+		"code": "E9b/2",
+		"valJanMar": 3870.81,
+		"jszPct": 0.7435,
+		"valAbApr": 3948.23,
+		"sueZulage": 0
+	},
+	{
+		"code": "E9b/3",
+		"valJanMar": 4035.07,
+		"jszPct": 0.7435,
+		"valAbApr": 4115.77,
+		"sueZulage": 0
+	},
+	{
+		"code": "E9b/4",
+		"valJanMar": 4488.99,
+		"jszPct": 0.7435,
+		"valAbApr": 4578.77,
+		"sueZulage": 0
+	},
+	{
+		"code": "E9b/5",
+		"valJanMar": 4875.1,
+		"jszPct": 0.7435,
+		"valAbApr": 4972.6,
+		"sueZulage": 0
+	},
+	{
+		"code": "E9b/6",
+		"valJanMar": 5014.87,
+		"jszPct": 0.7435,
+		"valAbApr": 5115.17,
+		"sueZulage": 0
+	},
+	{
+		"code": "E9a/1",
+		"valJanMar": 3620.1,
+		"jszPct": 0.7435,
+		"valAbApr": 3692.5,
+		"sueZulage": 0
+	},
+	{
+		"code": "E9a/2",
+		"valJanMar": 3870.81,
+		"jszPct": 0.7435,
+		"valAbApr": 3948.23,
+		"sueZulage": 0
+	},
+	{
+		"code": "E9a/3",
+		"valJanMar": 3925.58,
+		"jszPct": 0.7435,
+		"valAbApr": 4004.09,
+		"sueZulage": 0
+	},
+	{
+		"code": "E9a/4",
+		"valJanMar": 4035.07,
+		"jszPct": 0.7435,
+		"valAbApr": 4115.77,
+		"sueZulage": 0
+	},
+	{
+		"code": "E9a/5",
+		"valJanMar": 4488.99,
+		"jszPct": 0.7435,
+		"valAbApr": 4578.77,
+		"sueZulage": 0
+	},
+	{
+		"code": "E9a/6",
+		"valJanMar": 4615.76,
+		"jszPct": 0.7435,
+		"valAbApr": 4708.08,
+		"sueZulage": 0
+	},
+	{
+		"code": "E8/1",
+		"valJanMar": 3419.52,
+		"jszPct": 0.8814,
+		"valAbApr": 3487.91,
+		"sueZulage": 0
+	},
+	{
+		"code": "E8/2",
+		"valJanMar": 3659.02,
+		"jszPct": 0.8814,
+		"valAbApr": 3732.2,
+		"sueZulage": 0
+	},
+	{
+		"code": "E8/3",
+		"valJanMar": 3795.52,
+		"jszPct": 0.8814,
+		"valAbApr": 3871.43,
+		"sueZulage": 0
+	},
+	{
+		"code": "E8/4",
+		"valJanMar": 3925.58,
+		"jszPct": 0.8814,
+		"valAbApr": 4004.09,
+		"sueZulage": 0
+	},
+	{
+		"code": "E8/5",
+		"valJanMar": 4069.31,
+		"jszPct": 0.8814,
+		"valAbApr": 4150.7,
+		"sueZulage": 0
+	},
+	{
+		"code": "E8/6",
+		"valJanMar": 4158.27,
+		"jszPct": 0.8814,
+		"valAbApr": 4241.44,
+		"sueZulage": 0
+	},
+	{
+		"code": "E7/1",
+		"valJanMar": 3235.83,
+		"jszPct": 0.8814,
+		"valAbApr": 3300.55,
+		"sueZulage": 0
+	},
+	{
+		"code": "E7/2",
+		"valJanMar": 3469.72,
+		"jszPct": 0.8814,
+		"valAbApr": 3539.11,
+		"sueZulage": 0
+	},
+	{
+		"code": "E7/3",
+		"valJanMar": 3645.69,
+		"jszPct": 0.8814,
+		"valAbApr": 3718.6,
+		"sueZulage": 0
+	},
+	{
+		"code": "E7/4",
+		"valJanMar": 3781.85,
+		"jszPct": 0.8814,
+		"valAbApr": 3857.49,
+		"sueZulage": 0
+	},
+	{
+		"code": "E7/5",
+		"valJanMar": 3891.36,
+		"jszPct": 0.8814,
+		"valAbApr": 3969.19,
+		"sueZulage": 0
+	},
+	{
+		"code": "E7/6",
+		"valJanMar": 3987.16,
+		"jszPct": 0.8814,
+		"valAbApr": 4066.9,
+		"sueZulage": 0
+	},
+	{
+		"code": "E6/1",
+		"valJanMar": 3186.57,
+		"jszPct": 0.8814,
+		"valAbApr": 3250.3,
+		"sueZulage": 0
+	},
+	{
+		"code": "E6/2",
+		"valJanMar": 3418.08,
+		"jszPct": 0.8814,
+		"valAbApr": 3486.44,
+		"sueZulage": 0
+	},
+	{
+		"code": "E6/3",
+		"valJanMar": 3547.2,
+		"jszPct": 0.8814,
+		"valAbApr": 3618.14,
+		"sueZulage": 0
+	},
+	{
+		"code": "E6/4",
+		"valJanMar": 3679.2,
+		"jszPct": 0.8814,
+		"valAbApr": 3752.78,
+		"sueZulage": 0
+	},
+	{
+		"code": "E6/5",
+		"valJanMar": 3768.15,
+		"jszPct": 0.8814,
+		"valAbApr": 3843.51,
+		"sueZulage": 0
+	},
+	{
+		"code": "E6/6",
+		"valJanMar": 3863.96,
+		"jszPct": 0.8814,
+		"valAbApr": 3941.24,
+		"sueZulage": 0
+	},
+	{
+		"code": "E5/1",
+		"valJanMar": 3073.97,
+		"jszPct": 0.8814,
+		"valAbApr": 3135.45,
+		"sueZulage": 0
+	},
+	{
+		"code": "E5/2",
+		"valJanMar": 3301.87,
+		"jszPct": 0.8814,
+		"valAbApr": 3367.91,
+		"sueZulage": 0
+	},
+	{
+		"code": "E5/3",
+		"valJanMar": 3430.99,
+		"jszPct": 0.8814,
+		"valAbApr": 3499.61,
+		"sueZulage": 0
+	},
+	{
+		"code": "E5/4",
+		"valJanMar": 3553.66,
+		"jszPct": 0.8814,
+		"valAbApr": 3624.73,
+		"sueZulage": 0
+	},
+	{
+		"code": "E5/5",
+		"valJanMar": 3652.34,
+		"jszPct": 0.8814,
+		"valAbApr": 3725.39,
+		"sueZulage": 0
+	},
+	{
+		"code": "E5/6",
+		"valJanMar": 3720.25,
+		"jszPct": 0.8814,
+		"valAbApr": 3794.66,
+		"sueZulage": 0
+	},
+	{
+		"code": "E4/1",
+		"valJanMar": 2949.24,
+		"jszPct": 0.8743,
+		"valAbApr": 3008.22,
+		"sueZulage": 0
+	},
+	{
+		"code": "E4/2",
+		"valJanMar": 3179.22,
+		"jszPct": 0.8743,
+		"valAbApr": 3242.8,
+		"sueZulage": 0
+	},
+	{
+		"code": "E4/3",
+		"valJanMar": 3340.61,
+		"jszPct": 0.8743,
+		"valAbApr": 3407.42,
+		"sueZulage": 0
+	},
+	{
+		"code": "E4/4",
+		"valJanMar": 3430.99,
+		"jszPct": 0.8743,
+		"valAbApr": 3499.61,
+		"sueZulage": 0
+	},
+	{
+		"code": "E4/5",
+		"valJanMar": 3521.39,
+		"jszPct": 0.8743,
+		"valAbApr": 3591.82,
+		"sueZulage": 0
+	},
+	{
+		"code": "E4/6",
+		"valJanMar": 3579.47,
+		"jszPct": 0.8743,
+		"valAbApr": 3651.06,
+		"sueZulage": 0
+	},
+	{
+		"code": "E3/1",
+		"valJanMar": 2915.57,
+		"jszPct": 0.8743,
+		"valAbApr": 2973.88,
+		"sueZulage": 0
+	},
+	{
+		"code": "E3/2",
+		"valJanMar": 3140.47,
+		"jszPct": 0.8743,
+		"valAbApr": 3203.28,
+		"sueZulage": 0
+	},
+	{
+		"code": "E3/3",
+		"valJanMar": 3205.03,
+		"jszPct": 0.8743,
+		"valAbApr": 3269.13,
+		"sueZulage": 0
+	},
+	{
+		"code": "E3/4",
+		"valJanMar": 3308.32,
+		"jszPct": 0.8743,
+		"valAbApr": 3374.49,
+		"sueZulage": 0
+	},
+	{
+		"code": "E3/5",
+		"valJanMar": 3392.25,
+		"jszPct": 0.8743,
+		"valAbApr": 3460.1,
+		"sueZulage": 0
+	},
+	{
+		"code": "E3/6",
+		"valJanMar": 3463.27,
+		"jszPct": 0.8743,
+		"valAbApr": 3532.54,
+		"sueZulage": 0
+	},
+	{
+		"code": "E2Ü/1",
+		"valJanMar": 2811.2,
+		"jszPct": 0.8743,
+		"valAbApr": 2867.42,
+		"sueZulage": 0
+	},
+	{
+		"code": "E2Ü/2",
+		"valJanMar": 3030.72,
+		"jszPct": 0.8743,
+		"valAbApr": 3091.33,
+		"sueZulage": 0
+	},
+	{
+		"code": "E2Ü/3",
+		"valJanMar": 3114.64,
+		"jszPct": 0.8743,
+		"valAbApr": 3176.93,
+		"sueZulage": 0
+	},
+	{
+		"code": "E2Ü/4",
+		"valJanMar": 3217.96,
+		"jszPct": 0.8743,
+		"valAbApr": 3282.32,
+		"sueZulage": 0
+	},
+	{
+		"code": "E2Ü/5",
+		"valJanMar": 3288.97,
+		"jszPct": 0.8743,
+		"valAbApr": 3354.75,
+		"sueZulage": 0
+	},
+	{
+		"code": "E2Ü/6",
+		"valJanMar": 3385.81,
+		"jszPct": 0.8743,
+		"valAbApr": 3453.53,
+		"sueZulage": 0
+	},
+	{
+		"code": "E2/1",
+		"valJanMar": 2742.84,
+		"jszPct": 0.8743,
+		"valAbApr": 2797.7,
+		"sueZulage": 0
+	},
+	{
+		"code": "E2/2",
+		"valJanMar": 2953.24,
+		"jszPct": 0.8743,
+		"valAbApr": 3012.3,
+		"sueZulage": 0
+	},
+	{
+		"code": "E2/3",
+		"valJanMar": 3017.8,
+		"jszPct": 0.8743,
+		"valAbApr": 3078.16,
+		"sueZulage": 0
+	},
+	{
+		"code": "E2/4",
+		"valJanMar": 3082.36,
+		"jszPct": 0.8743,
+		"valAbApr": 3144.01,
+		"sueZulage": 0
+	},
+	{
+		"code": "E2/5",
+		"valJanMar": 3230.84,
+		"jszPct": 0.8743,
+		"valAbApr": 3295.46,
+		"sueZulage": 0
+	},
+	{
+		"code": "E2/6",
+		"valJanMar": 3385.81,
+		"jszPct": 0.8743,
+		"valAbApr": 3453.53,
+		"sueZulage": 0
+	},
+	{
+		"code": "E1/2",
+		"valJanMar": 2534.49,
+		"jszPct": 0.8743,
+		"valAbApr": 2585.18,
+		"sueZulage": 0
+	},
+	{
+		"code": "E1/3",
+		"valJanMar": 2565.06,
+		"jszPct": 0.8743,
+		"valAbApr": 2616.36,
+		"sueZulage": 0
+	},
+	{
+		"code": "E1/4",
+		"valJanMar": 2601.78,
+		"jszPct": 0.8743,
+		"valAbApr": 2653.82,
+		"sueZulage": 0
+	},
+	{
+		"code": "E1/5",
+		"valJanMar": 2638.51,
+		"jszPct": 0.8743,
+		"valAbApr": 2691.28,
+		"sueZulage": 0
+	},
+	{
+		"code": "E1/6",
+		"valJanMar": 2730.3,
+		"jszPct": 0.8743,
+		"valAbApr": 2784.91,
+		"sueZulage": 0
+	},
+	{
+		"code": "S18/1",
+		"valJanMar": 4695.81,
+		"jszPct": 0.4647,
+		"valAbApr": 4789.73,
+		"sueZulage": 0
+	},
+	{
+		"code": "S18/2",
+		"valJanMar": 4831.98,
+		"jszPct": 0.4647,
+		"valAbApr": 4928.62,
+		"sueZulage": 0
+	},
+	{
+		"code": "S18/3",
+		"valJanMar": 5427.51,
+		"jszPct": 0.4647,
+		"valAbApr": 5536.06,
+		"sueZulage": 0
+	},
+	{
+		"code": "S18/4",
+		"valJanMar": 5874.12,
+		"jszPct": 0.4647,
+		"valAbApr": 5991.6,
+		"sueZulage": 0
+	},
+	{
+		"code": "S18/5",
+		"valJanMar": 6544.06,
+		"jszPct": 0.4647,
+		"valAbApr": 6674.94,
+		"sueZulage": 0
+	},
+	{
+		"code": "S18/6",
+		"valJanMar": 6953.44,
+		"jszPct": 0.4647,
+		"valAbApr": 7092.51,
+		"sueZulage": 0
+	},
+	{
+		"code": "S17/1",
+		"valJanMar": 4285.3,
+		"jszPct": 0.7435,
+		"valAbApr": 4371.01,
+		"sueZulage": 0
+	},
+	{
+		"code": "S17/2",
+		"valJanMar": 4645.9,
+		"jszPct": 0.7435,
+		"valAbApr": 4738.82,
+		"sueZulage": 0
+	},
+	{
+		"code": "S17/3",
+		"valJanMar": 5129.72,
+		"jszPct": 0.7435,
+		"valAbApr": 5232.31,
+		"sueZulage": 0
+	},
+	{
+		"code": "S17/4",
+		"valJanMar": 5427.51,
+		"jszPct": 0.7435,
+		"valAbApr": 5536.06,
+		"sueZulage": 0
+	},
+	{
+		"code": "S17/5",
+		"valJanMar": 6022.97,
+		"jszPct": 0.7435,
+		"valAbApr": 6143.43,
+		"sueZulage": 0
+	},
+	{
+		"code": "S17/6",
+		"valJanMar": 6372.84,
+		"jszPct": 0.7435,
+		"valAbApr": 6500.3,
+		"sueZulage": 0
+	},
+	{
+		"code": "S16/1",
+		"valJanMar": 4189.02,
+		"jszPct": 0.7435,
+		"valAbApr": 4272.8,
+		"sueZulage": 0
+	},
+	{
+		"code": "S16/2",
+		"valJanMar": 4549.16,
+		"jszPct": 0.7435,
+		"valAbApr": 4640.14,
+		"sueZulage": 0
+	},
+	{
+		"code": "S16/3",
+		"valJanMar": 4876.66,
+		"jszPct": 0.7435,
+		"valAbApr": 4974.19,
+		"sueZulage": 0
+	},
+	{
+		"code": "S16/4",
+		"valJanMar": 5278.61,
+		"jszPct": 0.7435,
+		"valAbApr": 5384.18,
+		"sueZulage": 0
+	},
+	{
+		"code": "S16/5",
+		"valJanMar": 5725.24,
+		"jszPct": 0.7435,
+		"valAbApr": 5839.74,
+		"sueZulage": 0
+	},
+	{
+		"code": "S16/6",
+		"valJanMar": 5993.21,
+		"jszPct": 0.7435,
+		"valAbApr": 6113.07,
+		"sueZulage": 0
+	},
+	{
+		"code": "S15/1",
+		"valJanMar": 4040.87,
+		"jszPct": 0.7435,
+		"valAbApr": 4121.69,
+		"sueZulage": 180
+	},
+	{
+		"code": "S15/2",
+		"valJanMar": 4385.36,
+		"jszPct": 0.7435,
+		"valAbApr": 4473.07,
+		"sueZulage": 180
+	},
+	{
+		"code": "S15/3",
+		"valJanMar": 4683.16,
+		"jszPct": 0.7435,
+		"valAbApr": 4776.82,
+		"sueZulage": 180
+	},
+	{
+		"code": "S15/4",
+		"valJanMar": 5025.55,
+		"jszPct": 0.7435,
+		"valAbApr": 5126.06,
+		"sueZulage": 180
+	},
+	{
+		"code": "S15/5",
+		"valJanMar": 5576.37,
+		"jszPct": 0.7435,
+		"valAbApr": 5687.9,
+		"sueZulage": 180
+	},
+	{
+		"code": "S15/6",
+		"valJanMar": 5814.54,
+		"jszPct": 0.7435,
+		"valAbApr": 5930.83,
+		"sueZulage": 180
+	},
+	{
+		"code": "S14/1",
+		"valJanMar": 4020.78,
+		"jszPct": 0.7435,
+		"valAbApr": 4101.2,
+		"sueZulage": 180
+	},
+	{
+		"code": "S14/2",
+		"valJanMar": 4342.61,
+		"jszPct": 0.7435,
+		"valAbApr": 4429.46,
+		"sueZulage": 180
+	},
+	{
+		"code": "S14/3",
+		"valJanMar": 4673.51,
+		"jszPct": 0.7435,
+		"valAbApr": 4766.98,
+		"sueZulage": 180
+	},
+	{
+		"code": "S14/4",
+		"valJanMar": 5010.12,
+		"jszPct": 0.7435,
+		"valAbApr": 5110.32,
+		"sueZulage": 180
+	},
+	{
+		"code": "S14/5",
+		"valJanMar": 5382.33,
+		"jszPct": 0.7435,
+		"valAbApr": 5489.98,
+		"sueZulage": 180
+	},
+	{
+		"code": "S14/6",
+		"valJanMar": 5642.84,
+		"jszPct": 0.7435,
+		"valAbApr": 5755.7,
+		"sueZulage": 180
+	},
+	{
+		"code": "S13/1",
+		"valJanMar": 3956.35,
+		"jszPct": 0.7435,
+		"valAbApr": 4035.48,
+		"sueZulage": 180
+	},
+	{
+		"code": "S13/2",
+		"valJanMar": 4238.9,
+		"jszPct": 0.7435,
+		"valAbApr": 4323.68,
+		"sueZulage": 180
+	},
+	{
+		"code": "S13/3",
+		"valJanMar": 4608.69,
+		"jszPct": 0.7435,
+		"valAbApr": 4700.86,
+		"sueZulage": 180
+	},
+	{
+		"code": "S13/4",
+		"valJanMar": 4906.41,
+		"jszPct": 0.7435,
+		"valAbApr": 5004.54,
+		"sueZulage": 180
+	},
+	{
+		"code": "S13/5",
+		"valJanMar": 5278.61,
+		"jszPct": 0.7435,
+		"valAbApr": 5384.18,
+		"sueZulage": 180
+	},
+	{
+		"code": "S13/6",
+		"valJanMar": 5464.69,
+		"jszPct": 0.7435,
+		"valAbApr": 5573.98,
+		"sueZulage": 180
+	},
+	{
+		"code": "S12/1",
+		"valJanMar": 3904.99,
+		"jszPct": 0.7435,
+		"valAbApr": 3983.09,
+		"sueZulage": 180
+	},
+	{
+		"code": "S12/2",
+		"valJanMar": 4227.5,
+		"jszPct": 0.7435,
+		"valAbApr": 4312.05,
+		"sueZulage": 180
+	},
+	{
+		"code": "S12/3",
+		"valJanMar": 4582.06,
+		"jszPct": 0.7435,
+		"valAbApr": 4673.7,
+		"sueZulage": 180
+	},
+	{
+		"code": "S12/4",
+		"valJanMar": 4894.69,
+		"jszPct": 0.7435,
+		"valAbApr": 4992.58,
+		"sueZulage": 180
+	},
+	{
+		"code": "S12/5",
+		"valJanMar": 5281.78,
+		"jszPct": 0.7435,
+		"valAbApr": 5387.42,
+		"sueZulage": 180
+	},
+	{
+		"code": "S12/6",
+		"valJanMar": 5445.55,
+		"jszPct": 0.7435,
+		"valAbApr": 5554.46,
+		"sueZulage": 180
+	},
+	{
+		"code": "S11b/1",
+		"valJanMar": 3809.38,
+		"jszPct": 0.7435,
+		"valAbApr": 3885.57,
+		"sueZulage": 180
+	},
+	{
+		"code": "S11b/2",
+		"valJanMar": 4170.46,
+		"jszPct": 0.7435,
+		"valAbApr": 4253.87,
+		"sueZulage": 180
+	},
+	{
+		"code": "S11b/3",
+		"valJanMar": 4359.56,
+		"jszPct": 0.7435,
+		"valAbApr": 4446.75,
+		"sueZulage": 180
+	},
+	{
+		"code": "S11b/4",
+		"valJanMar": 4835.94,
+		"jszPct": 0.7435,
+		"valAbApr": 4932.66,
+		"sueZulage": 180
+	},
+	{
+		"code": "S11b/5",
+		"valJanMar": 5208.16,
+		"jszPct": 0.7435,
+		"valAbApr": 5312.32,
+		"sueZulage": 180
+	},
+	{
+		"code": "S11b/6",
+		"valJanMar": 5431.46,
+		"jszPct": 0.7435,
+		"valAbApr": 5540.09,
+		"sueZulage": 180
+	},
+	{
+		"code": "S11a/1",
+		"valJanMar": 3735.57,
+		"jszPct": 0.7435,
+		"valAbApr": 3810.28,
+		"sueZulage": 180
+	},
+	{
+		"code": "S11a/2",
+		"valJanMar": 4094.37,
+		"jszPct": 0.7435,
+		"valAbApr": 4176.26,
+		"sueZulage": 180
+	},
+	{
+		"code": "S11a/3",
+		"valJanMar": 4282.25,
+		"jszPct": 0.7435,
+		"valAbApr": 4367.9,
+		"sueZulage": 180
+	},
+	{
+		"code": "S11a/4",
+		"valJanMar": 4757.57,
+		"jszPct": 0.7435,
+		"valAbApr": 4852.72,
+		"sueZulage": 180
+	},
+	{
+		"code": "S11a/5",
+		"valJanMar": 5129.72,
+		"jszPct": 0.7435,
+		"valAbApr": 5232.31,
+		"sueZulage": 180
+	},
+	{
+		"code": "S11a/6",
+		"valJanMar": 5353.05,
+		"jszPct": 0.7435,
+		"valAbApr": 5460.11,
+		"sueZulage": 180
+	},
+	{
+		"code": "S9/1",
+		"valJanMar": 3553.32,
+		"jszPct": 0.7435,
+		"valAbApr": 3624.39,
+		"sueZulage": 130
+	},
+	{
+		"code": "S9/2",
+		"valJanMar": 3872.74,
+		"jszPct": 0.7435,
+		"valAbApr": 3950.19,
+		"sueZulage": 130
+	},
+	{
+		"code": "S9/3",
+		"valJanMar": 4155.77,
+		"jszPct": 0.7435,
+		"valAbApr": 4238.89,
+		"sueZulage": 130
+	},
+	{
+		"code": "S9/4",
+		"valJanMar": 4571.34,
+		"jszPct": 0.7435,
+		"valAbApr": 4662.77,
+		"sueZulage": 130
+	},
+	{
+		"code": "S9/5",
+		"valJanMar": 4962.09,
+		"jszPct": 0.7435,
+		"valAbApr": 5061.33,
+		"sueZulage": 130
+	},
+	{
+		"code": "S9/6",
+		"valJanMar": 5263.58,
+		"jszPct": 0.7435,
+		"valAbApr": 5368.85,
+		"sueZulage": 130
+	},
+	{
+		"code": "S8b/1",
+		"valJanMar": 3489.55,
+		"jszPct": 0.8814,
+		"valAbApr": 3559.34,
+		"sueZulage": 130
+	},
+	{
+		"code": "S8b/2",
+		"valJanMar": 3794.83,
+		"jszPct": 0.8814,
+		"valAbApr": 3870.73,
+		"sueZulage": 130
+	},
+	{
+		"code": "S8b/3",
+		"valJanMar": 4080.01,
+		"jszPct": 0.8814,
+		"valAbApr": 4161.61,
+		"sueZulage": 130
+	},
+	{
+		"code": "S8b/4",
+		"valJanMar": 4494.85,
+		"jszPct": 0.8814,
+		"valAbApr": 4584.75,
+		"sueZulage": 130
+	},
+	{
+		"code": "S8b/5",
+		"valJanMar": 4883.74,
+		"jszPct": 0.8814,
+		"valAbApr": 4981.41,
+		"sueZulage": 130
+	},
+	{
+		"code": "S8b/6",
+		"valJanMar": 5181.91,
+		"jszPct": 0.8814,
+		"valAbApr": 5285.55,
+		"sueZulage": 130
+	},
+	{
+		"code": "S8a/1",
+		"valJanMar": 3444.29,
+		"jszPct": 0.8814,
+		"valAbApr": 3513.18,
+		"sueZulage": 0
+	},
+	{
+		"code": "S8a/2",
+		"valJanMar": 3717.03,
+		"jszPct": 0.8814,
+		"valAbApr": 3791.37,
+		"sueZulage": 0
+	},
+	{
+		"code": "S8a/3",
+		"valJanMar": 3963.34,
+		"jszPct": 0.8814,
+		"valAbApr": 4042.61,
+		"sueZulage": 0
+	},
+	{
+		"code": "S8a/4",
+		"valJanMar": 4196.7,
+		"jszPct": 0.8814,
+		"valAbApr": 4280.63,
+		"sueZulage": 0
+	},
+	{
+		"code": "S8a/5",
+		"valJanMar": 4423.54,
+		"jszPct": 0.8814,
+		"valAbApr": 4512.01,
+		"sueZulage": 0
+	},
+	{
+		"code": "S8a/6",
+		"valJanMar": 4660.13,
+		"jszPct": 0.8814,
+		"valAbApr": 4753.33,
+		"sueZulage": 0
+	},
+	{
+		"code": "S7/1",
+		"valJanMar": 3369.05,
+		"jszPct": 0.8814,
+		"valAbApr": 3436.43,
+		"sueZulage": 0
+	},
+	{
+		"code": "S7/2",
+		"valJanMar": 3625.89,
+		"jszPct": 0.8814,
+		"valAbApr": 3698.41,
+		"sueZulage": 0
+	},
+	{
+		"code": "S7/3",
+		"valJanMar": 3855.89,
+		"jszPct": 0.8814,
+		"valAbApr": 3933.01,
+		"sueZulage": 0
+	},
+	{
+		"code": "S7/4",
+		"valJanMar": 4087.12,
+		"jszPct": 0.8814,
+		"valAbApr": 4168.86,
+		"sueZulage": 0
+	},
+	{
+		"code": "S7/5",
+		"valJanMar": 4260.59,
+		"jszPct": 0.8814,
+		"valAbApr": 4345.8,
+		"sueZulage": 0
+	},
+	{
+		"code": "S7/6",
+		"valJanMar": 4519.37,
+		"jszPct": 0.8814,
+		"valAbApr": 4609.76,
+		"sueZulage": 0
+	},
+	{
+		"code": "S4/1",
+		"valJanMar": 3206.28,
+		"jszPct": 0.8814,
+		"valAbApr": 3270.41,
+		"sueZulage": 0
+	},
+	{
+		"code": "S4/2",
+		"valJanMar": 3478.25,
+		"jszPct": 0.8814,
+		"valAbApr": 3547.82,
+		"sueZulage": 0
+	},
+	{
+		"code": "S4/3",
+		"valJanMar": 3675.21,
+		"jszPct": 0.8814,
+		"valAbApr": 3748.71,
+		"sueZulage": 0
+	},
+	{
+		"code": "S4/4",
+		"valJanMar": 3812.51,
+		"jszPct": 0.8814,
+		"valAbApr": 3888.76,
+		"sueZulage": 0
+	},
+	{
+		"code": "S4/5",
+		"valJanMar": 3942.62,
+		"jszPct": 0.8814,
+		"valAbApr": 4021.47,
+		"sueZulage": 0
+	},
+	{
+		"code": "S4/6",
+		"valJanMar": 4145.27,
+		"jszPct": 0.8814,
+		"valAbApr": 4228.18,
+		"sueZulage": 0
+	},
+	{
+		"code": "S3/1",
+		"valJanMar": 3019.44,
+		"jszPct": 0.8743,
+		"valAbApr": 3079.83,
+		"sueZulage": 0
+	},
+	{
+		"code": "S3/2",
+		"valJanMar": 3291.26,
+		"jszPct": 0.8743,
+		"valAbApr": 3357.09,
+		"sueZulage": 0
+	},
+	{
+		"code": "S3/3",
+		"valJanMar": 3480.36,
+		"jszPct": 0.8743,
+		"valAbApr": 3549.97,
+		"sueZulage": 0
+	},
+	{
+		"code": "S3/4",
+		"valJanMar": 3654.01,
+		"jszPct": 0.8743,
+		"valAbApr": 3727.09,
+		"sueZulage": 0
+	},
+	{
+		"code": "S3/5",
+		"valJanMar": 3735.19,
+		"jszPct": 0.8743,
+		"valAbApr": 3809.89,
+		"sueZulage": 0
+	},
+	{
+		"code": "S3/6",
+		"valJanMar": 3832.75,
+		"jszPct": 0.8743,
+		"valAbApr": 3909.41,
+		"sueZulage": 0
+	},
+	{
+		"code": "S2/1",
+		"valJanMar": 2915.57,
+		"jszPct": 0.8743,
+		"valAbApr": 2973.88,
+		"sueZulage": 0
+	},
+	{
+		"code": "S2/2",
+		"valJanMar": 3140.47,
+		"jszPct": 0.8743,
+		"valAbApr": 3203.28,
+		"sueZulage": 0
+	},
+	{
+		"code": "S2/3",
+		"valJanMar": 3205.03,
+		"jszPct": 0.8743,
+		"valAbApr": 3269.13,
+		"sueZulage": 0
+	},
+	{
+		"code": "S2/4",
+		"valJanMar": 3308.32,
+		"jszPct": 0.8743,
+		"valAbApr": 3374.49,
+		"sueZulage": 0
+	},
+	{
+		"code": "S2/5",
+		"valJanMar": 3392.25,
+		"jszPct": 0.8743,
+		"valAbApr": 3460.1,
+		"sueZulage": 0
+	},
+	{
+		"code": "S2/6",
+		"valJanMar": 3463.27,
+		"jszPct": 0.8743,
+		"valAbApr": 3532.54,
+		"sueZulage": 0
+	}
+];
+
 export const TVL_TARIFF_BY_YEAR: Record<number, { switchMonth: number; switchMonthName: string; entries: TvlTariffEntry[] }> = {
 	2026: {
 		switchMonth: 4, // April
 		switchMonthName: 'April',
 		entries: TVL_TARIFF_ENTRIES_2026
+	},
+	2027: {
+		switchMonth: 3, // März
+		switchMonthName: 'März',
+		entries: TVL_TARIFF_ENTRIES_2027
 	}
 };
 

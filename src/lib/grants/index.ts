@@ -1,5 +1,6 @@
 import type { GrantSchemeDefinition, MonthlyRecord, ParticipantInfo, GrantTransformationOptions, GrantTransformationResult, ParticipantDataset } from '#lib/types/grant';
 import { transformSgb16i, transformSgb16iMulti } from './sgb16i.js';
+import { transformBerlinerJobCoaching, transformBerlinerJobCoachingMulti } from './berliner-jobcoaching.js';
 
 export const GRANT_SCHEMES: GrantSchemeDefinition[] = [
 	{
@@ -15,6 +16,21 @@ export const GRANT_SCHEMES: GrantSchemeDefinition[] = [
 		},
 		transformMulti: (participants: ParticipantDataset[], options: GrantTransformationOptions): GrantTransformationResult => {
 			return transformSgb16iMulti(participants, options);
+		}
+	},
+	{
+		id: 'berliner-jobcoaching',
+		name: 'Berliner JobCoaching',
+		description: 'Landesprogramm Berliner JobCoaching mit Betreuungskosten (4.1.1.3), gestaffelter Verwaltungskostenpauschale, Qualifizierungsbudget (666,66 € je JC) und Sachkosten (4.1.2.9).',
+		defaultTariff: 'AWO Berlin / TV-L Berlin',
+		legalBasis: 'Landesprogramm Berliner JobCoaching / ZGS Berlin',
+		standardSachkostenMonthly: 0,
+		standardJcFlatRatePct: 0,
+		transform: (records: MonthlyRecord[], participant: ParticipantInfo, options: GrantTransformationOptions): GrantTransformationResult => {
+			return transformBerlinerJobCoaching(records, participant, options);
+		},
+		transformMulti: (participants: ParticipantDataset[], options: GrantTransformationOptions): GrantTransformationResult => {
+			return transformBerlinerJobCoachingMulti(participants, options);
 		}
 	}
 ];

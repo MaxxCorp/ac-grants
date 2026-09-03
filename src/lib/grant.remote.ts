@@ -57,7 +57,11 @@ export const recalculateGrant = command(
 						label: v.string()
 					})
 				)
-			)
+			),
+			mieteAmount: v.optional(v.number()),
+			sonstigeSachkostenOverride: v.optional(v.number()),
+			staffRole: v.optional(v.string()),
+			vacationDays: v.optional(v.number())
 		})
 	}),
 	async (payload): Promise<GrantTransformationResult> => {

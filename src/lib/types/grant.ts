@@ -31,6 +31,9 @@ export interface ParticipantInfo {
 	reclassifications?: TariffReclassification[];
 	defaultBgRate?: number;
 	bgTimeline?: BgRatePeriod[];
+	staffRole?: JobCoachingStaffRole;
+	vacationDays?: number;
+	insuranceFunds?: InsuranceFundDetails[];
 }
 
 export interface BerechnungsblattGeneratorOptions {
@@ -196,6 +199,11 @@ export interface GrantTransformationOptions {
 	restrictToYear?: number; // Optional fallback year restriction
 	customAgaTimeline?: AgaRatePeriod[];
 	customBgTimeline?: BgRatePeriod[];
+	staffRole?: JobCoachingStaffRole;
+	vacationDays?: number;
+	mieteAmount?: number;
+	sonstigeSachkostenOverride?: number;
+	customBueroItems?: JobCoachingBueroItem[];
 }
 
 export interface InsuranceFundDetails {
@@ -449,7 +457,71 @@ export interface ParticipantCalculationResult {
 	bgTimeline?: BgRatePeriod[];
 	tariffValidation?: TariffValidationReport;
 	tvlComparison?: TvlComparisonResult;
+	jobCoachingData?: JobCoachingData;
 }
+
+export interface JobCoachingBetreuungRow {
+	id: string;
+	role: JobCoachingStaffRole;
+	qualification: string;
+	analogTariff: string;
+	employeeName: string;
+	startDate: string;
+	endDate: string;
+	monthCount: number;
+	monthlyGross: number;
+	monthlyAga: number;
+	agaRate: number;
+	agaRateFormatted: string;
+	annualGross: number;
+	annualAga: number;
+	weeklyHours: number;
+	vacationDays: number;
+	workingHoursProject: number;
+	totalAmount: number;
+	yearlyAmounts: Record<number, number>;
+	controlSum: number;
+	description: string;
+	note?: string;
+}
+
+export interface JobCoachingBueroItem {
+	id: string;
+	name: string;
+	quantity: number;
+	unitPrice: number;
+	totalAmount: number;
+	yearlyAmounts: Record<number, number>;
+	controlSum: number;
+	description: string;
+}
+
+export interface JobCoachingSachkostenState {
+	bueroItems: JobCoachingBueroItem[];
+	bueroTotal: number;
+	qualifizierungsBudgetPerCoach: number;
+	qualifizierungsBudgetTotal: number;
+	qualifizierungsText: string;
+	vwkPercentage: number;
+	vwkPercentageFormatted: string;
+	vwkAmount: number;
+	vwkText: string;
+	mieteAmount: number;
+	sonstigeSachkostenOverride?: number;
+	totalSachkosten: number;
+}
+
+export interface JobCoachingData {
+	betreuungRows: JobCoachingBetreuungRow[];
+	totalBetreuung: number;
+	sachkosten: JobCoachingSachkostenState;
+	totalFunding: number;
+	coachCount: number;
+	trainerCount: number;
+	totalStaffCount: number;
+}
+
+export type JobCoachingStaffRole = 'jobcoach' | 'beschaeftigungstrainer';
 
 export interface GrantTransformationResult {
 	schemeId: string;
@@ -467,6 +539,7 @@ export interface GrantTransformationResult {
 	insuranceFunds?: InsuranceFundDetails[];
 	tariffValidation?: TariffValidationReport;
 	tvlComparison?: TvlComparisonResult;
+	jobCoachingData?: JobCoachingData;
 }
 
 export interface GrantSchemeDefinition {
