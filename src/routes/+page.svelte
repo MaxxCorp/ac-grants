@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getAvailableSchemes, recalculateGrant, processExcelFile } from '#lib/grant.remote';
-	import { transformSgb16i, transformSgb16iMulti } from '#lib/grants/sgb16i';
+	import { transformSgb16i, transformSgb16iMulti, generateStandardSgb16iDemoDatasets } from '#lib/grants/sgb16i';
 	import { transformBerlinerJobCoachingMulti, generateStandardJobCoachingDemoDatasets } from '#lib/grants/berliner-jobcoaching';
 	import type { GrantTransformationResult, AgaRatePeriod, RuntimeScope, RuntimeStartScope, MonthlyRecord, ParticipantInfo, ParticipantDataset } from '#lib/types/grant';
 	import FileUpload from '#lib/components/FileUpload.svelte';
@@ -22,59 +22,6 @@
 	let currentResult = $state<GrantTransformationResult | null>(null);
 	let isRecalculating = $state(false);
 	let isGeneratorOpen = $state(false);
-
-	function buildParticipantRecords(
-		startYear: number,
-		startMonth: number,
-		weeklyHours: number,
-		baseSalaries: { yr1: number; yr2: number; yr3: number },
-		agaRate: number
-	): MonthlyRecord[] {
-		const records: MonthlyRecord[] = [];
-		let currentDate = new Date(startYear, startMonth - 1, 1);
-
-		for (let i = 0; i < 60; i++) {
-			const y = currentDate.getFullYear();
-			const m = currentDate.getMonth() + 1;
-			const lastDay = new Date(y, m, 0).getDate();
-			const mStr = String(m).padStart(2, '0');
-
-			const fteSalary = y < 2027 ? baseSalaries.yr1 : y < 2029 ? baseSalaries.yr2 : baseSalaries.yr3;
-			const partTimeSalary = (fteSalary * weeklyHours) / 39;
-			const jcFlatRate = partTimeSalary * 0.19;
-			const jcTotalGross = partTimeSalary + jcFlatRate;
-			const degPct = i < 24 ? 100 : i < 36 ? 90 : i < 48 ? 80 : 70;
-
-			records.push({
-				date: `${y}-${mStr}-${String(lastDay).padStart(2, '0')}`,
-				year: y,
-				month: m,
-				monthUnits: 1.0,
-				startDate: `01.${mStr}.${y}`,
-				endDate: `${String(lastDay).padStart(2, '0')}.${mStr}.${y}`,
-				fteSalary,
-				partTimeSalary,
-				weeklyHours,
-				fullTimeHours: 39,
-				jcFlatRateAmount: jcFlatRate,
-				jcTotalGross,
-				jcDegressionPct: degPct,
-				jcGrantAmount: (jcTotalGross * degPct) / 100,
-				agaRealRate: agaRate,
-				agaRealAmount: partTimeSalary * agaRate,
-				totalEmployerCost: partTimeSalary * (1 + agaRate),
-				landSvShortfall: partTimeSalary * (agaRate - 0.19),
-				landDegressionAmount: (jcTotalGross * (100 - degPct)) / 100,
-				jszAmount: m === 12 ? Math.round(partTimeSalary * 0.85 * 100) / 100 : 0,
-				jszAgaAmount: m === 12 ? Math.round(partTimeSalary * 0.85 * agaRate * 100) / 100 : 0,
-				isJszMonth: m === 12,
-				sachkostenAmount: 155
-			});
-
-			currentDate = new Date(y, m, 1);
-		}
-		return records;
-	}
 
 	function loadDemoData() {
 		if (selectedSchemeId === 'berliner-jobcoaching') {
@@ -97,46 +44,7 @@
 			return;
 		}
 
-		// Participant 1: Max Mustermann (EG2/ES1, 30h, AOK Nordost)
-		const p1: ParticipantInfo = {
-			name: 'Max Mustermann',
-			tariffGroup: 'EG2',
-			tariffStep: 'ES1',
-			runtimeStart: '01.08.2026',
-			runtimeEnd: '31.07.2031',
-			weeklyHours: 30,
-			fullTimeHours: 39,
-			sachkostenMonthly: 155,
-			childrenCount: 1,
-			healthInsuranceName: 'AOK Nordost (15,9%)',
-			defaultAgaRate: 0.23815,
-			jobcenterId: 'JC-BER-2026-081',
-			zgsId: 'ZGS-PR-4011'
-		};
-		const records1 = buildParticipantRecords(2026, 8, 30, { yr1: 2576.77, yr2: 2688.48, yr3: 2774.73 }, 0.23815);
-
-		// Participant 2: Erika Musterfrau (EG3/ES2, 35h, Barmer)
-		const p2: ParticipantInfo = {
-			name: 'Erika Musterfrau',
-			tariffGroup: 'EG3',
-			tariffStep: 'ES2',
-			runtimeStart: '01.10.2026',
-			runtimeEnd: '30.09.2031',
-			weeklyHours: 35,
-			fullTimeHours: 39,
-			sachkostenMonthly: 155,
-			childrenCount: 0,
-			healthInsuranceName: 'Barmer (16,79%)',
-			defaultAgaRate: 0.2324,
-			jobcenterId: 'JC-BER-2026-082',
-			zgsId: 'ZGS-PR-4011'
-		};
-		const records2 = buildParticipantRecords(2026, 10, 35, { yr1: 2750.00, yr2: 2860.00, yr3: 2980.00 }, 0.2324);
-
-		const demoDatasets: ParticipantDataset[] = [
-			{ participant: p1, records: records1 },
-			{ participant: p2, records: records2 }
-		];
+		const demoDatasets = generateStandardSgb16iDemoDatasets();
 
 		const res = transformSgb16iMulti(demoDatasets, {
 			includeOffsetRows: includeOffset,

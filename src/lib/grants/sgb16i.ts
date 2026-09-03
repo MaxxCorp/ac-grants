@@ -15,7 +15,7 @@ import type {
 	RuntimeStartScope
 } from '#lib/types/grant';
 import { calculateTvlComparison } from './tvl-comparison';
-import { validateBerechnungsblattTariff, calculateTariffStepAtDate, determineParticipantStepForRecord, isAwoTariffIncreaseMonth } from './awo-tariff-data';
+import { validateBerechnungsblattTariff, calculateTariffStepAtDate, determineParticipantStepForRecord, isAwoTariffIncreaseMonth, getAwoTariffSalary } from './awo-tariff-data';
 
 function round2(val: number): number {
 	return Math.round((val + Number.EPSILON) * 100) / 100;
@@ -1251,3 +1251,141 @@ export function transformSgb16i(
 ): GrantTransformationResult {
 	return transformSgb16iMulti([{ participant, records: rawRecords }], options);
 }
+
+/**
+ * Generates standard sample datasets (60 months) adhering strictly to AWO Berlin tariff tables
+ * (Tarifvertrag AWO Berlin ab 09/2025) and SGB 16i grant conditions:
+ * - Participant 1: Max Mustermann (EG2 / ES1, 30h, AOK Nordost, start 01.08.2026)
+ * - Participant 2: Erika Musterfrau (EG3 / ES2, 35h, Barmer, start 01.10.2026)
+ */
+export function generateStandardSgb16iDemoDatasets(): ParticipantDataset[] {
+	const p1: ParticipantInfo = {
+		name: 'Max Mustermann',
+		tariffGroup: 'EG2',
+		tariffStep: 'ES1',
+		runtimeStart: '01.08.2026',
+		runtimeEnd: '31.07.2031',
+		weeklyHours: 30,
+		fullTimeHours: 39,
+		sachkostenMonthly: 155,
+		childrenCount: 1,
+		healthInsuranceName: 'AOK Nordost (15,9%)',
+		defaultAgaRate: 0.23815,
+		jobcenterId: 'JC-BER-2026-081',
+		zgsId: 'ZGS-PR-4011'
+	};
+
+	const p2: ParticipantInfo = {
+		name: 'Erika Musterfrau',
+		tariffGroup: 'EG3',
+		tariffStep: 'ES2',
+		runtimeStart: '01.10.2026',
+		runtimeEnd: '30.09.2031',
+		weeklyHours: 35,
+		fullTimeHours: 39,
+		sachkostenMonthly: 155,
+		childrenCount: 0,
+		healthInsuranceName: 'Barmer (16,79%)',
+		defaultAgaRate: 0.2324,
+		jobcenterId: 'JC-BER-2026-082',
+		zgsId: 'ZGS-PR-4011'
+	};
+
+	function buildParticipantRecords(p: ParticipantInfo, durationMonths: number = 60): MonthlyRecord[] {
+		const startParts = p.runtimeStart.split('.');
+		const startParsed = {
+			day: parseInt(startParts[0], 10),
+			month: parseInt(startParts[1], 10),
+			year: parseInt(startParts[2], 10)
+		};
+		const initialStepNum = parseInt((p.tariffStep?.match(/\d+/) || ['1'])[0], 10) || 1;
+		const records: MonthlyRecord[] = [];
+		let currentDate = new Date(startParsed.year, startParsed.month - 1, 1);
+
+		for (let i = 0; i < durationMonths; i++) {
+			const y = currentDate.getFullYear();
+			const m = currentDate.getMonth() + 1;
+			const lastDay = new Date(y, m, 0).getDate();
+			const mStr = String(m).padStart(2, '0');
+
+			const stepNum = calculateTariffStepAtDate(
+				{ day: 1, month: m, year: y },
+				startParsed,
+				initialStepNum
+			);
+
+			const tariffInfo = getAwoTariffSalary(
+				p.tariffGroup,
+				stepNum,
+				y,
+				m,
+				p.weeklyHours,
+				p.fullTimeHours || 39
+			);
+
+			const fteSalary = tariffInfo?.fteSalary || 2674.27;
+			const partTimeSalary = tariffInfo?.partTimeSalary || round2((fteSalary / 39) * p.weeklyHours);
+			const jcFlatRate = round2(partTimeSalary * 0.19);
+			const jcTotalGross = round2(partTimeSalary + jcFlatRate);
+			const degPct = i < 24 ? 100 : i < 36 ? 90 : i < 48 ? 80 : 70;
+			const agaAmount = round2(partTimeSalary * p.defaultAgaRate);
+
+			records.push({
+				date: `${y}-${mStr}-${String(lastDay).padStart(2, '0')}`,
+				year: y,
+				month: m,
+				monthUnits: 1.0,
+				startDate: `01.${mStr}.${y}`,
+				endDate: `${String(lastDay).padStart(2, '0')}.${mStr}.${y}`,
+				fteSalary,
+				partTimeSalary,
+				weeklyHours: p.weeklyHours,
+				fullTimeHours: p.fullTimeHours || 39,
+				tariffGroup: p.tariffGroup,
+				tariffStep: `ES${stepNum}`,
+				jcFlatRateAmount: jcFlatRate,
+				jcTotalGross,
+				jcDegressionPct: degPct,
+				jcGrantAmount: round2((jcTotalGross * degPct) / 100),
+				agaRealRate: p.defaultAgaRate,
+				agaRealAmount: agaAmount,
+				totalEmployerCost: round2(partTimeSalary + agaAmount),
+				landSvShortfall: round2(partTimeSalary * (p.defaultAgaRate - 0.19)),
+				landDegressionAmount: round2((jcTotalGross * (100 - degPct)) / 100),
+				jszAmount: 0,
+				jszAgaAmount: 0,
+				isJszMonth: false,
+				sachkostenAmount: p.sachkostenMonthly ?? 155
+			});
+
+			currentDate = new Date(y, m, 1);
+		}
+
+		// Add compliant JSZ in December of each applicable year
+		const uniqueYears = Array.from(new Set(records.map((r) => r.year)));
+		for (const y of uniqueYears) {
+			const yearRecs = records.filter((r) => r.year === y);
+			const decRec = yearRecs.find((r) => r.month === 12);
+			if (!decRec) continue;
+
+			const activeMonths = yearRecs.reduce((sum, r) => sum + (r.monthUnits || 1.0), 0);
+			const sepRec = yearRecs.find((r) => r.month === 9) || yearRecs[0];
+			const sepSalary = sepRec.partTimeSalary;
+
+			const jszGross = round2(sepSalary * 0.85 * (activeMonths / 12));
+			const jszAga = round2(jszGross * p.defaultAgaRate);
+
+			decRec.isJszMonth = true;
+			decRec.jszAmount = jszGross;
+			decRec.jszAgaAmount = jszAga;
+		}
+
+		return records;
+	}
+
+	return [
+		{ participant: p1, records: buildParticipantRecords(p1, 60) },
+		{ participant: p2, records: buildParticipantRecords(p2, 60) }
+	];
+}
+

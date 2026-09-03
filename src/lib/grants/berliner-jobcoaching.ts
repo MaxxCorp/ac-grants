@@ -393,6 +393,17 @@ export function generateStandardJobCoachingDemoDatasets(year: number = 2027): Pa
 			const gross = tariffInfo.partTimeSalary;
 			const agaAmount = round2(gross * p.defaultAgaRate);
 
+			const isDec = m === 12;
+			let jszAmount = 0;
+			let jszAgaAmount = 0;
+			if (isDec) {
+				const sepStepNum = calculateTariffStepAtDate({ day: 1, month: 9, year }, { day: 1, month: startMonth, year: startYear }, 1);
+				const sepTariff = getAwoTariffSalary(p.tariffGroup, sepStepNum, year, 9, p.weeklyHours, p.fullTimeHours);
+				const sepGross = sepTariff ? sepTariff.partTimeSalary : gross;
+				jszAmount = round2(sepGross * 0.85);
+				jszAgaAmount = round2(jszAmount * p.defaultAgaRate);
+			}
+
 			recs.push({
 				date: `${year}-${mStr}-${String(lastDay).padStart(2, '0')}`,
 				year,
@@ -415,9 +426,9 @@ export function generateStandardJobCoachingDemoDatasets(year: number = 2027): Pa
 				totalEmployerCost: round2(gross + agaAmount),
 				landSvShortfall: 0,
 				landDegressionAmount: 0,
-				jszAmount: 0,
-				jszAgaAmount: 0,
-				isJszMonth: false,
+				jszAmount,
+				jszAgaAmount,
+				isJszMonth: isDec,
 				sachkostenAmount: 0
 			});
 		}
@@ -831,6 +842,8 @@ export function transformBerlinerJobCoachingMulti(
 		options,
 		rawMonthlyRecords: allParticipantsData.flatMap((p) => p.records),
 		insuranceFunds: primaryParticipant.insuranceFunds,
+		tariffValidation: allParticipantsData[0]?.tariffValidation,
+		tvlComparison: allParticipantsData[0]?.tvlComparison,
 		jobCoachingData
 	};
 }
