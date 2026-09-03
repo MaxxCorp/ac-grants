@@ -38,20 +38,39 @@ export function generateFinanzierungsplanWorkbook(
 		}
 	}
 
-	const setCell = (addr: string, val: string | number | undefined | null, formula?: string) => {
+	const CURRENCY_FMT = '#,##0.00 "€"';
+
+	const setCell = (addr: string, val: string | number | undefined | null, formula?: string, numFmt?: string) => {
 		if (formula) {
-			ws[addr] = { t: typeof val === 'number' ? 'n' : 's', v: val ?? 0, f: formula };
+			ws[addr] = {
+				t: typeof val === 'number' ? 'n' : 's',
+				v: val ?? 0,
+				f: formula,
+				z: numFmt !== undefined ? numFmt : (typeof val === 'number' ? CURRENCY_FMT : undefined)
+			};
 			return;
 		}
 		if (val === undefined || val === null) return;
 		if (typeof val === 'number') {
-			ws[addr] = { t: 'n', v: val };
+			ws[addr] = { t: 'n', v: val, z: numFmt !== undefined ? numFmt : CURRENCY_FMT };
 		} else {
 			ws[addr] = { t: 's', v: String(val) };
 		}
 	};
 
 	if (!templateBuffer) {
+		ws['!cols'] = [
+			{ wch: 4 },  // A
+			{ wch: 40 }, // B (Name / Bezeichnung)
+			{ wch: 22 }, // C (Einstufung nach TV-L / Betrag)
+			{ wch: 18 }, // D (Januar AN-Brutto)
+			{ wch: 18 }, // E (AG-Anteil Januar)
+			{ wch: 22 }, // F (Februar - Juni AN-Brutto)
+			{ wch: 22 }, // G (AG-Anteil Februar - Juni)
+			{ wch: 22 }, // H (Juli - August AN-Brutto)
+			{ wch: 22 }, // I (AG-Anteil Juli - August)
+			{ wch: 20 }  // J (Summe)
+		];
 		setCell('B2', `Finanzierungsplan für das Berliner JobCoaching - Kurzantrag - ${activeYear}`);
 		setCell('B9', 'Personalkosten');
 		setCell('B10', 'Jobcoach (JC)           namentliche Nennung');

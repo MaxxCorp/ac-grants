@@ -108,13 +108,44 @@ describe('Berliner JobCoaching Grant Instrument', () => {
 		expect(generatedBuf).toBeDefined();
 		expect(generatedBuf.length).toBeGreaterThan(1000);
 
-		// Parse the generated workbook to verify structure
-		const genWb = XLSX.read(generatedBuf, { type: 'buffer' });
+		// Parse the generated workbook to verify structure, column widths, and formatting
+		const genWb = XLSX.read(generatedBuf, { type: 'buffer', cellStyles: true });
 		expect(genWb.SheetNames).toContain('2027');
 		const sheet = genWb.Sheets['2027'];
 		expect(sheet['B12']?.v).toBe('Alex Mustercoach');
 		expect(sheet['B31']?.v).toBe('Sam Mustertrainer');
 		expect(sheet['J44']?.v).toBe(jc.totalBetreuung);
 		expect(sheet['C58']?.v).toBe(jc.totalFunding);
+
+		// Verify column widths exist and are configured for readability
+		expect(sheet['!cols']).toBeDefined();
+		expect(sheet['!cols']!.length).toBe(10);
+		expect(sheet['!cols']![1].wch).toBe(40); // Column B width
+		expect(sheet['!cols']![9].wch).toBe(20); // Column J width
+	});
+
+	it('generates browser automation payload and Playwright script for Berliner JobCoaching', async () => {
+		const { generateAutomationPayload, generatePlaywrightScript } = await import('#lib/automation/bridge');
+		const datasets = generateStandardJobCoachingDemoDatasets(2027);
+		const result = transformBerlinerJobCoachingMulti(datasets, {
+			includeOffsetRows: true,
+			runtimeStartScope: 'custom',
+			customStartDate: '01.01.2027',
+			runtimeScope: 'custom',
+			customEndDate: '31.12.2027'
+		});
+
+		const payload = generateAutomationPayload(result);
+		expect(payload.grantSchemeId).toBe('berliner-jobcoaching');
+		expect(payload.steps.length).toBeGreaterThanOrEqual(1);
+
+		const betreuungStep = payload.steps.find((s) => s.tabId === 'betreuung');
+		expect(betreuungStep).toBeDefined();
+		expect(betreuungStep!.rows.length).toBe(4);
+
+		const script = generatePlaywrightScript(result);
+		expect(script).toContain("Submit Grant Application for");
+		expect(script).toContain("berliner-jobcoaching");
+		expect(script).toContain("test('Submit Grant Application");
 	});
 });
