@@ -41,7 +41,8 @@ export interface ParticipantInfo {
 export interface BerechnungsblattGeneratorOptions {
 	employeeName: string;
 	startDate: string; // YYYY-MM-DD or DD.MM.YYYY
-	durationMonths?: number; // default 60
+	endDate?: string; // YYYY-MM-DD or DD.MM.YYYY (optional flexible end date)
+	durationMonths?: number; // default 60 (or computed from endDate)
 	tariffGroup?: string; // default "EG2"
 	tariffStep?: string; // default "ES1"
 	healthInsuranceName?: string; // default "Barmer"

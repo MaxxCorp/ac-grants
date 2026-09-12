@@ -251,6 +251,7 @@ export const generateBerechnungsblatt = command(
 	v.object({
 		employeeName: v.string(),
 		startDate: v.string(),
+		endDate: v.optional(v.string()),
 		durationMonths: v.optional(v.number(), 60),
 		tariffGroup: v.optional(v.string(), 'EG2'),
 		tariffStep: v.optional(v.string(), 'ES1'),

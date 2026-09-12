@@ -17,6 +17,7 @@ import {
 	COLOR_SUM_BG,
 	parseDateInput,
 	calculateEndDate,
+	calculateDurationMonthsBetween,
 	formatDateDMY,
 	getInsuranceFundByName,
 	calculateMilestones,
@@ -34,6 +35,7 @@ export {
 	COLOR_SUM_BG,
 	parseDateInput,
 	calculateEndDate,
+	calculateDurationMonthsBetween,
 	formatDateDMY,
 	getInsuranceFundByName,
 	calculateMilestones,
@@ -43,8 +45,8 @@ export {
 
 export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: BerechnungsblattGeneratorOptions): void {
 	const start = parseDateInput(options.startDate);
-	const durationMonths = options.durationMonths || 60;
-	const end = calculateEndDate(start, durationMonths);
+	const end = options.endDate ? parseDateInput(options.endDate) : calculateEndDate(start, options.durationMonths || 60);
+	const durationMonths = options.durationMonths || calculateDurationMonthsBetween(start, end);
 	const group = options.tariffGroup || 'EG2';
 	const step = options.tariffStep || 'ES1';
 	const initialStepNum = parseInt(step.replace(/\D/g, ''), 10) || 1;
@@ -282,7 +284,23 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 			}
 
 			// Active month
-			if (monthIndex === startIndex) {
+			if (monthIndex === startIndex && monthIndex === endIndex) {
+				// Start and end are within the same month
+				const remainingUnits = durationMonths - cumulativeActiveUnits;
+				const units = remainingUnits > 0 ? remainingUnits : (start.day === 1 && end.day >= lastDayOfMonth ? 1.0 : 0.5);
+				const dateDay = end.day < lastDayOfMonth ? end.day : lastDayOfMonth;
+				const deg = getDegression(cumulativeActiveUnits);
+				cumulativeActiveUnits += units;
+				yearRows.push({
+					year: y,
+					month: m,
+					isActive: true,
+					dateStr: `${mStr}/${dateDay}/${yy}`,
+					monthUnits: units,
+					degression: deg,
+					isLastActiveRow: true
+				});
+			} else if (monthIndex === startIndex) {
 				// Start month
 				const units = start.day === 1 ? 1.0 : 0.5;
 				const dateDay = start.day === 1 ? lastDayOfMonth : start.day;
@@ -298,7 +316,7 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 			} else if (monthIndex === endIndex) {
 				// Final active month
 				const remainingUnits = durationMonths - cumulativeActiveUnits;
-				const units = remainingUnits < 1.0 ? remainingUnits : 1.0;
+				const units = remainingUnits < 1.0 && remainingUnits > 0 ? remainingUnits : 1.0;
 				const dateDay = end.day < lastDayOfMonth ? end.day : lastDayOfMonth;
 				const deg = getDegression(cumulativeActiveUnits);
 				cumulativeActiveUnits += units;
@@ -439,7 +457,7 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 				const salaryInfo = getAwoTariffSalary(currentGroup, currentStep, y, r.month, weeklyHours, fullTimeHours);
 				const fteSalary = salaryInfo?.fteSalary || 2674.27;
 
-				const partTimeSalary = (fteSalary * weeklyHours / 39) * r.monthUnits;
+				const partTimeSalary = (fteSalary * weeklyHours / fullTimeHours) * r.monthUnits;
 				const jcFlatRate = partTimeSalary * 0.19;
 				const jcTotalGross = partTimeSalary + jcFlatRate;
 				const egzJc = (jcTotalGross * r.degression) / 100;
@@ -463,7 +481,7 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 				const totalEmployerCostWithBg = totalEmployerCost + bgAmount;
 
 				if (r.month === 9 || !septemberRowNumber) {
-					sepSalaryValue = (fteSalary * weeklyHours / 39);
+					sepSalaryValue = (fteSalary * weeklyHours / fullTimeHours);
 					sepAgaValue = sepSalaryValue * totalAgaRate;
 					sepBgRate = rowBgRate;
 					sepBgValue = sepSalaryValue * rowBgRate;
@@ -475,9 +493,9 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 				cellF.value = fteSalary;
 				cellF.numFmt = '#,##0.00 €';
 
-				// Col G (AN-Brutto): =F#*($J$2/39)*B#
+				// Col G (AN-Brutto): =F#*($J$2/fullTimeHours)*B#
 				const cellG = wsGehalt.getCell(`G${rowNum}`);
-				cellG.value = { formula: `F${rowNum}*($J$2/39)*B${rowNum}`, result: partTimeSalary };
+				cellG.value = { formula: `F${rowNum}*($J$2/${fullTimeHours})*B${rowNum}`, result: partTimeSalary };
 				cellG.numFmt = '#,##0.00 €';
 
 				// Col H (JC Pauschale): =SUM(G#:G#)*19%

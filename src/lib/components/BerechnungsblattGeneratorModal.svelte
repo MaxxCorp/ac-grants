@@ -1,6 +1,13 @@
 <script lang="ts">
 	import { generateBerechnungsblatt } from '#lib/grant.remote';
-	import { calculateMilestones } from '#lib/grants/generator-milestones';
+	import {
+		calculateMilestones,
+		parseDateInput,
+		calculateEndDate,
+		calculateDurationMonthsBetween,
+		formatDateISO,
+		formatDateDMY
+	} from '#lib/grants/generator-milestones';
 	import type {
 		GrantTransformationResult,
 		TariffReclassification,
@@ -54,15 +61,60 @@
 		return `${y}-${String(m).padStart(2, '0')}-01`;
 	}
 
+	function computeEndDateFromMonths(startStr: string, months: number): string {
+		try {
+			const parsed = parseDateInput(startStr);
+			const endObj = calculateEndDate(parsed, months);
+			return formatDateISO(endObj);
+		} catch {
+			return '';
+		}
+	}
+
 	// Form State
+	const initialStartDate = getDefaultStartDate();
 	let employeeName = $state('Frau Maria Musterfrau');
-	let startDate = $state(getDefaultStartDate());
+	let startDate = $state(initialStartDate);
 	let durationMonths = $state(60);
+	let endDate = $state(computeEndDateFromMonths(initialStartDate, 60));
+	let weeklyHours = $state(30);
+	let fullTimeHours = $state(39);
+	let partTimePercentage = $derived(((weeklyHours / fullTimeHours) * 100).toFixed(1).replace('.', ','));
 	let tariffGroup = $state('EG2');
 	let tariffStep = $state('ES1');
 	let healthInsuranceName = $state('Barmer');
 	let jobcenterId = $state('');
 	let zgsId = $state('');
+
+	function handleStartDateChange(newStart: string) {
+		startDate = newStart;
+		if (newStart && durationMonths > 0) {
+			endDate = computeEndDateFromMonths(newStart, durationMonths);
+		}
+	}
+
+	function handleDurationChange(newMonths: number) {
+		durationMonths = newMonths;
+		if (startDate && newMonths > 0) {
+			endDate = computeEndDateFromMonths(startDate, newMonths);
+		}
+	}
+
+	function handleEndDateChange(newEnd: string) {
+		endDate = newEnd;
+		if (startDate && newEnd) {
+			try {
+				const startObj = parseDateInput(startDate);
+				const endObj = parseDateInput(newEnd);
+				const calcMonths = calculateDurationMonthsBetween(startObj, endObj);
+				if (calcMonths > 0) {
+					durationMonths = calcMonths;
+				}
+			} catch {
+				// Keep current duration if parse fails
+			}
+		}
+	}
 
 	// Reclassifications (Umgruppierungen & Stufenanpassungen)
 	let reclassifications = $state<TariffReclassification[]>([]);
@@ -235,8 +287,6 @@
 
 	// Advanced customizations
 	let showAdvanced = $state(false);
-	let weeklyHours = $state(30);
-	let fullTimeHours = $state(39);
 	let sachkostenMonthly = $state(155);
 	let childrenCount = $state(0);
 	let jszPercentage = $state(85);
@@ -271,6 +321,7 @@
 			return calculateMilestones({
 				employeeName,
 				startDate,
+				endDate,
 				durationMonths,
 				tariffGroup,
 				tariffStep,
@@ -309,6 +360,11 @@
 			return;
 		}
 
+		if (startDate && endDate && endDate < startDate) {
+			errorMessage = 'Das Enddatum muss nach dem Startdatum liegen.';
+			return;
+		}
+
 		try {
 			isGenerating = true;
 			errorMessage = null;
@@ -316,6 +372,7 @@
 			const response = await generateBerechnungsblatt({
 				employeeName,
 				startDate,
+				endDate,
 				durationMonths,
 				tariffGroup,
 				tariffStep,
@@ -447,29 +504,63 @@
 
 					<!-- Start Date -->
 					<div class="form-group">
-						<label for="startDate">Startdatum (Beginn der Beschäftigung) <span class="required">*</span></label>
+						<label for="startDate">Startdatum (Beginn) <span class="required">*</span></label>
 						<input
 							type="date"
 							id="startDate"
-							bind:value={startDate}
+							value={startDate}
+							oninput={(e) => handleStartDateChange(e.currentTarget.value)}
+							onchange={(e) => handleStartDateChange(e.currentTarget.value)}
 							class="form-input"
+							required
 						/>
 						<span class="field-hint">Standard: 1. des nächsten Monats</span>
 					</div>
 
-					<!-- Duration -->
+					<!-- Flexible End Date -->
 					<div class="form-group">
-						<label for="durationMonths">Laufzeit</label>
-						<div class="pill-selector">
-							{#each [12, 24, 36, 48, 60] as months}
-								<button
-									type="button"
-									class="pill-btn {durationMonths === months ? 'active' : ''}"
-									onclick={() => (durationMonths = months)}
-								>
-									{months / 12} {months === 12 ? 'Jahr' : 'Jahre'} ({months} M.)
-								</button>
-							{/each}
+						<div class="label-row">
+							<label for="endDate">Enddatum (Geplantes Ende) <span class="required">*</span></label>
+							<span class="runtime-badge">
+								{durationMonths} {durationMonths === 1 ? 'Monat' : 'Monate'}
+								{#if durationMonths >= 12}
+									({(durationMonths / 12).toFixed(1).replace('.', ',')} J.)
+								{/if}
+							</span>
+						</div>
+						<input
+							type="date"
+							id="endDate"
+							value={endDate}
+							oninput={(e) => handleEndDateChange(e.currentTarget.value)}
+							onchange={(e) => handleEndDateChange(e.currentTarget.value)}
+							class="form-input"
+							min={startDate}
+							required
+						/>
+						<span class="field-hint">Frei wählbares Befristungs- oder Förderende</span>
+					</div>
+
+					<!-- Duration Presets -->
+					<div class="form-group col-span-2 duration-presets-group">
+						<div class="duration-presets-bar">
+							<span class="preset-title">⚡ Schnellauswahl Laufzeit:</span>
+							<div class="pill-selector">
+								{#each [12, 24, 36, 48, 60] as months}
+									<button
+										type="button"
+										class="pill-btn {durationMonths === months ? 'active' : ''}"
+										onclick={() => handleDurationChange(months)}
+									>
+										{months / 12} {months === 12 ? 'Jahr' : 'Jahre'} ({months} M.)
+									</button>
+								{/each}
+								{#if ![12, 24, 36, 48, 60].includes(durationMonths)}
+									<span class="custom-duration-pill">
+										Individuell: {durationMonths} M.
+									</span>
+								{/if}
+							</div>
 						</div>
 					</div>
 
@@ -490,6 +581,50 @@
 								<option value={stp}>{stp} {stp === 'ES1' ? '(Standard Neueinstellung)' : ''}</option>
 							{/each}
 						</select>
+					</div>
+
+					<!-- Settable Hours / Week (Prominent in main form) -->
+					<div class="form-group col-span-2 weekly-hours-card">
+						<div class="hours-header-row">
+							<div class="hours-title-left">
+								<label for="weeklyHours" class="main-field-label">Wöchentliche Arbeitszeit</label>
+								<span class="hours-sub-hint">Grundlage für Teilzeitberechnung und Förderbetrag</span>
+							</div>
+							<div class="hours-live-badge">
+								{#if weeklyHours === fullTimeHours}
+									<span class="badge-fulltime">100% Vollzeit ({fullTimeHours} Std.)</span>
+								{:else}
+									<span class="badge-parttime">{partTimePercentage}% Teilzeit ({weeklyHours} / {fullTimeHours} Std.)</span>
+								{/if}
+							</div>
+						</div>
+
+						<div class="hours-control-row">
+							<div class="input-with-unit hours-input-box">
+								<input
+									type="number"
+									id="weeklyHours"
+									bind:value={weeklyHours}
+									min="1"
+									max="45"
+									step="0.5"
+									class="form-input"
+								/>
+								<span class="unit">Std./Woche</span>
+							</div>
+
+							<div class="hours-quick-pills">
+								{#each [19.5, 20, 25, 30, 35, 39] as h}
+									<button
+										type="button"
+										class="pill-btn hours-pill {weeklyHours === h ? 'active' : ''}"
+										onclick={() => (weeklyHours = h)}
+									>
+										{h} {h === 30 ? 'Std. (§ 16i)' : (h === 39 ? 'Std. (Vollzeit)' : (h === 19.5 ? 'Std. (50%)' : 'Std.'))}
+									</button>
+								{/each}
+							</div>
+						</div>
 					</div>
 
 					<!-- Krankenkasse -->
@@ -1015,7 +1150,7 @@
 						class="toggle-advanced-btn"
 						onclick={() => (showAdvanced = !showAdvanced)}
 					>
-						<span>⚙️ Weitere Einstellungen (Wochenstunden, Sachkosten, Sonderzahlung)</span>
+						<span>⚙️ Weitere Einstellungen (Vollzeit-Referenz, Sachkosten, Sonderzahlung)</span>
 						<svg
 							class="chevron {showAdvanced ? 'rotated' : ''}"
 							width="16"
@@ -1033,20 +1168,20 @@
 						<div class="advanced-body">
 							<div class="form-grid">
 								<div class="form-group">
-									<label for="weeklyHours">Wöchentliche Arbeitszeit</label>
+									<label for="fullTimeHours">Referenz-Vollzeitstunden</label>
 									<div class="input-with-unit">
 										<input
 											type="number"
-											id="weeklyHours"
-											bind:value={weeklyHours}
-											min="10"
-											max="40"
+											id="fullTimeHours"
+											bind:value={fullTimeHours}
+											min="35"
+											max="42"
 											step="0.5"
 											class="form-input"
 										/>
 										<span class="unit">Std./Woche</span>
 									</div>
-									<span class="field-hint">Standard § 16i: 30 Stunden (Vollzeit: 39 Std.)</span>
+									<span class="field-hint">Tarifliche Vollzeit nach TV-L / AWO: 39,0 Std.</span>
 								</div>
 
 								<div class="form-group">
@@ -2355,5 +2490,134 @@
 		font-size: 0.78rem;
 		color: #94a3b8;
 		line-height: 1.35;
+	}
+
+	/* Flexible End Date & Duration Presets */
+	.runtime-badge {
+		font-size: 0.775rem;
+		font-weight: 600;
+		color: #818cf8;
+		background: rgba(99, 102, 241, 0.12);
+		border: 1px solid rgba(99, 102, 241, 0.25);
+		padding: 0.15rem 0.5rem;
+		border-radius: 6px;
+	}
+
+	.duration-presets-group {
+		margin-top: -0.25rem;
+	}
+
+	.duration-presets-bar {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		background: rgba(15, 23, 42, 0.4);
+		border: 1px dashed rgba(255, 255, 255, 0.12);
+		border-radius: 10px;
+		padding: 0.5rem 0.85rem;
+		flex-wrap: wrap;
+	}
+
+	.preset-title {
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: #94a3b8;
+		white-space: nowrap;
+	}
+
+	.custom-duration-pill {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.45rem 0.65rem;
+		border-radius: 8px;
+		font-size: 0.8rem;
+		font-weight: 600;
+		background: rgba(139, 92, 246, 0.2);
+		border: 1px solid rgba(139, 92, 246, 0.4);
+		color: #c4b5fd;
+	}
+
+	/* Weekly Hours Primary Card */
+	.weekly-hours-card {
+		background: rgba(15, 23, 42, 0.5);
+		border: 1px solid rgba(99, 102, 241, 0.25);
+		border-radius: 12px;
+		padding: 0.85rem 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.65rem;
+	}
+
+	.hours-header-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	.hours-title-left {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+	}
+
+	.hours-title-left .main-field-label {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: #f1f5f9;
+	}
+
+	.hours-sub-hint {
+		font-size: 0.75rem;
+		color: #94a3b8;
+	}
+
+	.hours-live-badge {
+		display: flex;
+		align-items: center;
+	}
+
+	.badge-fulltime {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #34d399;
+		background: rgba(16, 185, 129, 0.15);
+		border: 1px solid rgba(16, 185, 129, 0.35);
+		padding: 0.2rem 0.55rem;
+		border-radius: 6px;
+	}
+
+	.badge-parttime {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: #38bdf8;
+		background: rgba(56, 189, 248, 0.15);
+		border: 1px solid rgba(56, 189, 248, 0.35);
+		padding: 0.2rem 0.55rem;
+		border-radius: 6px;
+	}
+
+	.hours-control-row {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.hours-input-box {
+		width: 140px;
+		flex-shrink: 0;
+	}
+
+	.hours-quick-pills {
+		display: flex;
+		gap: 0.35rem;
+		flex-wrap: wrap;
+		align-items: center;
+	}
+
+	.hours-pill {
+		padding: 0.4rem 0.65rem;
 	}
 </style>

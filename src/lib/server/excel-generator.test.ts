@@ -446,4 +446,74 @@ describe('Berechnungsblatt Generator', () => {
 		expect(tvlWb.worksheets[0].name).toContain('Max');
 		expect(tvlWb.worksheets[1].name).toContain('Erika');
 	});
+
+	it('supports fully flexible end date (e.g. 15 months: 01.10.2026 to 31.12.2027), generating accurate milestones and matching records', async () => {
+		const options: BerechnungsblattGeneratorOptions = {
+			employeeName: 'Herr Frank Flexibel',
+			startDate: '2026-10-01',
+			endDate: '2027-12-31',
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			healthInsuranceName: 'Barmer',
+			weeklyHours: 30,
+			sachkostenMonthly: 155
+		};
+
+		// 1. Milestones
+		const milestones = calculateMilestones(options);
+		const exitMilestone = milestones.find(m => m.type === 'exit');
+		expect(exitMilestone).toBeDefined();
+		expect(exitMilestone?.year).toBe(2027);
+		expect(exitMilestone?.month).toBe(12);
+		expect(exitMilestone?.dateStr).toBe('31.12.2027');
+
+		// 2. Excel Generation
+		const buf = await generateBerechnungsblattExcel(options);
+		const parsed = parseExcelBuffer(buf);
+
+		expect(parsed.participant.name).toBe('Herr Frank Flexibel');
+		expect(parsed.participant.runtimeStart).toBe('01.10.2026');
+		expect(parsed.participant.runtimeEnd).toBe('31.12.2027');
+
+		// 15 active months (10/2026 - 12/2027)
+		expect(parsed.records.length).toBe(15);
+		const totalUnits = parsed.records.reduce((sum, r) => sum + r.monthUnits, 0);
+		expect(totalUnits).toBe(15);
+
+		// Transform with SGB 16i
+		const result = transformSgb16i(parsed.records, parsed.participant, {
+			includeOffsetRows: true
+		});
+		expect(result.controls.overallStatus).toBe('MATCH');
+		expect(result.runtimeMonths).toBe(15);
+	});
+
+	it('supports custom settable weekly hours (e.g. 20h and 39h full-time) with matching part-time formulas and SGB 16i transformation', async () => {
+		const opt20h: BerechnungsblattGeneratorOptions = {
+			employeeName: 'Frau Halbtag',
+			startDate: '2026-10-01',
+			durationMonths: 24,
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			weeklyHours: 20,
+			fullTimeHours: 39,
+			healthInsuranceName: 'Barmer'
+		};
+
+		const buf = await generateBerechnungsblattExcel(opt20h);
+		const parsed = parseExcelBuffer(buf);
+
+		expect(parsed.participant.weeklyHours).toBe(20);
+		expect(parsed.records.length).toBe(24);
+
+		// FTE is approx 2674.27, part-time salary for 20h is 2674.27 * 20 / 39 = 1371.42
+		expect(parsed.records[0].weeklyHours).toBe(20);
+		expect(parsed.records[0].partTimeSalary).toBeCloseTo((parsed.records[0].fteSalary * 20) / 39, 1);
+
+		const result = transformSgb16i(parsed.records, parsed.participant, {
+			includeOffsetRows: true
+		});
+		expect(result.controls.overallStatus).toBe('MATCH');
+		expect(result.runtimeMonths).toBe(24);
+	});
 });

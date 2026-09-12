@@ -103,6 +103,43 @@ export function formatDateDMY(d: { year: number; month: number; day: number }): 
 }
 
 /**
+ * Formats date as YYYY-MM-DD
+ */
+export function formatDateISO(d: { year: number; month: number; day: number }): string {
+	return `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`;
+}
+
+/**
+ * Calculates active employment months between two dates.
+ * Considers standard 1st-of-month (1.0 unit) or mid-month (0.5 unit) boundaries.
+ */
+export function calculateDurationMonthsBetween(
+	startDate: { year: number; month: number; day: number },
+	endDate: { year: number; month: number; day: number }
+): number {
+	const sIndex = startDate.year * 12 + startDate.month;
+	const eIndex = endDate.year * 12 + endDate.month;
+	if (eIndex < sIndex) return 0;
+
+	if (sIndex === eIndex) {
+		const lastDay = new Date(startDate.year, startDate.month, 0).getDate();
+		if (startDate.day === 1 && endDate.day >= lastDay) return 1.0;
+		if (startDate.day === 1 && endDate.day <= 15) return 0.5;
+		return Math.max(0.1, Math.min(1.0, Math.round(((endDate.day - startDate.day + 1) / lastDay) * 100) / 100));
+	}
+
+	const startUnits = startDate.day === 1 ? 1.0 : 0.5;
+	const intermediateMonths = Math.max(0, eIndex - sIndex - 1);
+	const lastDayOfEndMonth = new Date(endDate.year, endDate.month, 0).getDate();
+	let endUnits = 1.0;
+	if (endDate.day < lastDayOfEndMonth) {
+		endUnits = endDate.day <= 15 ? 0.5 : (endDate.day >= 28 ? 1.0 : Math.round((endDate.day / lastDayOfEndMonth) * 100) / 100);
+	}
+
+	return Math.round((startUnits + intermediateMonths + endUnits) * 100) / 100;
+}
+
+/**
  * Returns the insurance fund details for a fund name.
  */
 export function getInsuranceFundByName(name = 'Barmer') {
@@ -221,8 +258,8 @@ export function resolveTariffStateAtDate(
  */
 export function calculateMilestones(options: BerechnungsblattGeneratorOptions): GeneratorMilestone[] {
 	const start = parseDateInput(options.startDate);
-	const durationMonths = options.durationMonths || 60;
-	const end = calculateEndDate(start, durationMonths);
+	const end = options.endDate ? parseDateInput(options.endDate) : calculateEndDate(start, options.durationMonths || 60);
+	const durationMonths = options.durationMonths || calculateDurationMonthsBetween(start, end);
 	const group = options.tariffGroup || 'EG2';
 	const initialStepNum = parseInt((options.tariffStep || 'ES1').replace(/\D/g, ''), 10) || 1;
 	const weeklyHours = options.weeklyHours || 30;
