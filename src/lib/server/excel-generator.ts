@@ -23,6 +23,7 @@ import {
 	resolveTariffStateAtDate,
 	getEffectiveBgRate
 } from '#lib/grants/generator-milestones';
+import { DEFAULT_EFFECTIVE_BG_RATE_DECIMAL } from '#lib/grants/bg-calculator';
 
 export {
 	COLOR_STUFENAUFSTIEG,
@@ -53,7 +54,7 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 	const childrenCount = options.childrenCount ?? 0;
 	const healthFund = getInsuranceFundByName(options.healthInsuranceName || 'Barmer');
 	const defaultAgaRate = options.customAgaRate || healthFund.agaRate;
-	const defaultBgRate = options.bgRate ?? 0.018;
+	const defaultBgRate = options.bgRate ?? DEFAULT_EFFECTIVE_BG_RATE_DECIMAL;
 	const customBgTimeline = options.customBgTimeline;
 	const reclassifications = options.reclassifications || [];
 	const jszPct = (options.jszPercentage ?? 85) / 100;

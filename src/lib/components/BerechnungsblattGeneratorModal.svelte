@@ -7,6 +7,22 @@
 		BgRatePeriod,
 		AgaRatePeriod
 	} from '#lib/types/grant';
+	import type { BgProviderType } from '#lib/types/bg';
+	import {
+		BGW_TARIFSTELLEN,
+		VBG_TARIFSTELLEN,
+		BGW_BEITRAGSFUSS_GEMEINNUETZIG,
+		BGW_BEITRAGSFUSS_GEWERBLICH,
+		BGW_AUSGLEICHSUMLAGE_DEFAULT,
+		calculateBgwRate,
+		calculateVbgRate,
+		calculateManualRate,
+		getBgwTarifstelle
+	} from '#lib/grants/bg-calculator';
+	import {
+		getOrganizationBgSettings,
+		saveOrganizationBgSettings
+	} from '#lib/grants/organization-settings';
 
 	let {
 		isOpen = $bindable(false),
@@ -75,16 +91,97 @@
 		reclassifications = reclassifications.filter(r => r.id !== id);
 	}
 
-	// Berufsgenossenschaft (Gesetzliche Unfallversicherung)
-	let bgRate = $state(1.80); // in percent (e.g. 1.80%)
+	// Berufsgenossenschaft (Gesetzliche Unfallversicherung) Multi-Provider Engine
+	let bgProvider = $state<BgProviderType>('bgw');
+	let bgwIsNonProfit = $state(true);
+	let bgwTarifstelleCode = $state('ts-14');
+	let bgwDangerClassOverride = $state<number | undefined>(undefined);
+	let bgwBeitragsfussOverride = $state<number | undefined>(undefined);
+	let bgwAusgleichsumlage = $state(BGW_AUSGLEICHSUMLAGE_DEFAULT);
+	let bgwSurcharge = $state(0.0);
+
+	let vbgTarifstelleCode = $state('vbg-ts-26');
+	let vbgDangerClass = $state(0.33);
+	let vbgBeitragsfuss = $state(4.00);
+
+	let manualBgRatePercent = $state(0.681);
+
+	let showBgDetails = $state(false);
 	let showBgTimeline = $state(false);
 	let bgTimeline = $state<BgRatePeriod[]>([]);
+	let orgSettingsSavedToast = $state(false);
 
-	const PRESET_BG_RATES = [
-		{ label: 'BGW Standard', rate: 1.80, note: 'Wohlfahrtspflege & Gesundheit' },
-		{ label: 'BGW Erhöht', rate: 2.00, note: 'Gefahrtarif mit Risikozuschlag' },
-		{ label: 'VBG', rate: 1.50, note: 'Verwaltungs-Berufsgenossenschaft' }
-	];
+	// Load organization defaults on initialization
+	const initialOrgSettings = getOrganizationBgSettings();
+	bgProvider = initialOrgSettings.provider;
+	bgwIsNonProfit = initialOrgSettings.bgw.isNonProfit;
+	bgwTarifstelleCode = initialOrgSettings.bgw.tarifstelleCode;
+	bgwDangerClassOverride = initialOrgSettings.bgw.dangerClassOverride;
+	bgwBeitragsfussOverride = initialOrgSettings.bgw.beitragsfussOverride;
+	bgwAusgleichsumlage = initialOrgSettings.bgw.ausgleichsumlageRate ?? BGW_AUSGLEICHSUMLAGE_DEFAULT;
+	bgwSurcharge = initialOrgSettings.bgw.surchargePercentage ?? 0.0;
+	vbgTarifstelleCode = initialOrgSettings.vbg.tarifstelleCode || 'vbg-ts-26';
+	vbgDangerClass = initialOrgSettings.vbg.dangerClass;
+	vbgBeitragsfuss = initialOrgSettings.vbg.beitragsfuss;
+	manualBgRatePercent = initialOrgSettings.manualRatePercent;
+
+	function handleVbgPresetChange(code: string) {
+		vbgTarifstelleCode = code;
+		const found = VBG_TARIFSTELLEN.find(t => t.code === code);
+		if (found) {
+			vbgDangerClass = found.dangerClass;
+		}
+	}
+
+	function handleSaveOrgDefaults() {
+		saveOrganizationBgSettings({
+			provider: bgProvider,
+			bgw: {
+				isNonProfit: bgwIsNonProfit,
+				tarifstelleCode: bgwTarifstelleCode,
+				dangerClassOverride: bgwDangerClassOverride,
+				beitragsfussOverride: bgwBeitragsfussOverride,
+				ausgleichsumlageRate: bgwAusgleichsumlage,
+				surchargePercentage: bgwSurcharge
+			},
+			vbg: {
+				tarifstelleCode: vbgTarifstelleCode,
+				dangerClass: vbgDangerClass,
+				beitragsfuss: vbgBeitragsfuss
+			},
+			manualRatePercent: manualBgRatePercent
+		});
+		orgSettingsSavedToast = true;
+		setTimeout(() => {
+			orgSettingsSavedToast = false;
+		}, 3000);
+	}
+
+	let bgCalculation = $derived.by(() => {
+		if (bgProvider === 'bgw') {
+			return calculateBgwRate({
+				isNonProfit: bgwIsNonProfit,
+				tarifstelleCode: bgwTarifstelleCode,
+				dangerClassOverride: bgwDangerClassOverride,
+				beitragsfussOverride: bgwBeitragsfussOverride,
+				ausgleichsumlageRate: bgwAusgleichsumlage,
+				surchargePercentage: bgwSurcharge
+			});
+		} else if (bgProvider === 'vbg') {
+			return calculateVbgRate({
+				tarifstelleCode: vbgTarifstelleCode,
+				dangerClass: vbgDangerClass,
+				beitragsfuss: vbgBeitragsfuss
+			});
+		} else {
+			return calculateManualRate({
+				ratePercent: manualBgRatePercent
+			});
+		}
+	});
+
+	let effectiveBgRatePercent = $derived(bgCalculation.ratePercent);
+	let effectiveBgRateDecimal = $derived(bgCalculation.rateDecimal);
 
 	function addBgPeriod() {
 		let nextStart = '2028-01-01';
@@ -98,7 +195,7 @@
 				id: `bg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
 				startDate: nextStart,
 				endDate: nextEnd,
-				rate: bgRate / 100,
+				rate: effectiveBgRateDecimal,
 				label: `Anpassung BG ab ${nextStart.slice(0, 4)}`
 			}
 		];
@@ -233,7 +330,9 @@
 				schemeId: selectedScheme,
 				includeOffsetRows: true,
 				reclassifications: reclassifications.length > 0 ? reclassifications : undefined,
-				bgRate: bgRate / 100,
+				bgRate: effectiveBgRateDecimal,
+				bgProvider: bgCalculation.providerLabel,
+				bgDetails: bgCalculation.detailsLabel,
 				customBgTimeline: bgTimeline.length > 0 ? bgTimeline : undefined,
 				customAgaTimeline: customAgaTimeline.length > 0 ? customAgaTimeline : undefined
 			});
@@ -472,43 +571,306 @@
 					</div>
 
 					<!-- Berufsgenossenschaft (Gesetzliche Unfallversicherung) -->
-					<div class="form-group col-span-2">
-						<div class="label-row">
-							<label for="bgRate">Berufsgenossenschaft (Gesetzliche Unfallversicherung)</label>
-							<div class="preset-chips">
-								{#each PRESET_BG_RATES as preset}
-									<button
-										type="button"
-										class="chip-btn {bgRate === preset.rate ? 'active' : ''}"
-										onclick={() => (bgRate = preset.rate)}
+					<div class="form-group col-span-2 bg-calculation-wrapper">
+						<div class="bg-section-header">
+							<div class="bg-header-left">
+								<span class="bg-icon">🛡️</span>
+								<div>
+									<label class="bg-main-label" for="bgw-gts">Berufsgenossenschaft (Gesetzliche Unfallversicherung)</label>
+									<span class="bg-sub-desc">Gesetzliche Umlage (§ 152 ff. SGB VII) für Arbeitsunfall- und Berufskrankheitsschutz</span>
+								</div>
+							</div>
+							<div class="bg-provider-tabs">
+								<button
+									type="button"
+									class="provider-tab-btn {bgProvider === 'bgw' ? 'active' : ''}"
+									onclick={() => (bgProvider = 'bgw')}
+								>
+									BGW
+								</button>
+								<button
+									type="button"
+									class="provider-tab-btn {bgProvider === 'vbg' ? 'active' : ''}"
+									onclick={() => (bgProvider = 'vbg')}
+								>
+									VBG
+								</button>
+								<button
+									type="button"
+									class="provider-tab-btn {bgProvider === 'manual' ? 'active' : ''}"
+									onclick={() => (bgProvider = 'manual')}
+								>
+									Manuell
+								</button>
+							</div>
+						</div>
+
+						{#if bgProvider === 'bgw'}
+							<!-- BGW Options & GTS Selector -->
+							<div class="bg-provider-card bgw-card">
+								<div class="bgw-top-controls">
+									<div class="nonprofit-toggle-group">
+										<button
+											type="button"
+											class="chip-toggle-btn {bgwIsNonProfit ? 'active' : ''}"
+											onclick={() => (bgwIsNonProfit = !bgwIsNonProfit)}
+										>
+											<span class="chip-status-dot"></span>
+											{bgwIsNonProfit ? 'Gemeinnützig / Wohlfahrtspflege (Basis-Beitragsfuß 1,94)' : 'Gewerblich / Nicht gemeinnützig (Beitragsfuß 2,08)'}
+										</button>
+									</div>
+									<div class="bg-actions-group">
+										<button
+											type="button"
+											class="action-pill-btn {showBgDetails ? 'active' : ''}"
+											onclick={() => (showBgDetails = !showBgDetails)}
+											title="Einzelfall-Parameter anpassen"
+										>
+											⚙️ Einzelfall-Parameter
+										</button>
+										<button
+											type="button"
+											class="action-pill-btn save-org-btn"
+											onclick={handleSaveOrgDefaults}
+											title="Aktuelle Einstellungen als Organisations-Standard in diesem Browser speichern"
+										>
+											{#if orgSettingsSavedToast}
+												✓ Gespeichert!
+											{:else}
+												💾 Als Organisations-Standard
+											{/if}
+										</button>
+										<button
+											type="button"
+											class="timeline-pill-btn {showBgTimeline || bgTimeline.length > 0 ? 'active' : ''}"
+											onclick={() => (showBgTimeline = !showBgTimeline)}
+										>
+											📅 Zeitverlauf {bgTimeline.length > 0 ? `(${bgTimeline.length} Intervalle)` : ''}
+										</button>
+									</div>
+								</div>
+
+								<div class="sub-field gts-select-field">
+									<label for="bgw-gts">Gefahrtarifstelle (6. Gefahrtarif der BGW ab 2025)</label>
+									<select
+										id="bgw-gts"
+										bind:value={bgwTarifstelleCode}
+										class="form-select gts-select"
 									>
-										{preset.label} ({preset.rate.toFixed(2).replace('.', ',')}%)
-									</button>
-								{/each}
+										{#each BGW_TARIFSTELLEN as ts}
+											<option value={ts.code}>
+												{ts.title} (GK {ts.dangerClass.toFixed(2).replace('.', ',')})
+											</option>
+										{/each}
+									</select>
+									{#if getBgwTarifstelle(bgwTarifstelleCode)}
+										<span class="gts-hint-text">
+											{getBgwTarifstelle(bgwTarifstelleCode)?.description}
+										</span>
+									{/if}
+								</div>
+
+								{#if showBgDetails}
+									<div class="bg-details-drawer">
+										<div class="bg-drawer-header">
+											<span>⚙️ Einzelfall-Parameter für diesen Teilnehmer</span>
+											<span class="drawer-sub">Überschreiben Sie hier spezifische Faktoren aus dem BGW-Beitragsbescheid</span>
+										</div>
+										<div class="bg-drawer-grid">
+											<div class="sub-field">
+												<label for="bgw-danger-override">Gefahrklasse (Override)</label>
+												<input
+													id="bgw-danger-override"
+													type="number"
+													step="0.01"
+													min="0.1"
+													max="20"
+													placeholder={getBgwTarifstelle(bgwTarifstelleCode)?.dangerClass.toFixed(2) || '3.47'}
+													value={bgwDangerClassOverride ?? ''}
+													oninput={(e) => {
+														const val = parseFloat(e.currentTarget.value);
+														bgwDangerClassOverride = isNaN(val) ? undefined : val;
+													}}
+													class="form-input-sm"
+												/>
+											</div>
+											<div class="sub-field">
+												<label for="bgw-bf-override">Beitragsfuß (Override)</label>
+												<input
+													id="bgw-bf-override"
+													type="number"
+													step="0.01"
+													min="0.5"
+													max="10"
+													placeholder={bgwIsNonProfit ? '1.94' : '2.08'}
+													value={bgwBeitragsfussOverride ?? ''}
+													oninput={(e) => {
+														const val = parseFloat(e.currentTarget.value);
+														bgwBeitragsfussOverride = isNaN(val) ? undefined : val;
+													}}
+													class="form-input-sm"
+												/>
+											</div>
+											<div class="sub-field">
+												<label for="bgw-au">Ausgleichsumlage (€ / 1.000 €)</label>
+												<input
+													id="bgw-au"
+													type="number"
+													step="0.01"
+													min="0"
+													max="1"
+													bind:value={bgwAusgleichsumlage}
+													class="form-input-sm"
+												/>
+											</div>
+											<div class="sub-field">
+												<label for="bgw-surcharge">Zuschlag / Nachlass (%)</label>
+												<input
+													id="bgw-surcharge"
+													type="number"
+													step="0.5"
+													min="-25"
+													max="50"
+													bind:value={bgwSurcharge}
+													class="form-input-sm"
+												/>
+											</div>
+										</div>
+									</div>
+								{/if}
+
+								<!-- Live Result Card -->
+								<div class="bg-live-result-bar">
+									<div class="live-result-left">
+										<span class="live-label">Berechneter BG-Beitragssatz:</span>
+										<span class="live-rate-badge">{effectiveBgRatePercent.toFixed(3).replace('.', ',')} %</span>
+										<span class="live-decimal">({effectiveBgRateDecimal.toFixed(5).replace('.', ',')})</span>
+									</div>
+									<div class="live-result-right">
+										<span class="live-formula" title="Berechnungsgrundlage gem. SGB VII">
+											📐 {bgCalculation.formulaBreakdown}
+										</span>
+										<span class="old-comparison-badge" title="Alte pauschale Schätzung war 1,80%">
+											Vorher: 1,80% (ca. {Math.round((1 - (effectiveBgRatePercent / 1.80)) * 100)}% realistischer)
+										</span>
+									</div>
+								</div>
 							</div>
-						</div>
-						<div class="input-with-toggle">
-							<div class="input-with-unit">
-								<input
-									type="number"
-									id="bgRate"
-									bind:value={bgRate}
-									min="0"
-									max="15"
-									step="0.05"
-									class="form-input"
-								/>
-								<span class="unit">% Beitragssatz</span>
+						{:else if bgProvider === 'vbg'}
+							<!-- VBG Options -->
+							<div class="bg-provider-card vbg-card">
+								<div class="bgw-top-controls">
+									<div class="vbg-preset-group">
+										{#each VBG_TARIFSTELLEN as vts}
+											<button
+												type="button"
+												class="chip-btn {vbgTarifstelleCode === vts.code ? 'active' : ''}"
+												onclick={() => handleVbgPresetChange(vts.code)}
+											>
+												{vts.title.split(':')[0]}: {vts.title.split(':')[1]?.split('(')[0]?.trim()} (GK {vts.dangerClass.toFixed(2).replace('.', ',')})
+											</button>
+										{/each}
+									</div>
+									<div class="bg-actions-group">
+										<button
+											type="button"
+											class="action-pill-btn save-org-btn"
+											onclick={handleSaveOrgDefaults}
+											title="Aktuelle Einstellungen als Organisations-Standard in diesem Browser speichern"
+										>
+											{#if orgSettingsSavedToast}
+												✓ Gespeichert!
+											{:else}
+												💾 Als Organisations-Standard
+											{/if}
+										</button>
+										<button
+											type="button"
+											class="timeline-pill-btn {showBgTimeline || bgTimeline.length > 0 ? 'active' : ''}"
+											onclick={() => (showBgTimeline = !showBgTimeline)}
+										>
+											📅 Zeitverlauf {bgTimeline.length > 0 ? `(${bgTimeline.length} Intervalle)` : ''}
+										</button>
+									</div>
+								</div>
+
+								<div class="bg-drawer-grid mt-2">
+									<div class="sub-field">
+										<label for="vbg-danger">Gefahrklasse</label>
+										<input
+											id="vbg-danger"
+											type="number"
+											step="0.01"
+											min="0.1"
+											max="15"
+											bind:value={vbgDangerClass}
+											class="form-input-sm"
+										/>
+									</div>
+									<div class="sub-field">
+										<label for="vbg-bf">VBG-Beitragsfuß (pro 1.000 €)</label>
+										<input
+											id="vbg-bf"
+											type="number"
+											step="0.05"
+											min="1"
+											max="10"
+											bind:value={vbgBeitragsfuss}
+											class="form-input-sm"
+										/>
+									</div>
+								</div>
+
+								<div class="bg-live-result-bar">
+									<div class="live-result-left">
+										<span class="live-label">Berechneter VBG-Satz:</span>
+										<span class="live-rate-badge">{effectiveBgRatePercent.toFixed(3).replace('.', ',')} %</span>
+									</div>
+									<div class="live-result-right">
+										<span class="live-formula">📐 {bgCalculation.formulaBreakdown}</span>
+									</div>
+								</div>
 							</div>
-							<button
-								type="button"
-								class="timeline-pill-btn {showBgTimeline || bgTimeline.length > 0 ? 'active' : ''}"
-								onclick={() => (showBgTimeline = !showBgTimeline)}
-							>
-								📅 Zeitverlauf {bgTimeline.length > 0 ? `(${bgTimeline.length} Intervalle)` : ''}
-							</button>
-						</div>
-						<span class="field-hint">Wird als eigene Spalte "BG-Kosten" und "Gesamtkosten inkl. BG" berechnet (Standard BGW: 1,80%).</span>
+						{:else}
+							<!-- Manual Direct % Input -->
+							<div class="bg-provider-card manual-card">
+								<div class="input-with-toggle">
+									<div class="input-with-unit">
+										<input
+											type="number"
+											id="bgRate"
+											bind:value={manualBgRatePercent}
+											min="0"
+											max="15"
+											step="0.01"
+											class="form-input"
+										/>
+										<span class="unit">% Beitragssatz</span>
+									</div>
+									<div class="bg-actions-group">
+										<button
+											type="button"
+											class="action-pill-btn save-org-btn"
+											onclick={handleSaveOrgDefaults}
+										>
+											{#if orgSettingsSavedToast}
+												✓ Gespeichert!
+											{:else}
+												💾 Als Organisations-Standard
+											{/if}
+										</button>
+										<button
+											type="button"
+											class="timeline-pill-btn {showBgTimeline || bgTimeline.length > 0 ? 'active' : ''}"
+											onclick={() => (showBgTimeline = !showBgTimeline)}
+										>
+											📅 Zeitverlauf {bgTimeline.length > 0 ? `(${bgTimeline.length} Intervalle)` : ''}
+										</button>
+									</div>
+								</div>
+								<span class="field-hint">Geben Sie direkt den Prozentsatz aus Ihrem BG-Bescheid ein (z. B. 0,681%).</span>
+							</div>
+						{/if}
 
 						{#if showBgTimeline}
 							<div class="nested-timeline-box">
@@ -519,7 +881,7 @@
 									</button>
 								</div>
 								{#if bgTimeline.length === 0}
-									<p class="empty-timeline-hint">Standardmäßig gilt der oben angegebene Beitragssatz ({bgRate.toFixed(2).replace('.', ',')}%) über die gesamte 5-jährige Laufzeit. Fügen Sie Zeiträume hinzu, falls sich der BG-Gefahrtarif oder Beitragsfuß ändert.</p>
+									<p class="empty-timeline-hint">Standardmäßig gilt der oben berechnete Beitragssatz ({effectiveBgRatePercent.toFixed(3).replace('.', ',')}%) über die gesamte 5-jährige Laufzeit. Fügen Sie Zeiträume hinzu, falls sich der BG-Gefahrtarif oder Beitragsfuß in späteren Förderjahren ändert.</p>
 								{:else}
 									<div class="timeline-rows-list">
 										{#each bgTimeline as period, idx (period.id)}
@@ -538,7 +900,7 @@
 													<input
 														id="bg-rate-{period.id}"
 														type="number"
-														step="0.05"
+														step="0.01"
 														value={Number((period.rate * 100).toFixed(3))}
 														oninput={(e) => (period.rate = parseFloat(e.currentTarget.value) / 100 || 0)}
 														class="form-input-sm"
@@ -546,7 +908,7 @@
 												</div>
 												<div class="sub-field flex-grow">
 													<label for="bg-label-{period.id}">Bezeichnung</label>
-													<input id="bg-label-{period.id}" type="text" bind:value={period.label} placeholder="z. B. Anpassung BGW 2028" class="form-input-sm" />
+													<input id="bg-label-{period.id}" type="text" bind:value={period.label} placeholder="z. B. BGW 6. Gefahrtarif" class="form-input-sm" />
 												</div>
 												<button type="button" class="btn-icon-delete" onclick={() => removeBgPeriod(period.id)} aria-label="Entfernen">
 													✕
@@ -1126,6 +1488,285 @@
 		border-color: #818cf8;
 		color: #c7d2fe;
 		font-weight: 600;
+	}
+
+	/* Multi-Provider Berufsgenossenschaft Calculation */
+	.bg-calculation-wrapper {
+		background: rgba(30, 41, 59, 0.4);
+		border: 1px solid rgba(56, 189, 248, 0.25);
+		border-radius: 12px;
+		padding: 1.1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+	}
+
+	.bg-section-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+	}
+
+	.bg-header-left {
+		display: flex;
+		align-items: center;
+		gap: 0.65rem;
+	}
+
+	.bg-icon {
+		font-size: 1.4rem;
+	}
+
+	.bg-main-label {
+		display: block;
+		font-weight: 700;
+		font-size: 0.95rem;
+		color: #f1f5f9;
+	}
+
+	.bg-sub-desc {
+		display: block;
+		font-size: 0.75rem;
+		color: #94a3b8;
+	}
+
+	.bg-provider-tabs {
+		display: flex;
+		background: rgba(15, 23, 42, 0.75);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 8px;
+		padding: 0.2rem;
+		gap: 0.2rem;
+	}
+
+	.provider-tab-btn {
+		background: transparent;
+		border: none;
+		color: #94a3b8;
+		padding: 0.35rem 0.85rem;
+		border-radius: 6px;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.provider-tab-btn:hover {
+		color: #ffffff;
+		background: rgba(255, 255, 255, 0.05);
+	}
+
+	.provider-tab-btn.active {
+		background: #0284c7;
+		color: #ffffff;
+		box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+	}
+
+	.bg-provider-card {
+		display: flex;
+		flex-direction: column;
+		gap: 0.85rem;
+	}
+
+	.bgw-top-controls {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.65rem;
+	}
+
+	.chip-toggle-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		background: rgba(16, 185, 129, 0.15);
+		border: 1px solid rgba(16, 185, 129, 0.35);
+		color: #6ee7b7;
+		padding: 0.4rem 0.75rem;
+		border-radius: 8px;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.chip-toggle-btn:not(.active) {
+		background: rgba(148, 163, 184, 0.12);
+		border-color: rgba(148, 163, 184, 0.25);
+		color: #cbd5e1;
+	}
+
+	.chip-status-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: currentColor;
+	}
+
+	.bg-actions-group {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		flex-wrap: wrap;
+	}
+
+	.action-pill-btn {
+		background: rgba(30, 41, 59, 0.6);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 8px;
+		padding: 0.4rem 0.75rem;
+		font-size: 0.775rem;
+		color: #94a3b8;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		transition: all 0.15s ease;
+	}
+
+	.action-pill-btn:hover {
+		color: #ffffff;
+		border-color: #38bdf8;
+		background: rgba(56, 189, 248, 0.1);
+	}
+
+	.action-pill-btn.active {
+		border-color: #38bdf8;
+		background: rgba(56, 189, 248, 0.15);
+		color: #7dd3fc;
+	}
+
+	.save-org-btn {
+		border-color: rgba(99, 102, 241, 0.4);
+		background: rgba(99, 102, 241, 0.15);
+		color: #c7d2fe;
+	}
+
+	.save-org-btn:hover {
+		border-color: #818cf8;
+		background: rgba(99, 102, 241, 0.25);
+		color: #ffffff;
+	}
+
+	.gts-select-field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+
+	.gts-select {
+		width: 100%;
+		font-size: 0.875rem;
+		padding: 0.6rem 0.75rem;
+	}
+
+	.gts-hint-text {
+		font-size: 0.75rem;
+		color: #94a3b8;
+		line-height: 1.35;
+		margin-top: 0.2rem;
+	}
+
+	.bg-details-drawer {
+		background: rgba(15, 23, 42, 0.7);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 8px;
+		padding: 0.75rem 0.9rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+
+	.bg-drawer-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		font-size: 0.8rem;
+		font-weight: 600;
+		color: #e2e8f0;
+	}
+
+	.drawer-sub {
+		font-size: 0.725rem;
+		font-weight: normal;
+		color: #94a3b8;
+	}
+
+	.bg-drawer-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+		gap: 0.65rem;
+	}
+
+	.bg-live-result-bar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		background: linear-gradient(135deg, rgba(2, 132, 199, 0.12), rgba(99, 102, 241, 0.12));
+		border: 1px solid rgba(56, 189, 248, 0.3);
+		border-radius: 10px;
+		padding: 0.75rem 1rem;
+	}
+
+	.live-result-left {
+		display: flex;
+		align-items: baseline;
+		gap: 0.5rem;
+	}
+
+	.live-label {
+		font-size: 0.825rem;
+		color: #e2e8f0;
+		font-weight: 600;
+	}
+
+	.live-rate-badge {
+		font-size: 1.25rem;
+		font-weight: 800;
+		color: #38bdf8;
+		letter-spacing: -0.02em;
+	}
+
+	.live-decimal {
+		font-size: 0.75rem;
+		color: #94a3b8;
+	}
+
+	.live-result-right {
+		display: flex;
+		align-items: center;
+		gap: 0.65rem;
+		flex-wrap: wrap;
+	}
+
+	.live-formula {
+		font-size: 0.775rem;
+		color: #bae6fd;
+		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+		background: rgba(0, 0, 0, 0.25);
+		padding: 0.2rem 0.5rem;
+		border-radius: 5px;
+	}
+
+	.old-comparison-badge {
+		font-size: 0.725rem;
+		color: #34d399;
+		background: rgba(16, 185, 129, 0.15);
+		border: 1px solid rgba(16, 185, 129, 0.3);
+		padding: 0.2rem 0.5rem;
+		border-radius: 5px;
+		font-weight: 600;
+	}
+
+	.vbg-preset-group {
+		display: flex;
+		gap: 0.35rem;
+		flex-wrap: wrap;
 	}
 
 	/* Nested Timeline Editor Box */

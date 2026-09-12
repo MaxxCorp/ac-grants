@@ -16,6 +16,8 @@ import type {
 } from '#lib/types/grant';
 import { calculateTvlComparison } from './tvl-comparison';
 import { validateBerechnungsblattTariff, calculateTariffStepAtDate, determineParticipantStepForRecord, isAwoTariffIncreaseMonth, getAwoTariffSalary } from './awo-tariff-data';
+import { getEffectiveBgRate } from './generator-milestones';
+import { DEFAULT_EFFECTIVE_BG_RATE_DECIMAL } from './bg-calculator';
 
 function round2(val: number): number {
 	return Math.round((val + Number.EPSILON) * 100) / 100;
@@ -448,7 +450,7 @@ export function calculateSingleParticipant(
 	jcRoundingDelta: number;
 	landRoundingDelta: number;
 } {
-	const { includeOffsetRows, restrictToYear, customAgaTimeline } = options;
+	const { includeOffsetRows, restrictToYear, customAgaTimeline, customBgTimeline } = options;
 	const runtimeScope: RuntimeScope =
 		options.runtimeScope || (options.restrictToExitDate === false ? 'full_5_years' : 'exit_date');
 	const runtimeStartScope: RuntimeStartScope =
@@ -472,9 +474,16 @@ export function calculateSingleParticipant(
 		const jcTotalGross = round2(partTimeSalary + jcFlatRate);
 		const landSvShortfall = round2(partTimeSalary * (effectiveAga - 0.19));
 
+		// Berufsgenossenschaft (BG) calculation
+		const effectiveBg = getEffectiveBgRate(r, participant.defaultBgRate ?? DEFAULT_EFFECTIVE_BG_RATE_DECIMAL, customBgTimeline);
+		const bgAmount = round2(partTimeSalary * effectiveBg);
+		const totalEmployerCostWithBg = round2(totalEmployerCost + bgAmount);
+
 		let jszAgaAmount = r.jszAgaAmount;
+		let jszBgAmount = r.jszBgAmount;
 		if (r.jszAmount > 0) {
 			jszAgaAmount = round2(r.jszAmount * effectiveAga);
+			jszBgAmount = round2(r.jszAmount * effectiveBg);
 		}
 
 		return {
@@ -490,7 +499,11 @@ export function calculateSingleParticipant(
 			jcFlatRateAmount: jcFlatRate,
 			jcTotalGross,
 			landSvShortfall,
-			jszAgaAmount
+			jszAgaAmount,
+			bgRate: effectiveBg,
+			bgAmount,
+			totalEmployerCostWithBg,
+			jszBgAmount
 		};
 	});
 
@@ -1029,7 +1042,7 @@ export function calculateSingleParticipant(
 	};
 
 	const defaultAgaTimeline = customAgaTimeline || [{ id: 'aga-default', startDate: formatDateDMY(participant.runtimeStart), endDate: formatDateDMY(participant.runtimeEnd), rate: participant.defaultAgaRate, label: `${participant.healthInsuranceName} Standard (${(participant.defaultAgaRate * 100).toFixed(3)}%)` }];
-	const defaultBgTimeline = options.customBgTimeline || participant.bgTimeline || [{ id: 'bg-default', startDate: formatDateDMY(participant.runtimeStart), endDate: formatDateDMY(participant.runtimeEnd), rate: participant.defaultBgRate ?? 0.018, label: `BGW Standard` }];
+	const defaultBgTimeline = options.customBgTimeline || participant.bgTimeline || [{ id: 'bg-default', startDate: formatDateDMY(participant.runtimeStart), endDate: formatDateDMY(participant.runtimeEnd), rate: participant.defaultBgRate ?? DEFAULT_EFFECTIVE_BG_RATE_DECIMAL, label: `BGW Standard (${((participant.defaultBgRate ?? DEFAULT_EFFECTIVE_BG_RATE_DECIMAL) * 100).toFixed(3).replace('.', ',')}%)` }];
 
 	return {
 		participant,

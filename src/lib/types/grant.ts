@@ -29,8 +29,10 @@ export interface ParticipantInfo {
 	jobcenterId?: string;
 	zgsId?: string;
 	reclassifications?: TariffReclassification[];
-	defaultBgRate?: number;
+	defaultBgRate?: number; // e.g. 0.00681 for 0.681% (BGW GTS 14)
 	bgTimeline?: BgRatePeriod[];
+	bgProvider?: string;
+	bgDetails?: string;
 	staffRole?: JobCoachingStaffRole;
 	vacationDays?: number;
 	insuranceFunds?: InsuranceFundDetails[];
@@ -53,8 +55,10 @@ export interface BerechnungsblattGeneratorOptions {
 	jszPercentage?: number; // default 85
 	customAgaTimeline?: AgaRatePeriod[];
 	reclassifications?: TariffReclassification[];
-	bgRate?: number; // default 0.018 (1.80%)
+	bgRate?: number; // default 0.00681 (0.681% BGW GTS 14)
 	customBgTimeline?: BgRatePeriod[];
+	bgProvider?: string;
+	bgDetails?: string;
 }
 
 export interface GeneratorMilestone {

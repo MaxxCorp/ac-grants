@@ -112,12 +112,14 @@ export function getInsuranceFundByName(name = 'Barmer') {
 	return DEFAULT_INSURANCE_FUNDS.find(f => f.name.toLowerCase() === 'barmer') || DEFAULT_INSURANCE_FUNDS[0];
 }
 
+import { DEFAULT_EFFECTIVE_BG_RATE_DECIMAL } from '#lib/grants/bg-calculator';
+
 /**
  * Resolves the effective Berufsgenossenschaft (BG) contribution rate for a target date.
  */
 export function getEffectiveBgRate(
 	targetDate: { year: number; month: number; day?: number } | string,
-	defaultRate = 0.018,
+	defaultRate = DEFAULT_EFFECTIVE_BG_RATE_DECIMAL,
 	customBgTimeline?: BgRatePeriod[]
 ): number {
 	if (!customBgTimeline || customBgTimeline.length === 0) {

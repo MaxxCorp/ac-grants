@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import type { ParticipantInfo, MonthlyRecord, AgaRatePeriod, InsuranceFundDetails, TariffReclassification } from '#lib/types/grant';
 import { DEFAULT_INSURANCE_FUNDS } from '#lib/grants/tvl-tariff-data';
+import { DEFAULT_EFFECTIVE_BG_RATE_DECIMAL } from '#lib/grants/bg-calculator';
 
 /**
  * Normalizes Excel date representations (serial numbers, Date objects, or date strings).
@@ -292,7 +293,7 @@ export function parseParticipantSheet(
 	const healthInsuranceName = rawHealthInsurance || 'DAK';
 	const defaultAgaRate = parseNumber(getCellValue('Y', 2), 0.2314);
 
-	let defaultBgRate = 0.018;
+	let defaultBgRate = DEFAULT_EFFECTIVE_BG_RATE_DECIMAL;
 	for (const col of ['Z', 'AA', 'AB', 'Y', 'X']) {
 		const txt = getCellFormattedText(col, 2).toLowerCase();
 		if (txt.includes('bg') || txt.includes('unfall')) {

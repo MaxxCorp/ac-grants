@@ -131,8 +131,8 @@ describe('Berechnungsblatt Generator', () => {
 		
 		// Check AGA and BG rate parsed on records
 		expect(parsed.records[0].agaRealRate).toBeCloseTo(0.23815, 4);
-		expect(parsed.records[0].bgRate).toBeCloseTo(0.018, 3);
-		expect(parsed.records[0].bgAmount).toBeGreaterThan(30);
+		expect(parsed.records[0].bgRate).toBeCloseTo(0.00681, 4);
+		expect(parsed.records[0].bgAmount).toBeGreaterThan(5);
 		expect(parsed.records[0].totalEmployerCostWithBg).toBeCloseTo(
 			parsed.records[0].totalEmployerCost + parsed.records[0].bgAmount!,
 			2
@@ -358,6 +358,28 @@ describe('Berechnungsblatt Generator', () => {
 		});
 		expect(result.controls.overallStatus).toBe('MATCH');
 		expect(result.controls.totalDelta).toBe(0);
+	});
+
+	it('uses new BGW default rate (0.00681) when no bgRate option is supplied', async () => {
+		const options: BerechnungsblattGeneratorOptions = {
+			employeeName: 'Frau BGW Test',
+			startDate: '2026-10-01',
+			durationMonths: 60,
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			healthInsuranceName: 'Barmer'
+		};
+
+		const buf = await generateBerechnungsblattExcel(options);
+		const parsed = parseExcelBuffer(buf);
+
+		expect(parsed.records.length).toBe(60);
+		expect(parsed.records[0].bgRate).toBeCloseTo(0.00681, 4);
+		expect(parsed.records[0].bgAmount).toBeCloseTo(parsed.records[0].partTimeSalary * 0.00681, 1);
+		expect(parsed.records[0].totalEmployerCostWithBg).toBeCloseTo(
+			parsed.records[0].totalEmployerCost + parsed.records[0].bgAmount!,
+			2
+		);
 	});
 
 	it('generates and parses a multi-participant workbook with multiple sheets and exports TV-L', async () => {

@@ -3,13 +3,14 @@
 	import { getAvailableSchemes, recalculateGrant, processExcelFile } from '#lib/grant.remote';
 	import { transformSgb16i, transformSgb16iMulti, generateStandardSgb16iDemoDatasets } from '#lib/grants/sgb16i';
 	import { transformBerlinerJobCoachingMulti, generateStandardJobCoachingDemoDatasets } from '#lib/grants/berliner-jobcoaching';
-	import type { GrantTransformationResult, AgaRatePeriod, RuntimeScope, RuntimeStartScope, MonthlyRecord, ParticipantInfo, ParticipantDataset } from '#lib/types/grant';
+	import type { GrantTransformationResult, AgaRatePeriod, BgRatePeriod, RuntimeScope, RuntimeStartScope, MonthlyRecord, ParticipantInfo, ParticipantDataset } from '#lib/types/grant';
 	import FileUpload from '#lib/components/FileUpload.svelte';
 	import ControlDashboard from '#lib/components/ControlDashboard.svelte';
 	import AwoTariffAuditCard from '#lib/components/AwoTariffAuditCard.svelte';
 	import TargetFormCompanion from '#lib/components/TargetFormCompanion.svelte';
 	import JobCoachingPortalCompanion from '#lib/components/JobCoachingPortalCompanion.svelte';
 	import AgaTimelineEditor from '#lib/components/AgaTimelineEditor.svelte';
+	import BgTimelineEditor from '#lib/components/BgTimelineEditor.svelte';
 	import BerechnungsblattGeneratorModal from '#lib/components/BerechnungsblattGeneratorModal.svelte';
 
 	let availableSchemes = $state<any[]>([]);
@@ -135,12 +136,47 @@
 						customStartDate: runtimeStartScope === 'custom' ? customStartDate : undefined,
 						runtimeScope,
 						customEndDate: runtimeScope === 'custom' ? customEndDate : undefined,
-						customAgaTimeline: newTimeline
+						customAgaTimeline: newTimeline,
+						customBgTimeline: currentResult.bgTimeline
 					}
 				});
 				currentResult = updated;
 			} catch (err) {
 				console.error('Recalculation error:', err);
+			} finally {
+				isRecalculating = false;
+			}
+		}
+	}
+
+	async function handleUpdateBgTimeline(newTimeline: BgRatePeriod[]) {
+		if (currentResult) {
+			isRecalculating = true;
+			try {
+				const hasMulti = currentResult.participants && currentResult.participants.length > 0;
+				const updated = await recalculateGrant({
+					schemeId: selectedSchemeId,
+					records: currentResult.rawMonthlyRecords,
+					participant: currentResult.participant,
+					participants: hasMulti
+						? currentResult.participants!.map(p => ({
+							participant: p.participant,
+							records: p.records
+						}))
+						: undefined,
+					options: {
+						includeOffsetRows: includeOffset,
+						runtimeStartScope,
+						customStartDate: runtimeStartScope === 'custom' ? customStartDate : undefined,
+						runtimeScope,
+						customEndDate: runtimeScope === 'custom' ? customEndDate : undefined,
+						customAgaTimeline: currentResult.agaTimeline,
+						customBgTimeline: newTimeline
+					}
+				});
+				currentResult = updated;
+			} catch (err) {
+				console.error('BG Recalculation error:', err);
 			} finally {
 				isRecalculating = false;
 			}
@@ -179,7 +215,8 @@
 						customStartDate: runtimeStartScope === 'custom' ? customStartDate : undefined,
 						runtimeScope,
 						customEndDate: runtimeScope === 'custom' ? customEndDate : undefined,
-						customAgaTimeline: currentResult.agaTimeline
+						customAgaTimeline: currentResult.agaTimeline,
+						customBgTimeline: currentResult.bgTimeline
 					}
 				});
 				currentResult = updated;
@@ -567,6 +604,11 @@
 						timeline={currentResult.agaTimeline}
 						participant={currentResult.participant}
 						onUpdateTimeline={handleUpdateTimeline}
+					/>
+					<BgTimelineEditor
+						timeline={currentResult.bgTimeline || []}
+						participant={currentResult.participant}
+						onUpdateTimeline={handleUpdateBgTimeline}
 					/>
 				{/if}
 

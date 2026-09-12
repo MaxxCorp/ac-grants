@@ -9,6 +9,7 @@ import type {
 	ParticipantInfo,
 	AgaRatePeriod
 } from '#lib/types/grant';
+import { DEFAULT_EFFECTIVE_BG_RATE_DECIMAL } from '#lib/grants/bg-calculator';
 
 // Remote Query: Get all available grant schemes
 export const getAvailableSchemes = query(async () => {
@@ -275,7 +276,9 @@ export const generateBerechnungsblatt = command(
 				})
 			)
 		),
-		bgRate: v.optional(v.number(), 0.018),
+		bgRate: v.optional(v.number(), DEFAULT_EFFECTIVE_BG_RATE_DECIMAL),
+		bgProvider: v.optional(v.string()),
+		bgDetails: v.optional(v.string()),
 		customBgTimeline: v.optional(
 			v.array(
 				v.object({
