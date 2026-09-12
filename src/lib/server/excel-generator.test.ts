@@ -516,4 +516,85 @@ describe('Berechnungsblatt Generator', () => {
 		expect(result.controls.overallStatus).toBe('MATCH');
 		expect(result.runtimeMonths).toBe(24);
 	});
+
+	it('defaults to starting experience level time over when continueTariffProgression is false or omitted', () => {
+		// New employee starting at ES2 on 01.10.2026
+		// Default: time in ES2 resets to 0 months -> advances to ES3 after full 24 months (10/2028)
+		const milestones = calculateMilestones({
+			employeeName: 'Herr Standard',
+			startDate: '2026-10-01',
+			durationMonths: 60,
+			tariffGroup: 'EG2',
+			tariffStep: 'ES2'
+		});
+
+		const step3 = milestones.find(m => m.type === 'stufenaufstieg' && m.newStep === 'ES3');
+		expect(step3).toBeDefined();
+		expect(step3?.year).toBe(2028);
+		expect(step3?.month).toBe(10);
+	});
+
+	it('continues experience level progression from earlier employer when previousTariffStepStartDate is provided', async () => {
+		// Employee enters at new employer on 01.10.2026 in ES2
+		// At previous employer, they reached ES2 on 01.06.2025 (16 months before new contract)
+		// Total required in ES2 is 24 months -> remaining time is 8 months
+		// Must advance to ES3 on 01.06.2027 (month 06/2027) instead of 10/2028!
+		const opt: BerechnungsblattGeneratorOptions = {
+			employeeName: 'Frau Tarifwechsler',
+			startDate: '2026-10-01',
+			durationMonths: 60,
+			tariffGroup: 'EG2',
+			tariffStep: 'ES2',
+			continueTariffProgression: true,
+			previousTariffStepStartDate: '2025-06-01'
+		};
+
+		const milestones = calculateMilestones(opt);
+
+		const step3 = milestones.find(m => m.type === 'stufenaufstieg' && m.newStep === 'ES3');
+		expect(step3).toBeDefined();
+		expect(step3?.year).toBe(2027);
+		expect(step3?.month).toBe(6);
+		expect(step3?.dateStr).toBe('01.06.2027');
+
+		// And after 36 months in ES3, must advance to ES4 in 06/2030
+		const step4 = milestones.find(m => m.type === 'stufenaufstieg' && m.newStep === 'ES4');
+		expect(step4).toBeDefined();
+		expect(step4?.year).toBe(2030);
+		expect(step4?.month).toBe(6);
+
+		// Excel generation and parse roundtrip
+		const buf = await generateBerechnungsblattExcel(opt);
+		const parsed = parseExcelBuffer(buf);
+
+		expect(parsed.participant.continueTariffProgression).toBe(true);
+		expect(parsed.participant.previousTariffStepStartDate).toBe('01.06.2025');
+
+		// Record in 05/2027 should be in ES2, record in 06/2027 should be in ES3
+		const recMay2027 = parsed.records.find(r => r.year === 2027 && r.month === 5);
+		const recJun2027 = parsed.records.find(r => r.year === 2027 && r.month === 6);
+
+		expect(recMay2027?.tariffStep).toBe('ES2');
+		expect(recJun2027?.tariffStep).toBe('ES3');
+		expect(recJun2027!.fteSalary).toBeGreaterThan(recMay2027!.fteSalary);
+	});
+
+	it('continues experience level progression using priorExperienceMonths', () => {
+		// Employee enters on 01.10.2026 at ES2 with 14 months already served in ES2
+		// Required in ES2 is 24 months -> remaining is 10 months -> advances in 08/2027
+		const milestones = calculateMilestones({
+			employeeName: 'Herr Erfahrungsmonate',
+			startDate: '2026-10-01',
+			durationMonths: 60,
+			tariffGroup: 'EG2',
+			tariffStep: 'ES2',
+			continueTariffProgression: true,
+			priorExperienceMonths: 14
+		});
+
+		const step3 = milestones.find(m => m.type === 'stufenaufstieg' && m.newStep === 'ES3');
+		expect(step3).toBeDefined();
+		expect(step3?.year).toBe(2027);
+		expect(step3?.month).toBe(8);
+	});
 });

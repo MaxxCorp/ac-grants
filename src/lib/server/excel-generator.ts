@@ -22,7 +22,8 @@ import {
 	getInsuranceFundByName,
 	calculateMilestones,
 	resolveTariffStateAtDate,
-	getEffectiveBgRate
+	getEffectiveBgRate,
+	computeStepBaselineDate
 } from '#lib/grants/generator-milestones';
 import { DEFAULT_EFFECTIVE_BG_RATE_DECIMAL } from '#lib/grants/bg-calculator';
 
@@ -40,7 +41,8 @@ export {
 	getInsuranceFundByName,
 	calculateMilestones,
 	resolveTariffStateAtDate,
-	getEffectiveBgRate
+	getEffectiveBgRate,
+	computeStepBaselineDate
 };
 
 export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: BerechnungsblattGeneratorOptions): void {
@@ -63,6 +65,7 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 	const employeeName = options.employeeName.trim() || 'Neue/r Mitarbeiter/in';
 	const jobcenterId = options.jobcenterId?.trim() || '';
 	const zgsId = options.zgsId?.trim() || '';
+	const stepBaseline = computeStepBaselineDate(start, options);
 
 	const runtimeStartStr = formatDateDMY(start);
 	const runtimeEndStr = formatDateDMY(end);
@@ -113,6 +116,13 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 	wsGehalt.getCell('H1').font = { bold: true, size: 10 };
 	wsGehalt.getCell('J1').value = zgsId || '-';
 	wsGehalt.getCell('J1').font = { bold: true, size: 10 };
+
+	if (options.continueTariffProgression) {
+		wsGehalt.getCell('L1').value = 'Stufenlaufzeit:';
+		wsGehalt.getCell('L1').font = { bold: true, size: 10 };
+		wsGehalt.getCell('M1').value = `Fortgeführt (seit ${formatDateDMY(stepBaseline)})`;
+		wsGehalt.getCell('M1').font = { bold: true, size: 10 };
+	}
 
 	// ROW 2: Participant Metadata
 	wsGehalt.getCell('A2').value = employeeName;
@@ -413,7 +423,8 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 					start,
 					group,
 					initialStepNum,
-					reclassifications
+					reclassifications,
+					stepBaseline
 				);
 				const currentGroup = tariffState.group;
 				const currentStep = tariffState.step;

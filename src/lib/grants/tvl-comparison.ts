@@ -503,7 +503,25 @@ export function calculateTvlComparison(
 	};
 
 	// 1. Determine Step Progression & Dates in Selected Year
-	const entryParsed = parseDateDMY(participant.runtimeStart || customInputs?.eintrittsdatum || '16.01.2023');
+	let entryParsed = parseDateDMY(participant.runtimeStart || customInputs?.eintrittsdatum || '16.01.2023');
+	if (participant.continueTariffProgression) {
+		if (participant.previousTariffStepStartDate) {
+			const pDate = participant.previousTariffStepStartDate;
+			const prevParsed = parseDateDMY(pDate) || (pDate.includes('-') ? {
+				year: parseInt(pDate.split('-')[0], 10),
+				month: parseInt(pDate.split('-')[1], 10),
+				day: parseInt(pDate.split('-')[2], 10)
+			} : null);
+			if (prevParsed) entryParsed = prevParsed;
+		} else if (participant.priorExperienceMonths && entryParsed) {
+			const totalMonths = (entryParsed.year * 12 + entryParsed.month - 1) - participant.priorExperienceMonths;
+			entryParsed = {
+				year: Math.floor(totalMonths / 12),
+				month: (totalMonths % 12) + 1,
+				day: entryParsed.day
+			};
+		}
+	}
 	const initialStepNum = parseInt((participant.tariffStep.match(/\d+/) || ['1'])[0], 10) || 1;
 	const tariffGroup = participant.tariffGroup.replace(/\s+/g, '').replace(/^EG/, 'E') || 'E2';
 

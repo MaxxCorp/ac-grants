@@ -184,15 +184,107 @@ export function getEffectiveBgRate(
 }
 
 /**
+ * Calculates the baseline reference date for experience step progression.
+ * If continueTariffProgression is true, calculates an earlier date based on
+ * previousTariffStepStartDate or priorExperienceMonths.
+ * If false (default), returns the start date unchanged (progression starts fresh with new employer).
+ */
+export function computeStepBaselineDate(
+	startDate: { year: number; month: number; day: number } | string,
+	options?: {
+		continueTariffProgression?: boolean;
+		previousTariffStepStartDate?: string;
+		priorExperienceMonths?: number;
+	}
+): { year: number; month: number; day: number } {
+	const start = typeof startDate === 'string' ? parseDateInput(startDate) : startDate;
+	if (!options?.continueTariffProgression) {
+		return start;
+	}
+
+	if (options.previousTariffStepStartDate && options.previousTariffStepStartDate.trim()) {
+		return parseDateInput(options.previousTariffStepStartDate);
+	}
+
+	if (options.priorExperienceMonths !== undefined && options.priorExperienceMonths > 0) {
+		const totalMonths = (start.year * 12 + start.month - 1) - options.priorExperienceMonths;
+		const baseYear = Math.floor(totalMonths / 12);
+		const baseMonth = (totalMonths % 12) + 1;
+		return { year: baseYear, month: baseMonth, day: start.day };
+	}
+
+	return start;
+}
+
+export interface NextStepAscentInfo {
+	nextStep: number | null;
+	nextAscentDate: { year: number; month: number; day: number } | null;
+	nextAscentDateStr: string;
+	remainingMonthsAtNewEmployer: number;
+	totalMonthsRequiredInStep: number;
+	priorMonthsCredited: number;
+}
+
+/**
+ * Computes detailed information about the next experience step ascent (Stufenaufstieg).
+ */
+export function calculateNextStepAscentInfo(
+	currentStep: number,
+	startDate: { year: number; month: number; day: number } | string,
+	baselineDate: { year: number; month: number; day: number } | string
+): NextStepAscentInfo {
+	const start = typeof startDate === 'string' ? parseDateInput(startDate) : startDate;
+	const base = typeof baselineDate === 'string' ? parseDateInput(baselineDate) : baselineDate;
+
+	if (currentStep >= 6) {
+		return {
+			nextStep: null,
+			nextAscentDate: null,
+			nextAscentDateStr: '-',
+			remainingMonthsAtNewEmployer: 0,
+			totalMonthsRequiredInStep: 0,
+			priorMonthsCredited: 0
+		};
+	}
+
+	const totalMonthsRequiredInStep = currentStep * 12; // ES1: 12, ES2: 24, ES3: 36, ES4: 48, ES5: 60
+
+	// Prior months credited before startDate
+	const priorMonthsCredited = Math.max(
+		0,
+		(start.year - base.year) * 12 + (start.month - base.month) + (start.day >= base.day ? 0 : -1)
+	);
+
+	// Date when step will advance (base + required months)
+	const totalAdvanceMonths = (base.year * 12 + base.month - 1) + totalMonthsRequiredInStep;
+	const advanceYear = Math.floor(totalAdvanceMonths / 12);
+	const advanceMonth = (totalAdvanceMonths % 12) + 1;
+	const nextAscentDate = { year: advanceYear, month: advanceMonth, day: base.day };
+
+	const remainingMonthsAtNewEmployer = Math.max(0, totalMonthsRequiredInStep - priorMonthsCredited);
+
+	return {
+		nextStep: currentStep + 1,
+		nextAscentDate,
+		nextAscentDateStr: formatDateDMY(nextAscentDate),
+		remainingMonthsAtNewEmployer,
+		totalMonthsRequiredInStep,
+		priorMonthsCredited
+	};
+}
+
+/**
  * Resolves the active tariff group and experience step for a specific target date,
  * incorporating arbitrary reclassifications that took effect on or before that date.
+ * If stepBaselineDateOverride is provided, the initial experience step baseline uses that date.
  */
 export function resolveTariffStateAtDate(
 	targetDate: { day: number; month: number; year: number },
 	startDate: { day: number; month: number; year: number },
 	initialGroup: string = 'EG2',
 	initialStep: number = 1,
-	reclassifications: TariffReclassification[] = []
+	reclassifications: TariffReclassification[] = [],
+	stepBaselineDateOverride?: { day: number; month: number; year: number } | string
 ): {
 	group: string;
 	step: number;
@@ -225,7 +317,9 @@ export function resolveTariffStateAtDate(
 
 	// Determine step
 	// Find most recent reclassification that specified a tariffStep
-	let stepBaselineDate = startDate;
+	let stepBaselineDate = stepBaselineDateOverride
+		? (typeof stepBaselineDateOverride === 'string' ? parseDateInput(stepBaselineDateOverride) : stepBaselineDateOverride)
+		: startDate;
 	let stepBaselineVal = initialStep;
 
 	for (const r of applied) {
@@ -265,6 +359,7 @@ export function calculateMilestones(options: BerechnungsblattGeneratorOptions): 
 	const weeklyHours = options.weeklyHours || 30;
 	const fullTimeHours = options.fullTimeHours || 39;
 	const reclassifications = options.reclassifications || [];
+	const stepBaseline = computeStepBaselineDate(start, options);
 
 	const milestones: GeneratorMilestone[] = [];
 	let previousStep = initialStepNum;
@@ -285,7 +380,8 @@ export function calculateMilestones(options: BerechnungsblattGeneratorOptions): 
 			start,
 			group,
 			initialStepNum,
-			reclassifications
+			reclassifications,
+			stepBaseline
 		);
 
 		const currentGroup = tariffState.group;

@@ -319,7 +319,25 @@ export function determineParticipantStepForRecord(
 	}
 
 	// 2. Fall back to career anniversary progression based on runtimeStart
-	const startParsed = parseDateDMY(participant.runtimeStart);
+	let startParsed = parseDateDMY(participant.runtimeStart);
+	if (participant.continueTariffProgression) {
+		if (participant.previousTariffStepStartDate) {
+			const pDate = participant.previousTariffStepStartDate;
+			const prevParsed = parseDateDMY(pDate) || (pDate.includes('-') ? {
+				year: parseInt(pDate.split('-')[0], 10),
+				month: parseInt(pDate.split('-')[1], 10),
+				day: parseInt(pDate.split('-')[2], 10)
+			} : null);
+			if (prevParsed) startParsed = prevParsed;
+		} else if (participant.priorExperienceMonths && startParsed) {
+			const totalMonths = (startParsed.year * 12 + startParsed.month - 1) - participant.priorExperienceMonths;
+			startParsed = {
+				year: Math.floor(totalMonths / 12),
+				month: (totalMonths % 12) + 1,
+				day: startParsed.day
+			};
+		}
+	}
 	if (!startParsed) return initialStepNum;
 
 	const recordDay = rec.startDate ? (parseDateDMY(rec.startDate)?.day || 1) : 1;

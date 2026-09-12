@@ -36,6 +36,9 @@ export interface ParticipantInfo {
 	staffRole?: JobCoachingStaffRole;
 	vacationDays?: number;
 	insuranceFunds?: InsuranceFundDetails[];
+	continueTariffProgression?: boolean;
+	previousTariffStepStartDate?: string;
+	priorExperienceMonths?: number;
 }
 
 export interface BerechnungsblattGeneratorOptions {
@@ -45,6 +48,9 @@ export interface BerechnungsblattGeneratorOptions {
 	durationMonths?: number; // default 60 (or computed from endDate)
 	tariffGroup?: string; // default "EG2"
 	tariffStep?: string; // default "ES1"
+	continueTariffProgression?: boolean; // default false
+	previousTariffStepStartDate?: string; // e.g. "2025-06-01" or "01.06.2025"
+	priorExperienceMonths?: number; // e.g. 14
 	healthInsuranceName?: string; // default "Barmer"
 	customAgaRate?: number; // default 0.23815
 	jobcenterId?: string;

@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import type { ParticipantInfo, MonthlyRecord, AgaRatePeriod, InsuranceFundDetails, TariffReclassification } from '#lib/types/grant';
 import { DEFAULT_INSURANCE_FUNDS } from '#lib/grants/tvl-tariff-data';
 import { DEFAULT_EFFECTIVE_BG_RATE_DECIMAL } from '#lib/grants/bg-calculator';
+import { determineParticipantStepForRecord } from '#lib/grants/awo-tariff-data';
 
 /**
  * Normalizes Excel date representations (serial numbers, Date objects, or date strings).
@@ -336,6 +337,25 @@ export function parseParticipantSheet(
 		}
 	}
 
+	// Parse Stufenlaufzeit / Vorbeschäftigung from Row 1 if present
+	let continueTariffProgression: boolean | undefined;
+	let previousTariffStepStartDate: string | undefined;
+
+	for (const col of ['K', 'L', 'M', 'N', 'O']) {
+		const txt = getCellFormattedText(col, 1);
+		if (txt.toLowerCase().includes('stufenlaufzeit') || txt.toLowerCase().includes('vorbeschäftigung')) {
+			const nextCol = String.fromCharCode(col.charCodeAt(0) + 1);
+			const nextVal = getCellFormattedText(nextCol, 1) || getCellFormattedText(String.fromCharCode(col.charCodeAt(0) + 2), 1);
+			if (nextVal && nextVal.toLowerCase().includes('fortgeführt')) {
+				continueTariffProgression = true;
+				const dateMatch = nextVal.match(/(\d{1,2}\.\d{1,2}\.\d{4}|\d{4}-\d{1,2}-\d{1,2})/);
+				if (dateMatch) {
+					previousTariffStepStartDate = dateMatch[1];
+				}
+			}
+		}
+	}
+
 	let runtimeStart = '';
 	let runtimeEnd = '';
 	const runtimeParts = rawRuntime.split('-').map(s => s.trim());
@@ -358,7 +378,9 @@ export function parseParticipantSheet(
 		defaultAgaRate,
 		defaultBgRate,
 		jobcenterId,
-		zgsId
+		zgsId,
+		continueTariffProgression,
+		previousTariffStepStartDate
 	};
 
 	// Scan Row 3 headers to detect dynamic column layout
@@ -534,7 +556,7 @@ export function parseParticipantSheet(
 				totalEmployerCostWithBg = totalEmployerCost + bgAmount;
 			}
 
-			records.push({
+			const rec: MonthlyRecord = {
 				date: dateStr,
 				year,
 				month,
@@ -565,7 +587,12 @@ export function parseParticipantSheet(
 				bgRate: rowBgRate,
 				bgAmount,
 				totalEmployerCostWithBg
-			});
+			};
+
+			const stepNum = determineParticipantStepForRecord(participant, rec);
+			rec.tariffStep = `ES${stepNum}`;
+
+			records.push(rec);
 		}
 	}
 

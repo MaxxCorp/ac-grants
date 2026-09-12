@@ -6,7 +6,9 @@
 		calculateEndDate,
 		calculateDurationMonthsBetween,
 		formatDateISO,
-		formatDateDMY
+		formatDateDMY,
+		computeStepBaselineDate,
+		calculateNextStepAscentInfo
 	} from '#lib/grants/generator-milestones';
 	import type {
 		GrantTransformationResult,
@@ -82,6 +84,61 @@
 	let partTimePercentage = $derived(((weeklyHours / fullTimeHours) * 100).toFixed(1).replace('.', ','));
 	let tariffGroup = $state('EG2');
 	let tariffStep = $state('ES1');
+
+	// Experience level progression continuity from prior employer in same tariff
+	let continueTariffProgression = $state(false);
+	let progressionInputMode = $state<'months' | 'date'>('months');
+	let priorExperienceMonths = $state<number>(12);
+	let previousTariffStepStartDate = $state('');
+
+	let currentStepNum = $derived(parseInt((tariffStep || 'ES1').replace(/\D/g, ''), 10) || 1);
+
+	let effectiveStepBaseline = $derived.by(() => {
+		if (!continueTariffProgression) {
+			return parseDateInput(startDate);
+		}
+		if (progressionInputMode === 'date' && previousTariffStepStartDate) {
+			return parseDateInput(previousTariffStepStartDate);
+		}
+		return computeStepBaselineDate(startDate, {
+			continueTariffProgression: true,
+			priorExperienceMonths: priorExperienceMonths > 0 ? priorExperienceMonths : 0
+		});
+	});
+
+	let nextAscentInfo = $derived.by(() => {
+		try {
+			return calculateNextStepAscentInfo(currentStepNum, startDate, effectiveStepBaseline);
+		} catch {
+			return null;
+		}
+	});
+
+	function handlePriorMonthsChange(months: number) {
+		priorExperienceMonths = Math.max(0, months);
+		if (startDate && months >= 0) {
+			try {
+				const start = parseDateInput(startDate);
+				const totalMonths = (start.year * 12 + start.month - 1) - months;
+				const baseYear = Math.floor(totalMonths / 12);
+				const baseMonth = (totalMonths % 12) + 1;
+				previousTariffStepStartDate = `${baseYear}-${String(baseMonth).padStart(2, '0')}-${String(start.day).padStart(2, '0')}`;
+			} catch {}
+		}
+	}
+
+	function handleStepStartDateChange(dateStr: string) {
+		previousTariffStepStartDate = dateStr;
+		if (startDate && dateStr) {
+			try {
+				const start = parseDateInput(startDate);
+				const base = parseDateInput(dateStr);
+				const months = Math.max(0, (start.year - base.year) * 12 + (start.month - base.month) + (start.day >= base.day ? 0 : -1));
+				priorExperienceMonths = months;
+			} catch {}
+		}
+	}
+
 	let healthInsuranceName = $state('Barmer');
 	let jobcenterId = $state('');
 	let zgsId = $state('');
@@ -325,6 +382,11 @@
 				durationMonths,
 				tariffGroup,
 				tariffStep,
+				continueTariffProgression,
+				previousTariffStepStartDate: continueTariffProgression
+					? (progressionInputMode === 'date' && previousTariffStepStartDate ? previousTariffStepStartDate : formatDateISO(effectiveStepBaseline))
+					: undefined,
+				priorExperienceMonths: continueTariffProgression ? priorExperienceMonths : undefined,
 				weeklyHours,
 				fullTimeHours,
 				reclassifications
@@ -376,6 +438,11 @@
 				durationMonths,
 				tariffGroup,
 				tariffStep,
+				continueTariffProgression,
+				previousTariffStepStartDate: continueTariffProgression
+					? (progressionInputMode === 'date' && previousTariffStepStartDate ? previousTariffStepStartDate : formatDateISO(effectiveStepBaseline))
+					: undefined,
+				priorExperienceMonths: continueTariffProgression ? priorExperienceMonths : undefined,
 				healthInsuranceName,
 				jobcenterId: jobcenterId.trim() || undefined,
 				zgsId: zgsId.trim() || undefined,
@@ -581,6 +648,138 @@
 								<option value={stp}>{stp} {stp === 'ES1' ? '(Standard Neueinstellung)' : ''}</option>
 							{/each}
 						</select>
+					</div>
+
+					<!-- Stufenlaufzeit-Fortführung aus Vorbeschäftigung Card -->
+					<div class="form-group col-span-2 tariff-continuity-card {continueTariffProgression ? 'active' : ''}">
+						<div class="continuity-header-row">
+							<div class="continuity-title-left">
+								<label class="continuity-switch-label" for="toggle-continuity">
+									<input
+										type="checkbox"
+										id="toggle-continuity"
+										bind:checked={continueTariffProgression}
+										class="continuity-checkbox"
+									/>
+									<span class="continuity-title-text">
+										Tarifliche Vorbeschäftigung anrechnen (Stufenlaufzeit fortführen)
+									</span>
+								</label>
+								<span class="continuity-sub-hint">
+									{#if continueTariffProgression}
+										Mitarbeiter/in wechselt aus demselben Tarif (z. B. TV-L / AWO Berlin) — bisherige Stufenlaufzeit wird übernommen.
+									{:else}
+										Standard: Stufenlaufzeit beginnt beim neuen Arbeitgeber bei 0 Monaten (Laufzeitneubeginn).
+									{/if}
+								</span>
+							</div>
+							<div class="continuity-status-badge">
+								{#if continueTariffProgression}
+									<span class="badge-continuity-active">⚡ Fortführung aktiv</span>
+								{:else}
+									<span class="badge-continuity-inactive">Standard (Neubeginn)</span>
+								{/if}
+							</div>
+						</div>
+
+						{#if continueTariffProgression}
+							<div class="continuity-body">
+								<div class="continuity-mode-selector">
+									<button
+										type="button"
+										class="continuity-mode-btn {progressionInputMode === 'months' ? 'active' : ''}"
+										onclick={() => {
+											progressionInputMode = 'months';
+											if (!priorExperienceMonths || priorExperienceMonths <= 0) handlePriorMonthsChange(12);
+										}}
+									>
+										📅 Nach absolvierten Monaten
+									</button>
+									<button
+										type="button"
+										class="continuity-mode-btn {progressionInputMode === 'date' ? 'active' : ''}"
+										onclick={() => {
+											progressionInputMode = 'date';
+											if (!previousTariffStepStartDate) handlePriorMonthsChange(priorExperienceMonths || 12);
+										}}
+									>
+										🗓️ Nach Datum des Stufenbeginns
+									</button>
+								</div>
+
+								<div class="continuity-inputs-row">
+									{#if progressionInputMode === 'months'}
+										<div class="sub-field flex-1">
+											<label for="prior-months-input">Bereits absolvierte Monate in {tariffStep}</label>
+											<div class="input-with-unit">
+												<input
+													type="number"
+													id="prior-months-input"
+													min="1"
+													max={currentStepNum * 12}
+													step="1"
+													value={priorExperienceMonths}
+													oninput={(e) => handlePriorMonthsChange(parseInt(e.currentTarget.value, 10) || 0)}
+													class="form-input"
+												/>
+												<span class="unit">Monate</span>
+											</div>
+										</div>
+
+										<div class="sub-field flex-2">
+											<span class="sub-field-label">Schnellauswahl für {tariffStep}:</span>
+											<div class="pills-row">
+												{#each [6, 12, 18, 24, 30].filter(m => m < currentStepNum * 12) as mPreset}
+													<button
+														type="button"
+														class="pill-btn continuity-pill {priorExperienceMonths === mPreset ? 'active' : ''}"
+														onclick={() => handlePriorMonthsChange(mPreset)}
+													>
+														{mPreset} Mon. ({mPreset >= 12 ? `${(mPreset / 12).toFixed(1).replace('.0', '').replace('.', ',')} J.` : ''})
+													</button>
+												{/each}
+											</div>
+										</div>
+									{:else}
+										<div class="sub-field flex-1">
+											<label for="step-start-date-input">Datum des Beginns von {tariffStep} beim Vorarbeitgeber</label>
+											<input
+												type="date"
+												id="step-start-date-input"
+												value={previousTariffStepStartDate}
+												oninput={(e) => handleStepStartDateChange(e.currentTarget.value)}
+												onchange={(e) => handleStepStartDateChange(e.currentTarget.value)}
+												max={startDate}
+												class="form-input"
+											/>
+										</div>
+									{/if}
+								</div>
+
+								{#if nextAscentInfo}
+									<div class="continuity-live-result-box">
+										<div class="result-icon">⚡</div>
+										<div class="result-text">
+											<div class="result-main">
+												{#if nextAscentInfo.nextStep}
+													Nächster Stufenaufstieg zu <strong>ES{nextAscentInfo.nextStep}</strong> am <strong>{nextAscentInfo.nextAscentDateStr}</strong>
+													{#if nextAscentInfo.remainingMonthsAtNewEmployer > 0}
+														(bereits nach <strong>{nextAscentInfo.remainingMonthsAtNewEmployer} {nextAscentInfo.remainingMonthsAtNewEmployer === 1 ? 'Monat' : 'Monaten'}</strong> beim neuen Arbeitgeber)
+													{:else}
+														(fällig mit Dienstantritt)
+													{/if}
+												{:else}
+													Mitarbeiter/in befindet sich bereits in Endstufe ES6.
+												{/if}
+											</div>
+											<div class="result-sub">
+												Angerechnete Vorzeit: {nextAscentInfo.priorMonthsCredited} Monate von erforderlichen {nextAscentInfo.totalMonthsRequiredInStep} Monaten in {tariffStep} • Referenz-Stufenbeginn: {formatDateDMY(effectiveStepBaseline)}
+											</div>
+										</div>
+									</div>
+								{/if}
+							</div>
+						{/if}
 					</div>
 
 					<!-- Settable Hours / Week (Prominent in main form) -->
@@ -2086,6 +2285,151 @@
 		background: rgba(139, 92, 246, 0.4);
 		color: #ffffff;
 		border-color: #a78bfa;
+	}
+
+	.tariff-continuity-card {
+		background: rgba(15, 23, 42, 0.45);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 12px;
+		padding: 0.9rem 1.15rem;
+		transition: all 0.25s ease;
+	}
+
+	.tariff-continuity-card.active {
+		background: rgba(16, 185, 129, 0.04);
+		border-color: rgba(16, 185, 129, 0.35);
+		box-shadow: 0 4px 20px rgba(16, 185, 129, 0.06);
+	}
+
+	.continuity-header-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.continuity-title-left {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.continuity-switch-label {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		cursor: pointer;
+		font-weight: 600;
+		font-size: 0.95rem;
+		color: #f8fafc;
+	}
+
+	.continuity-checkbox {
+		width: 1.15rem;
+		height: 1.15rem;
+		cursor: pointer;
+		accent-color: #10b981;
+	}
+
+	.continuity-sub-hint {
+		font-size: 0.78rem;
+		color: #94a3b8;
+	}
+
+	.badge-continuity-active {
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #34d399;
+		background: rgba(16, 185, 129, 0.15);
+		border: 1px solid rgba(16, 185, 129, 0.3);
+		padding: 0.25rem 0.65rem;
+		border-radius: 9999px;
+		letter-spacing: 0.02em;
+	}
+
+	.badge-continuity-inactive {
+		font-size: 0.72rem;
+		color: #64748b;
+		background: rgba(100, 116, 139, 0.12);
+		padding: 0.25rem 0.65rem;
+		border-radius: 9999px;
+	}
+
+	.continuity-body {
+		margin-top: 0.9rem;
+		padding-top: 0.9rem;
+		border-top: 1px solid rgba(255, 255, 255, 0.07);
+		display: flex;
+		flex-direction: column;
+		gap: 0.85rem;
+	}
+
+	.continuity-mode-selector {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.continuity-mode-btn {
+		background: rgba(30, 41, 59, 0.7);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		color: #94a3b8;
+		padding: 0.35rem 0.75rem;
+		border-radius: 8px;
+		font-size: 0.8rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.continuity-mode-btn.active {
+		background: rgba(16, 185, 129, 0.15);
+		border-color: rgba(16, 185, 129, 0.4);
+		color: #6ee7b7;
+		font-weight: 600;
+	}
+
+	.continuity-inputs-row {
+		display: flex;
+		gap: 1.25rem;
+		align-items: flex-end;
+		flex-wrap: wrap;
+	}
+
+	.pills-row {
+		display: flex;
+		gap: 0.4rem;
+		flex-wrap: wrap;
+	}
+
+	.continuity-pill {
+		font-size: 0.75rem;
+		padding: 0.35rem 0.65rem;
+	}
+
+	.continuity-live-result-box {
+		display: flex;
+		gap: 0.75rem;
+		align-items: center;
+		background: rgba(16, 185, 129, 0.08);
+		border: 1px solid rgba(16, 185, 129, 0.25);
+		border-radius: 10px;
+		padding: 0.65rem 0.9rem;
+	}
+
+	.result-icon {
+		font-size: 1.35rem;
+		color: #34d399;
+	}
+
+	.result-main {
+		font-size: 0.85rem;
+		color: #e2e8f0;
+	}
+
+	.result-sub {
+		font-size: 0.74rem;
+		color: #94a3b8;
+		margin-top: 0.15rem;
 	}
 
 	.reclass-empty-hint {
