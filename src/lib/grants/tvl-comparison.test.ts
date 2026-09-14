@@ -527,6 +527,19 @@ describe('TV-L Comparison Calculation Engine', () => {
 		const resMkk = calculateTvlComparison(dummyRecords, { ...baseParticipant, healthInsuranceName: 'mkk (18,1%)' }, 2026);
 		expect(resMkk.inputs.selectedInsuranceName).toBe('mkk');
 		expect(resMkk.inputs.kkZusatzRate).toBe(0.0175);
+
+		// Case 6: BIG direkt gesund (18,29%) -> matches BIG direkt gesund
+		const resBig = calculateTvlComparison(dummyRecords, { ...baseParticipant, healthInsuranceName: 'BIG direkt gesund (18,29%)' }, 2026);
+		expect(resBig.inputs.selectedInsuranceName).toBe('BIG direkt gesund');
+		expect(resBig.inputs.kkZusatzRate).toBe(0.01845);
+
+		// Case 7: BIG direkt -> matches BIG direkt gesund
+		const resBigAlias = calculateTvlComparison(dummyRecords, { ...baseParticipant, healthInsuranceName: 'BIG direkt' }, 2026);
+		expect(resBigAlias.inputs.selectedInsuranceName).toBe('BIG direkt gesund');
+
+		// Case 8: BIG direkt gesund Krankenkasse -> matches BIG direkt gesund
+		const resBigKk = calculateTvlComparison(dummyRecords, { ...baseParticipant, healthInsuranceName: 'BIG direkt gesund Krankenkasse' }, 2026);
+		expect(resBigKk.inputs.selectedInsuranceName).toBe('BIG direkt gesund');
 	});
 
 	it('automatically determines whether a 2nd period (Erfahrungsstufenwechsel) is needed', () => {

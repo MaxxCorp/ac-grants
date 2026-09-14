@@ -5,7 +5,8 @@ import {
 	resolveTariffStateAtDate,
 	calculateMilestones,
 	parseDateInput,
-	formatDateDMY
+	formatDateDMY,
+	getInsuranceFundByName
 } from './generator-milestones';
 
 describe('generator-milestones - Tariff Progression Continuity', () => {
@@ -128,6 +129,33 @@ describe('generator-milestones - Tariff Progression Continuity', () => {
 				{ year: 2025, month: 6, day: 1 }
 			);
 			expect(state2.step).toBe(3);
+		});
+	});
+
+	describe('getInsuranceFundByName', () => {
+		it('resolves BIG direkt gesund with accurate rates', () => {
+			const fund = getInsuranceFundByName('BIG direkt gesund');
+			expect(fund.name).toBe('BIG direkt gesund');
+			expect(fund.zusatzbeitragTotal).toBe(0.0369);
+			expect(fund.zusatzbeitragAg).toBe(0.01845);
+			expect(fund.u1Rate).toBe(0.033);
+			expect(fund.u2Rate).toBe(0.0029);
+			expect(fund.u3Rate).toBe(0.0015);
+			expect(fund.agaRate).toBe(0.25285);
+		});
+
+		it('resolves BIG direkt alias to BIG direkt gesund', () => {
+			const fund = getInsuranceFundByName('BIG direkt');
+			expect(fund.name).toBe('BIG direkt gesund');
+			expect(fund.agaRate).toBe(0.25285);
+		});
+
+		it('resolves case-insensitively and falls back gracefully', () => {
+			const fund = getInsuranceFundByName('big direkt gesund');
+			expect(fund.name).toBe('BIG direkt gesund');
+
+			const fallback = getInsuranceFundByName('Unknown Fund');
+			expect(fallback.name).toBe('Barmer');
 		});
 	});
 });

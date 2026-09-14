@@ -143,8 +143,22 @@ export function calculateDurationMonthsBetween(
  * Returns the insurance fund details for a fund name.
  */
 export function getInsuranceFundByName(name = 'Barmer') {
-	const found = DEFAULT_INSURANCE_FUNDS.find(f => f.name.toLowerCase() === name.toLowerCase());
+	const lower = (name || '').trim().toLowerCase();
+	const found = DEFAULT_INSURANCE_FUNDS.find(f => f.name.toLowerCase() === lower);
 	if (found) return found;
+
+	// Alias matching for BIG direkt gesund / BIG direkt
+	if (lower.includes('big')) {
+		const big = DEFAULT_INSURANCE_FUNDS.find(f => f.name.toLowerCase().includes('big'));
+		if (big) return big;
+	}
+
+	// Substring / partial matching
+	const partial = DEFAULT_INSURANCE_FUNDS.find(f =>
+		lower.includes(f.name.toLowerCase()) || f.name.toLowerCase().includes(lower)
+	);
+	if (partial) return partial;
+
 	// Fallback to Barmer
 	return DEFAULT_INSURANCE_FUNDS.find(f => f.name.toLowerCase() === 'barmer') || DEFAULT_INSURANCE_FUNDS[0];
 }

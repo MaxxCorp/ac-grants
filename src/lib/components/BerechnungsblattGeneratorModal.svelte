@@ -324,7 +324,8 @@
 		if (customAgaTimeline.length > 0) {
 			nextStart = customAgaTimeline[customAgaTimeline.length - 1].endDate;
 		}
-		const selFund = AVAILABLE_INSURANCES.find(i => i.name === healthInsuranceName);
+		const selFund = AVAILABLE_INSURANCES.find(i => i.name === healthInsuranceName)
+			|| (healthInsuranceName.toLowerCase().includes('big') ? AVAILABLE_INSURANCES.find(i => i.name.toLowerCase().includes('big')) : undefined);
 		const defaultAga = selFund ? parseFloat(selFund.rate.replace(',', '.')) / 100 : 0.23815;
 		customAgaTimeline = [
 			...customAgaTimeline,
@@ -365,7 +366,7 @@
 		{ name: 'AOK BLN-BRB', rate: '23,870%', note: 'Berlin/Brandenburg' },
 		{ name: 'DAK', rate: '23,140%', note: 'Bundesweit' },
 		{ name: 'mkk', rate: '24,480%', note: 'meine krankenkasse (ehem. BKK VBU)' },
-		{ name: 'BIG direkt', rate: '25,285%', note: 'Direktversicherung' },
+		{ name: 'BIG direkt gesund', rate: '25,285%', note: 'Direktversicherung (Zusatz 3,69%)' },
 		{ name: 'BKK VBU', rate: '24,480%', note: 'Betriebskrankenkasse' },
 		{ name: 'IKK BLN-BRB', rate: '25,415%', note: 'Innungskrankenkasse' },
 		{ name: 'KKH', rate: '23,980%', note: 'Kaufmännische Krankenkasse' },

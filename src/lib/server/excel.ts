@@ -216,7 +216,10 @@ export function parseInsuranceFunds(workbook: XLSX.WorkBook): InsuranceFundDetai
 
 				const pvRate = 0.018;
 
-				const existing = insuranceFunds.find(i => i.name.toLowerCase() === name.toLowerCase());
+				const existing = insuranceFunds.find(i =>
+					i.name.toLowerCase() === name.toLowerCase() ||
+					(i.name.toLowerCase().includes('big') && name.toLowerCase().includes('big'))
+				);
 				const fundObj: InsuranceFundDetails = {
 					name,
 					kvRate,

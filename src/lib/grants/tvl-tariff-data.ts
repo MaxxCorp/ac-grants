@@ -70,7 +70,7 @@ export const DEFAULT_INSURANCE_FUNDS: InsuranceFundDetails[] = [
 		agaRate: 0.22935
 	},
 	{
-		name: 'BIG direkt',
+		name: 'BIG direkt gesund',
 		kvRate: 0.073,
 		zusatzbeitragTotal: 0.0369,
 		zusatzbeitragAg: 0.01845,

@@ -388,7 +388,7 @@ export function normalizeInsuranceName(name: string): string {
 	return name
 		.toLowerCase()
 		.replace(/\(.*?\)/g, '')
-		.replace(/krankenkasse|ersatzkasse|nordost|plus|gesundheit|pflege|direkt/gi, '')
+		.replace(/krankenkasse|ersatzkasse|nordost|plus|gesundheit|gesund|pflege|direkt/gi, '')
 		.trim();
 }
 
@@ -456,6 +456,10 @@ export function findMatchingInsuranceFund(
 	if (norm.includes('vbu')) {
 		const vbu = insuranceFunds.find((f) => f.name.toLowerCase().includes('vbu') || f.name.toLowerCase().includes('mkk'));
 		if (vbu) return vbu;
+	}
+	if (norm.includes('big')) {
+		const big = insuranceFunds.find((f) => f.name.toLowerCase().includes('big'));
+		if (big) return big;
 	}
 
 	return insuranceFunds[0] || DEFAULT_INSURANCE_FUNDS[0];
