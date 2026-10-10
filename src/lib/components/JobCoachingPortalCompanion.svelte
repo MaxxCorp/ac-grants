@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { GrantTransformationResult, JobCoachingData, JobCoachingBetreuungRow, JobCoachingBueroItem } from '#lib/types/grant';
 	import { downloadFinanzierungsplanExcelFile } from '#lib/grants/finanzierungsplan-exporter';
+	import { getFinanzierungsplanExportFileName } from '#lib/grants/filename-utils';
 	import { generateAutomationPayload, generatePlaywrightScript } from '#lib/automation/bridge';
 	import TvlComparisonCompanion from '#lib/components/TvlComparisonCompanion.svelte';
 
@@ -286,7 +287,12 @@
 				type="button"
 				class="export-btn"
 				onclick={handleDownloadFinanzierungsplan}
-				title="Offiziellen Finanzierungsplan als Excel-Tabelle herunterladen"
+				title={`Offiziellen Finanzierungsplan als Excel-Tabelle herunterladen (${getFinanzierungsplanExportFileName(
+					result.participant?.name,
+					result.years[0] || 2027,
+					Boolean(result.participants && result.participants.length > 1),
+					result.participants?.length
+				)})`}
 			>
 				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>

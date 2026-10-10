@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { TvlComparisonResult } from '#lib/types/grant';
+import { getTvlExportFileName, formatExportFileName } from './filename-utils';
 
 function parseDateToExcelSerial(dStr?: string): number | null {
 	if (!dStr) return null;
@@ -143,8 +144,8 @@ export function downloadTvlExcelFile(result: TvlComparisonResult, customFileName
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = url;
-	const sanitizedName = (result.inputs.participantName || 'Teilnehmer').replace(/[^a-zA-Z0-9äöüÄÖÜß_-]/g, '_');
-	a.download = customFileName || `Vergleichsberechnung_TV-L_${result.year}_${sanitizedName}.xlsx`;
+	const defaultFileName = getTvlExportFileName(result.inputs.participantName, result.year);
+	a.download = customFileName || defaultFileName;
 	document.body.appendChild(a);
 	a.click();
 	document.body.removeChild(a);
@@ -200,7 +201,16 @@ export function downloadMultiParticipantTvlWorkbook(results: TvlComparisonResult
 	const a = document.createElement('a');
 	a.href = url;
 	const yr = results[0]?.year || 2026;
-	a.download = fileName || `Vergleichsberechnungen_TV-L_${yr}_Gesamtprojekt_${results.length}_TLN.xlsx`;
+	let defaultName: string;
+	if (results.length === 1 && results[0]?.inputs?.participantName?.trim()) {
+		defaultName = getTvlExportFileName(results[0].inputs.participantName, yr);
+	} else {
+		defaultName = formatExportFileName(
+			`Gesamtprojekt_${results.length}_TLN`,
+			`Vergleichsberechnungen_TV-L_${yr}`
+		);
+	}
+	a.download = fileName || defaultName;
 	document.body.appendChild(a);
 	a.click();
 	document.body.removeChild(a);

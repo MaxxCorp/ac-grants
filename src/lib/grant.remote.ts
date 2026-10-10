@@ -240,6 +240,7 @@ export const uploadExcel = form(
 
 // Remote Command: Generate Berechnungsblatt Excel and compute transformation
 import { generateBerechnungsblattExcel } from '#lib/server/excel-generator';
+import { getBerechnungsblattExportFileName } from '#lib/grants/filename-utils';
 
 export interface GeneratedBerechnungsblattResponse {
 	fileBase64: string;
@@ -320,8 +321,7 @@ export const generateBerechnungsblatt = command(
 		});
 		result.insuranceFunds = insuranceFunds;
 
-		const sanitizedName = (payload.employeeName || 'Mitarbeiter').replace(/[^a-zA-Z0-9äöüÄÖÜß_-]/g, '_');
-		const fileName = `Berechnungsblatt_${sanitizedName}.xlsx`;
+		const fileName = getBerechnungsblattExportFileName(payload.employeeName);
 
 		return {
 			fileBase64: buffer.toString('base64'),

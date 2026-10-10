@@ -32,6 +32,7 @@
 		getOrganizationBgSettings,
 		saveOrganizationBgSettings
 	} from '#lib/grants/organization-settings';
+	import { getBerechnungsblattExportFileName } from '#lib/grants/filename-utils';
 
 	let {
 		isOpen = $bindable(false),
@@ -568,6 +569,9 @@
 							class="form-input"
 							required
 						/>
+						<span class="field-hint filename-preview">
+							Export-Dateiname: <code>{getBerechnungsblattExportFileName(employeeName)}</code>
+						</span>
 					</div>
 
 					<!-- Start Date -->
@@ -1727,6 +1731,26 @@
 	.field-hint {
 		font-size: 0.775rem;
 		color: #64748b;
+	}
+
+	.filename-preview {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		margin-top: 0.35rem;
+		color: #94a3b8;
+		font-size: 0.8rem;
+		flex-wrap: wrap;
+	}
+
+	.filename-preview code {
+		color: #38bdf8;
+		font-family: monospace;
+		background: rgba(56, 189, 248, 0.08);
+		padding: 0.15rem 0.45rem;
+		border-radius: 4px;
+		border: 1px solid rgba(56, 189, 248, 0.25);
+		word-break: break-all;
 	}
 
 	.pill-selector {

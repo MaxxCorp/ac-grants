@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import type { GrantTransformationResult } from '#lib/types/grant';
 import { getVwkRate } from './berliner-jobcoaching';
+import { getFinanzierungsplanExportFileName } from './filename-utils';
 
 function round2(val: number): number {
 	return Math.round((val + Number.EPSILON) * 100) / 100;
@@ -262,7 +263,14 @@ export function downloadFinanzierungsplanExcelFile(
 
 	const wbBytes = generateFinanzierungsplanWorkbook(result, templateBuffer);
 	const activeYear = result.years[0] || 2027;
-	const defaultFilename = `Finanzierungsplan_Berliner_JobCoaching_${activeYear}.xlsx`;
+	const isMulti = Boolean(result.participants && result.participants.length > 1);
+	const participantCount = result.participants?.length;
+	const defaultFilename = getFinanzierungsplanExportFileName(
+		result.participant?.name,
+		activeYear,
+		isMulti,
+		participantCount
+	);
 
 	const blob = new Blob([wbBytes as any], {
 		type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'

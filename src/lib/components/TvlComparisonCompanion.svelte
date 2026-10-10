@@ -6,6 +6,7 @@
 		downloadAllTvlExcelFiles,
 		downloadMultiParticipantTvlWorkbook
 	} from '#lib/grants/tvl-template-exporter';
+	import { getTvlExportFileName } from '#lib/grants/filename-utils';
 
 	let {
 		result
@@ -362,7 +363,12 @@
 					{/if}
 				</button>
 
-				<button type="button" class="btn-download-excel" onclick={handleDownload} title="Excel-Datei für diese/n Teilnehmer/in herunterladen">
+				<button
+					type="button"
+					class="btn-download-excel"
+					onclick={handleDownload}
+					title={`Excel-Datei herunterladen (${getTvlExportFileName(tvl.inputs.participantName, tvl.year)})`}
+				>
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
 						<polyline points="7 10 12 15 17 10"></polyline>
