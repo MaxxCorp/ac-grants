@@ -461,6 +461,10 @@ export function findMatchingInsuranceFund(
 		const big = insuranceFunds.find((f) => f.name.toLowerCase().includes('big'));
 		if (big) return big;
 	}
+	if (norm.includes('novitas')) {
+		const novitas = insuranceFunds.find((f) => f.name.toLowerCase().includes('novitas'));
+		if (novitas) return novitas;
+	}
 
 	return insuranceFunds[0] || DEFAULT_INSURANCE_FUNDS[0];
 }

@@ -170,8 +170,8 @@ export function parseInsuranceFunds(workbook: XLSX.WorkBook): InsuranceFundDetai
 	const agaSheetName = workbook.SheetNames.find(n => n.toLowerCase().includes('aga'));
 	if (agaSheetName && workbook.Sheets[agaSheetName]) {
 		const agaSheet = workbook.Sheets[agaSheetName];
-		// Read rows 5 to 16
-		for (let r = 5; r <= 16; r++) {
+		// Read rows 5 to 25
+		for (let r = 5; r <= 25; r++) {
 			const insNameCell = agaSheet[`A${r}`];
 			const kvCell = agaSheet[`C${r}`];
 			const zusatzCell = agaSheet[`D${r}`];
@@ -218,7 +218,8 @@ export function parseInsuranceFunds(workbook: XLSX.WorkBook): InsuranceFundDetai
 
 				const existing = insuranceFunds.find(i =>
 					i.name.toLowerCase() === name.toLowerCase() ||
-					(i.name.toLowerCase().includes('big') && name.toLowerCase().includes('big'))
+					(i.name.toLowerCase().includes('big') && name.toLowerCase().includes('big')) ||
+					(i.name.toLowerCase().includes('novitas') && name.toLowerCase().includes('novitas'))
 				);
 				const fundObj: InsuranceFundDetails = {
 					name,

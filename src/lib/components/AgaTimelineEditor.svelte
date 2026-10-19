@@ -26,7 +26,10 @@
 		{ name: 'BIG direkt gesund', rate: 0.25285 },
 		{ name: 'BKK VBU', rate: 0.2448 },
 		{ name: 'DAK', rate: 0.2314 },
-		{ name: 'IKK BLN-BRB', rate: 0.25415 }
+		{ name: 'IKK BLN-BRB', rate: 0.25415 },
+		{ name: 'KKH', rate: 0.2398 },
+		{ name: 'Bahn-BKK', rate: 0.25295 },
+		{ name: 'Novitas BKK', rate: 0.2425 }
 	];
 
 	function addPeriod() {

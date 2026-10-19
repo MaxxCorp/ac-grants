@@ -326,7 +326,8 @@
 			nextStart = customAgaTimeline[customAgaTimeline.length - 1].endDate;
 		}
 		const selFund = AVAILABLE_INSURANCES.find(i => i.name === healthInsuranceName)
-			|| (healthInsuranceName.toLowerCase().includes('big') ? AVAILABLE_INSURANCES.find(i => i.name.toLowerCase().includes('big')) : undefined);
+			|| (healthInsuranceName.toLowerCase().includes('big') ? AVAILABLE_INSURANCES.find(i => i.name.toLowerCase().includes('big')) : undefined)
+			|| (healthInsuranceName.toLowerCase().includes('novitas') ? AVAILABLE_INSURANCES.find(i => i.name.toLowerCase().includes('novitas')) : undefined);
 		const defaultAga = selFund ? parseFloat(selFund.rate.replace(',', '.')) / 100 : 0.23815;
 		customAgaTimeline = [
 			...customAgaTimeline,
@@ -371,7 +372,8 @@
 		{ name: 'BKK VBU', rate: '24,480%', note: 'Betriebskrankenkasse' },
 		{ name: 'IKK BLN-BRB', rate: '25,415%', note: 'Innungskrankenkasse' },
 		{ name: 'KKH', rate: '23,980%', note: 'Kaufmännische Krankenkasse' },
-		{ name: 'Bahn-BKK', rate: '25,295%', note: 'Verkehr & Logistik' }
+		{ name: 'Bahn-BKK', rate: '25,295%', note: 'Verkehr & Logistik' },
+		{ name: 'Novitas BKK', rate: '24,250%', note: 'Betriebskrankenkasse (Zusatz 3,60%)' }
 	];
 
 	// Live derived milestones
@@ -839,7 +841,7 @@
 								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3">
 									<polyline points="20 6 9 17 4 12"></polyline>
 								</svg>
-								Barmer 2026 Daten verifiziert (AGA 23,815%)
+								{healthInsuranceName} 2026 Daten verifiziert (AGA {AVAILABLE_INSURANCES.find(i => i.name === healthInsuranceName)?.rate || '24,250%'})
 							</span>
 						</div>
 						<select id="healthInsurance" bind:value={healthInsuranceName} class="form-select">

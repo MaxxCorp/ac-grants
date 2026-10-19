@@ -150,6 +150,27 @@ describe('generator-milestones - Tariff Progression Continuity', () => {
 			expect(fund.agaRate).toBe(0.25285);
 		});
 
+		it('resolves Novitas BKK with accurate rates', () => {
+			const fund = getInsuranceFundByName('Novitas BKK');
+			expect(fund.name).toBe('Novitas BKK');
+			expect(fund.zusatzbeitragTotal).toBe(0.036);
+			expect(fund.zusatzbeitragAg).toBe(0.018);
+			expect(fund.u1Rate).toBe(0.023);
+			expect(fund.u2Rate).toBe(0.003);
+			expect(fund.u3Rate).toBe(0.0015);
+			expect(fund.agaRate).toBe(0.2425);
+		});
+
+		it('resolves Novitas and Novitas Krankenkasse aliases to Novitas BKK', () => {
+			const fund1 = getInsuranceFundByName('Novitas');
+			expect(fund1.name).toBe('Novitas BKK');
+			expect(fund1.agaRate).toBe(0.2425);
+
+			const fund2 = getInsuranceFundByName('Novitas Krankenkasse');
+			expect(fund2.name).toBe('Novitas BKK');
+			expect(fund2.agaRate).toBe(0.2425);
+		});
+
 		it('resolves case-insensitively and falls back gracefully', () => {
 			const fund = getInsuranceFundByName('big direkt gesund');
 			expect(fund.name).toBe('BIG direkt gesund');

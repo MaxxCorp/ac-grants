@@ -153,6 +153,12 @@ export function getInsuranceFundByName(name = 'Barmer') {
 		if (big) return big;
 	}
 
+	// Alias matching for Novitas / Novitas BKK
+	if (lower.includes('novitas')) {
+		const novitas = DEFAULT_INSURANCE_FUNDS.find(f => f.name.toLowerCase().includes('novitas'));
+		if (novitas) return novitas;
+	}
+
 	// Substring / partial matching
 	const partial = DEFAULT_INSURANCE_FUNDS.find(f =>
 		lower.includes(f.name.toLowerCase()) || f.name.toLowerCase().includes(lower)

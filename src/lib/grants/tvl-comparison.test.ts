@@ -540,6 +540,19 @@ describe('TV-L Comparison Calculation Engine', () => {
 		// Case 8: BIG direkt gesund Krankenkasse -> matches BIG direkt gesund
 		const resBigKk = calculateTvlComparison(dummyRecords, { ...baseParticipant, healthInsuranceName: 'BIG direkt gesund Krankenkasse' }, 2026);
 		expect(resBigKk.inputs.selectedInsuranceName).toBe('BIG direkt gesund');
+
+		// Case 9: Novitas BKK (18,2%) -> matches Novitas BKK
+		const resNovitas = calculateTvlComparison(dummyRecords, { ...baseParticipant, healthInsuranceName: 'Novitas BKK (18,2%)' }, 2026);
+		expect(resNovitas.inputs.selectedInsuranceName).toBe('Novitas BKK');
+		expect(resNovitas.inputs.kkZusatzRate).toBe(0.018);
+
+		// Case 10: Novitas -> matches Novitas BKK
+		const resNovitasAlias = calculateTvlComparison(dummyRecords, { ...baseParticipant, healthInsuranceName: 'Novitas' }, 2026);
+		expect(resNovitasAlias.inputs.selectedInsuranceName).toBe('Novitas BKK');
+
+		// Case 11: Novitas Krankenkasse -> matches Novitas BKK
+		const resNovitasKk = calculateTvlComparison(dummyRecords, { ...baseParticipant, healthInsuranceName: 'Novitas Krankenkasse' }, 2026);
+		expect(resNovitasKk.inputs.selectedInsuranceName).toBe('Novitas BKK');
 	});
 
 	it('automatically determines whether a 2nd period (Erfahrungsstufenwechsel) is needed', () => {
