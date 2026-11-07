@@ -2,7 +2,8 @@ import type {
 	BerechnungsblattGeneratorOptions,
 	GeneratorMilestone,
 	TariffReclassification,
-	BgRatePeriod
+	BgRatePeriod,
+	WeeklyHoursPeriod
 } from '#lib/types/grant';
 import {
 	getAwoTariffSalary,
@@ -17,7 +18,8 @@ export const COLOR_TARIFERHOEHUNG = 'FFC000'; // Amber/Yellow
 export const COLOR_UMGRUPPIERUNG  = '8B5CF6'; // Vibrant Purple
 export const COLOR_EXIT           = 'FF0000'; // Red
 export const COLOR_HEADER_BG      = 'D9E1F2'; // Light blue-grey for headers
-export const COLOR_SUM_BG         = 'F2F2F2'; // Soft grey for yearly totals
+export const COLOR_SUM_BG         = 'FFFF00'; // Yellow for yearly totals section (restored from original design)
+export const COLOR_JSZ_BG         = 'D9D9D9'; // Light grey for Jahressonderzahlungen sections (restored from original design)
 
 /**
  * Normalizes input date to year, month (1-12), day (1-31).
@@ -492,4 +494,37 @@ export function calculateMilestones(options: BerechnungsblattGeneratorOptions): 
 	}
 
 	return milestones;
+}
+
+/**
+ * Resolves the effective weekly work hours at a specific date based on default hours
+ * and optional timeline of varying weekly work hours over time.
+ */
+export function resolveWeeklyHoursAtDate(
+	date: { year: number; month: number; day: number },
+	defaultHours = 30,
+	timeline?: WeeklyHoursPeriod[]
+): number {
+	if (!timeline || timeline.length === 0) return defaultHours;
+	const targetIdx = date.year * 10000 + date.month * 100 + date.day;
+	const sorted = [...timeline].sort((a, b) => {
+		const da = parseDateInput(a.startDate);
+		const db = parseDateInput(b.startDate);
+		return (da.year * 10000 + da.month * 100 + da.day) - (db.year * 10000 + db.month * 100 + db.day);
+	});
+	let effective = defaultHours;
+	for (const item of sorted) {
+		const s = parseDateInput(item.startDate);
+		const startIdx = s.year * 10000 + s.month * 100 + s.day;
+		let inRange = targetIdx >= startIdx;
+		if (inRange && item.endDate) {
+			const e = parseDateInput(item.endDate);
+			const endIdx = e.year * 10000 + e.month * 100 + e.day;
+			inRange = targetIdx <= endIdx;
+		}
+		if (inRange) {
+			effective = item.weeklyHours;
+		}
+	}
+	return effective;
 }

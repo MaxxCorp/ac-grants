@@ -14,7 +14,8 @@
 		GrantTransformationResult,
 		TariffReclassification,
 		BgRatePeriod,
-		AgaRatePeriod
+		AgaRatePeriod,
+		WeeklyHoursPeriod
 	} from '#lib/types/grant';
 	import type { BgProviderType } from '#lib/types/bg';
 	import {
@@ -85,6 +86,36 @@
 	let partTimePercentage = $derived(((weeklyHours / fullTimeHours) * 100).toFixed(1).replace('.', ','));
 	let tariffGroup = $state('EG2');
 	let tariffStep = $state('ES1');
+	let baselineTariffSelection = $state('');
+	let customBaselineMonth = $state('');
+
+	// Varying weekly hours over time (Spalte E)
+	let showHoursTimeline = $state(false);
+	let weeklyHoursTimeline = $state<WeeklyHoursPeriod[]>([]);
+
+	function addHoursPeriod() {
+		let defaultStartDate = startDate || '2026-01-01';
+		if (weeklyHoursTimeline.length > 0) {
+			const last = weeklyHoursTimeline[weeklyHoursTimeline.length - 1];
+			if (last.endDate) {
+				defaultStartDate = last.endDate;
+			}
+		}
+		weeklyHoursTimeline = [
+			...weeklyHoursTimeline,
+			{
+				id: `wh-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+				startDate: defaultStartDate,
+				endDate: '',
+				weeklyHours: weeklyHours,
+				label: 'Arbeitszeitänderung'
+			}
+		];
+	}
+
+	function removeHoursPeriod(id: string) {
+		weeklyHoursTimeline = weeklyHoursTimeline.filter(h => h.id !== id);
+	}
 
 	// Experience level progression continuity from prior employer in same tariff
 	let continueTariffProgression = $state(false);
@@ -435,6 +466,10 @@
 			isGenerating = true;
 			errorMessage = null;
 
+			const effectiveBaselineMonth = baselineTariffSelection === 'custom'
+				? (customBaselineMonth ? (customBaselineMonth.length === 7 ? customBaselineMonth + '-01' : customBaselineMonth) : undefined)
+				: (baselineTariffSelection || undefined);
+
 			const response = await generateBerechnungsblatt({
 				employeeName,
 				startDate,
@@ -462,7 +497,9 @@
 				bgProvider: bgCalculation.providerLabel,
 				bgDetails: bgCalculation.detailsLabel,
 				customBgTimeline: bgTimeline.length > 0 ? bgTimeline : undefined,
-				customAgaTimeline: customAgaTimeline.length > 0 ? customAgaTimeline : undefined
+				customAgaTimeline: customAgaTimeline.length > 0 ? customAgaTimeline : undefined,
+				baselineTariffMonth: effectiveBaselineMonth,
+				weeklyHoursTimeline: weeklyHoursTimeline.length > 0 ? weeklyHoursTimeline : undefined
 			});
 
 			// Download file
@@ -789,6 +826,35 @@
 						{/if}
 					</div>
 
+					<!-- Baseline Tariff Stand for Tarifmittel (Spalten M & N) -->
+					<div class="form-group col-span-2 baseline-tariff-card">
+						<div class="label-row">
+							<label for="baselineTariffMonth" class="main-field-label">Referenz-Tarifstand für Tarifmittel (Spalten M & N)</label>
+							<span class="field-hint">Vergleichsmonat zur Ermittlung tariflicher Mehrkosten</span>
+						</div>
+						<div class="baseline-tariff-control-row">
+							<select id="baselineTariffMonth" bind:value={baselineTariffSelection} class="form-select flex-grow">
+								<option value="">Tarifstand bei Projektbeginn ({startDate ? formatDateDMY(parseDateInput(startDate)) : 'Startdatum'})</option>
+								<option value="2025-09">ab 09/2025 bzw. 01/2026 (Basis-Tariftabelle)</option>
+								<option value="2026-09">ab 09/2026 (+ Tarifsteigerung 2026)</option>
+								<option value="2027-07">ab 07/2027 (+ Tarifsteigerung 2027)</option>
+								<option value="2028-07">ab 07/2028 (+ Tarifsteigerung 2028)</option>
+								<option value="custom">Individueller Vergleichsmonat...</option>
+							</select>
+							{#if baselineTariffSelection === 'custom'}
+								<input
+									type="month"
+									bind:value={customBaselineMonth}
+									class="form-input custom-month-input"
+									placeholder="YYYY-MM"
+								/>
+							{/if}
+						</div>
+						<span class="field-hint">
+							Ermittelt in Spalte M (AN-Brutto) und N (AGA) die Differenz zwischen den tatsächlichen Kosten und dem Tarifstand dieses Referenzmonats (inkl. Stufenaufstiegen, Umgruppierungen und Jahressonderzahlungen).
+						</span>
+					</div>
+
 					<!-- Settable Hours / Week (Prominent in main form) -->
 					<div class="form-group col-span-2 weekly-hours-card">
 						<div class="hours-header-row">
@@ -831,6 +897,70 @@
 								{/each}
 							</div>
 						</div>
+
+						<div class="timeline-toggle-row">
+							<button
+								type="button"
+								class="timeline-pill-btn {showHoursTimeline || weeklyHoursTimeline.length > 0 ? 'active' : ''}"
+								onclick={() => (showHoursTimeline = !showHoursTimeline)}
+							>
+								⏱️ Wöchentliche Arbeitszeit im Zeitverlauf variieren (Spalte E) {weeklyHoursTimeline.length > 0 ? `(${weeklyHoursTimeline.length} Intervalle)` : ''}
+							</button>
+						</div>
+
+						{#if showHoursTimeline}
+							<div class="nested-timeline-box">
+								<div class="nested-timeline-header">
+									<span>⏱️ Arbeitszeit-Änderungen im Zeitverlauf (überschreibt Spalte E)</span>
+									<button type="button" class="btn-sub-action" onclick={addHoursPeriod}>
+										+ Zeitraum hinzufügen
+									</button>
+								</div>
+								{#if weeklyHoursTimeline.length === 0}
+									<p class="empty-timeline-hint">Standardmäßig gilt die oben gewählte Arbeitszeit ({weeklyHours} Std./Woche) über die gesamte Laufzeit. Fügen Sie Zeiträume hinzu, wenn sich die Wochenstunden im Verlauf ändern (z. B. Stundenerhöhung oder -reduzierung).</p>
+								{:else}
+									<div class="timeline-rows-list">
+										{#each weeklyHoursTimeline as period, idx (period.id)}
+											<div class="timeline-row-card">
+												<span class="period-num">#{idx + 1}</span>
+												<div class="sub-field">
+													<label for="wh-start-{period.id}">Gültig ab</label>
+													<input id="wh-start-{period.id}" type="date" bind:value={period.startDate} class="form-input-sm" />
+												</div>
+												<div class="sub-field">
+													<label for="wh-end-{period.id}">Bis (optional)</label>
+													<input id="wh-end-{period.id}" type="date" bind:value={period.endDate} placeholder="Laufzeitende" class="form-input-sm" />
+												</div>
+												<div class="sub-field">
+													<label for="wh-hours-{period.id}">Wochenstunden</label>
+													<input
+														id="wh-hours-{period.id}"
+														type="number"
+														step="0.5"
+														min="1"
+														max="45"
+														bind:value={period.weeklyHours}
+														class="form-input-sm"
+													/>
+												</div>
+												<div class="sub-field flex-grow">
+													<label for="wh-label-{period.id}">Bezeichnung / Grund</label>
+													<input id="wh-label-{period.id}" type="text" bind:value={period.label} placeholder="z. B. Aufstockung" class="form-input-sm" />
+												</div>
+												<button
+													type="button"
+													class="btn-remove-period"
+													onclick={() => removeHoursPeriod(period.id)}
+													title="Zeitraum entfernen"
+												>
+													✕
+												</button>
+											</div>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						{/if}
 					</div>
 
 					<!-- Krankenkasse -->
@@ -1817,6 +1947,25 @@
 		display: flex;
 		gap: 0.75rem;
 		align-items: center;
+	}
+
+	.baseline-tariff-card {
+		background: rgba(30, 41, 59, 0.35);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 10px;
+		padding: 0.85rem 1rem;
+	}
+
+	.baseline-tariff-control-row {
+		display: flex;
+		gap: 0.6rem;
+		align-items: center;
+		margin-top: 0.25rem;
+		margin-bottom: 0.35rem;
+	}
+
+	.custom-month-input {
+		max-width: 170px;
 	}
 
 	.timeline-toggle-row {

@@ -305,6 +305,18 @@ export const generateBerechnungsblatt = command(
 					label: v.string()
 				})
 			)
+		),
+		baselineTariffMonth: v.optional(v.string()),
+		weeklyHoursTimeline: v.optional(
+			v.array(
+				v.object({
+					id: v.string(),
+					startDate: v.string(),
+					endDate: v.optional(v.string()),
+					weeklyHours: v.number(),
+					label: v.optional(v.string())
+				})
+			)
 		)
 	}),
 	async (payload): Promise<GeneratedBerechnungsblattResponse> => {

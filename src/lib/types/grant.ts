@@ -14,6 +14,14 @@ export interface BgRatePeriod {
 	label: string;
 }
 
+export interface WeeklyHoursPeriod {
+	id: string;
+	startDate: string; // YYYY-MM-DD or DD.MM.YYYY
+	endDate?: string;   // optional YYYY-MM-DD or DD.MM.YYYY
+	weeklyHours: number; // e.g. 20, 25, 30, 35
+	label?: string;      // e.g. "Teilzeitvereinbarung", "Aufstockung"
+}
+
 export interface ParticipantInfo {
 	name: string;
 	tariffGroup: string;
@@ -21,6 +29,7 @@ export interface ParticipantInfo {
 	runtimeStart: string;
 	runtimeEnd: string;
 	weeklyHours: number;
+	weeklyHoursTimeline?: WeeklyHoursPeriod[];
 	fullTimeHours: number;
 	sachkostenMonthly: number;
 	childrenCount: number;
@@ -39,6 +48,7 @@ export interface ParticipantInfo {
 	continueTariffProgression?: boolean;
 	previousTariffStepStartDate?: string;
 	priorExperienceMonths?: number;
+	baselineTariffMonth?: string;
 }
 
 export interface BerechnungsblattGeneratorOptions {
@@ -56,6 +66,8 @@ export interface BerechnungsblattGeneratorOptions {
 	jobcenterId?: string;
 	zgsId?: string;
 	weeklyHours?: number; // default 30
+	weeklyHoursTimeline?: WeeklyHoursPeriod[];
+	baselineTariffMonth?: string; // e.g. "2025-09", "2026-01", "2026-09"
 	fullTimeHours?: number; // default 39
 	sachkostenMonthly?: number; // default 155
 	childrenCount?: number; // default 0
@@ -111,6 +123,7 @@ export interface MonthlyRecord {
 	jszAgaAmount: number;
 	sachkostenAmount: number;
 	tariffDelta?: number;
+	tariffAgaDelta?: number;
 	isJszMonth?: boolean;
 	notes?: string;
 	tariffGroup?: string;

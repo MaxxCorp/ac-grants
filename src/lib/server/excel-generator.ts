@@ -5,6 +5,7 @@ import {
 	calculateTariffStepAtDate,
 	isAwoTariffIncreaseMonth,
 	normalizeAwoGroupKey,
+	getApplicableAwoPeriod,
 	AWO_TARIFF_PERIODS
 } from '#lib/grants/awo-tariff-data';
 import { DEFAULT_INSURANCE_FUNDS } from '#lib/grants/tvl-tariff-data';
@@ -15,6 +16,7 @@ import {
 	COLOR_EXIT,
 	COLOR_HEADER_BG,
 	COLOR_SUM_BG,
+	COLOR_JSZ_BG,
 	parseDateInput,
 	calculateEndDate,
 	calculateDurationMonthsBetween,
@@ -23,7 +25,8 @@ import {
 	calculateMilestones,
 	resolveTariffStateAtDate,
 	getEffectiveBgRate,
-	computeStepBaselineDate
+	computeStepBaselineDate,
+	resolveWeeklyHoursAtDate
 } from '#lib/grants/generator-milestones';
 import { DEFAULT_EFFECTIVE_BG_RATE_DECIMAL } from '#lib/grants/bg-calculator';
 
@@ -34,6 +37,7 @@ export {
 	COLOR_EXIT,
 	COLOR_HEADER_BG,
 	COLOR_SUM_BG,
+	COLOR_JSZ_BG,
 	parseDateInput,
 	calculateEndDate,
 	calculateDurationMonthsBetween,
@@ -42,7 +46,8 @@ export {
 	calculateMilestones,
 	resolveTariffStateAtDate,
 	getEffectiveBgRate,
-	computeStepBaselineDate
+	computeStepBaselineDate,
+	resolveWeeklyHoursAtDate
 };
 
 export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: BerechnungsblattGeneratorOptions): void {
@@ -60,6 +65,7 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 	const defaultAgaRate = options.customAgaRate || healthFund.agaRate;
 	const defaultBgRate = options.bgRate ?? DEFAULT_EFFECTIVE_BG_RATE_DECIMAL;
 	const customBgTimeline = options.customBgTimeline;
+	const weeklyHoursTimeline = options.weeklyHoursTimeline || [];
 	const reclassifications = options.reclassifications || [];
 	const jszPct = (options.jszPercentage ?? 85) / 100;
 	const employeeName = options.employeeName.trim() || 'Neue/r Mitarbeiter/in';
@@ -67,17 +73,38 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 	const zgsId = options.zgsId?.trim() || '';
 	const stepBaseline = computeStepBaselineDate(start, options);
 
+	// Baseline tariff period for calculating Tarifmittel (Column M) & Tarifmittel AGA (Column N)
+	const baselineDate = options.baselineTariffMonth ? parseDateInput(options.baselineTariffMonth) : start;
+	const baselinePeriod = getApplicableAwoPeriod(baselineDate.year, baselineDate.month) || AWO_TARIFF_PERIODS[0];
+
+	function getBaselineFteSalary(groupName: string, stepNumber: number): number {
+		const groupKey = normalizeAwoGroupKey(groupName);
+		let scales = baselinePeriod.scales[groupKey];
+		if (!scales) {
+			const foundKey = Object.keys(baselinePeriod.scales).find(k => k.toLowerCase() === groupKey.toLowerCase());
+			if (foundKey) scales = baselinePeriod.scales[foundKey];
+		}
+		if (!scales) return 0;
+		const idx = Math.max(1, Math.min(6, stepNumber)) - 1;
+		return scales[idx] ?? 0;
+	}
+
+	function getRowWeeklyHours(date: { year: number; month: number; day: number }): number {
+		if (weeklyHoursTimeline.length === 0) return weeklyHours;
+		return resolveWeeklyHoursAtDate(date, weeklyHours, weeklyHoursTimeline);
+	}
+
 	const runtimeStartStr = formatDateDMY(start);
 	const runtimeEndStr = formatDateDMY(end);
 	const runtimeLabel = `${runtimeStartStr} - ${runtimeEndStr}`;
 
-	// Column Widths: includes BG-Kosten and Gesamtkosten inkl. BG
+	// Column Widths: includes Wochenstunden (E), Tarifmittel (M) & Tarifmittel AGA (N)
 	wsGehalt.columns = [
 		{ key: 'A', width: 14 }, // Datum
 		{ key: 'B', width: 12 }, // Anteil Monat
 		{ key: 'C', width: 11 }, // Bundes-ML
 		{ key: 'D', width: 11 }, // Land-ML
-		{ key: 'E', width: 6 },  // (leer)
+		{ key: 'E', width: 15 }, // Wochenstunden
 		{ key: 'F', width: 16 }, // FTE AN-Brutto
 		{ key: 'G', width: 14 }, // AN-Brutto
 		{ key: 'H', width: 11 }, // 0.19 JC Pauschale
@@ -85,8 +112,8 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 		{ key: 'J', width: 12 }, // Degression
 		{ key: 'K', width: 14 }, // EGZ JC
 		{ key: 'L', width: 14 }, // Monate im Jahr
-		{ key: 'M', width: 16 }, // Tarifeinigung
-		{ key: 'N', width: 6 },  // (leer)
+		{ key: 'M', width: 16 }, // Tarifmittel
+		{ key: 'N', width: 16 }, // Tarifmittel AGA
 		{ key: 'O', width: 16 }, // AN-Brutto / Text
 		{ key: 'P', width: 16 }, // Krankenkasse (repurposed from KV)
 		{ key: 'Q', width: 13 }, // KV+ZB AG
@@ -180,6 +207,7 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 		B: 'Anteil Monat',
 		C: 'Bundes-ML',
 		D: 'Land-ML',
+		E: 'Wochenstunden',
 		F: 'FTE AN-Brutto',
 		G: 'AN-Brutto',
 		H: '0.19',
@@ -187,7 +215,8 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 		J: 'Degression',
 		K: 'EGZ JC',
 		L: 'Monate im Jahr',
-		M: 'Tarifeinigung',
+		M: 'Tarifmittel',
+		N: 'Tarifmittel AGA',
 		O: 'AN-Brutto',
 		P: 'Krankenkasse',
 		Q: 'KV+ZB (AG)',
@@ -264,7 +293,9 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 		let decemberRowNumber: number | null = null;
 		let lastActiveMonthRowNumber: number | null = null;
 		let sepSalaryValue = 0;
+		let sepBaselineSalaryValue = 0;
 		let sepAgaValue = 0;
+		let sepBaselineAgaValue = 0;
 		let sepBgRate = defaultBgRate;
 		let sepBgValue = 0;
 		let yearMonthUnitsTotal = 0;
@@ -464,11 +495,19 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 				wsGehalt.getCell(`B${rowNum}`).value = r.monthUnits;
 				wsGehalt.getCell(`B${rowNum}`).numFmt = '0.00';
 
-				// Salary
-				const salaryInfo = getAwoTariffSalary(currentGroup, currentStep, y, r.month, weeklyHours, fullTimeHours);
+				// Salary & Working Hours (supporting overrides via Column E)
+				const rowHours = getRowWeeklyHours({ year: y, month: r.month, day: stepDay });
+				if (rowHours !== weeklyHours) {
+					const cellE = wsGehalt.getCell(`E${rowNum}`);
+					cellE.value = rowHours;
+					cellE.numFmt = '0.0';
+					cellE.alignment = { horizontal: 'right' };
+				}
+
+				const salaryInfo = getAwoTariffSalary(currentGroup, currentStep, y, r.month, rowHours, fullTimeHours);
 				const fteSalary = salaryInfo?.fteSalary || 2674.27;
 
-				const partTimeSalary = (fteSalary * weeklyHours / fullTimeHours) * r.monthUnits;
+				const partTimeSalary = (fteSalary * (rowHours / fullTimeHours)) * r.monthUnits;
 				const jcFlatRate = partTimeSalary * 0.19;
 				const jcTotalGross = partTimeSalary + jcFlatRate;
 				const egzJc = (jcTotalGross * r.degression) / 100;
@@ -482,6 +521,12 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 				const landDegression = totalEmployerCost - egzJc - landSvShortfall;
 				const skLand = sachkostenMonthly * r.monthUnits;
 
+				// Baseline tariff calculation for Tarifmittel (Col M) & Tarifmittel AGA (Col N)
+				const baseFte = getBaselineFteSalary(currentGroup, currentStep) || fteSalary;
+				const baselinePartTimeSalary = (baseFte * (rowHours / fullTimeHours)) * r.monthUnits;
+				const diffGross = Math.max(0, partTimeSalary - baselinePartTimeSalary);
+				const diffAga = Math.max(0, diffGross * totalAgaRate);
+
 				// Berufsgenossenschaft (BG) calculation
 				const rowBgRate = getEffectiveBgRate(
 					{ year: y, month: r.month, day: stepDay },
@@ -492,8 +537,10 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 				const totalEmployerCostWithBg = totalEmployerCost + bgAmount;
 
 				if (r.month === 9 || !septemberRowNumber) {
-					sepSalaryValue = (fteSalary * weeklyHours / fullTimeHours);
+					sepSalaryValue = (fteSalary * (rowHours / fullTimeHours));
+					sepBaselineSalaryValue = (baseFte * (rowHours / fullTimeHours));
 					sepAgaValue = sepSalaryValue * totalAgaRate;
+					sepBaselineAgaValue = sepBaselineSalaryValue * totalAgaRate;
 					sepBgRate = rowBgRate;
 					sepBgValue = sepSalaryValue * rowBgRate;
 				}
@@ -504,9 +551,9 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 				cellF.value = fteSalary;
 				cellF.numFmt = '#,##0.00 €';
 
-				// Col G (AN-Brutto): =F#*($J$2/fullTimeHours)*B#
+				// Col G (AN-Brutto): =F#*(IF(E#>0,E#,$J$2)/fullTimeHours)*B#
 				const cellG = wsGehalt.getCell(`G${rowNum}`);
-				cellG.value = { formula: `F${rowNum}*($J$2/${fullTimeHours})*B${rowNum}`, result: partTimeSalary };
+				cellG.value = { formula: `F${rowNum}*(IF(E${rowNum}>0,E${rowNum},$J$2)/${fullTimeHours})*B${rowNum}`, result: partTimeSalary };
 				cellG.numFmt = '#,##0.00 €';
 
 				// Col H (JC Pauschale): =SUM(G#:G#)*19%
@@ -528,10 +575,32 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 				cellK.value = { formula: `I${rowNum}*J${rowNum}%`, result: egzJc };
 				cellK.numFmt = '#,##0.00 €';
 
-				// Col M (Tarifeinigung delta)
-				if (activeMonthCounter > 0 && fteSalary > previousFteSalary && currentStep === previousStep && currentGroup === previousGroup && r.isSplitPart !== 2) {
-					wsGehalt.getCell(`M${rowNum}`).value = { formula: `F${rowNum}-F${rowNum - 1}`, result: fteSalary - previousFteSalary };
-					wsGehalt.getCell(`M${rowNum}`).numFmt = '#,##0.00 €';
+				// Col M (Tarifmittel) & Col N (Tarifmittel AGA)
+				const cellM = wsGehalt.getCell(`M${rowNum}`);
+				cellM.value = {
+					formula: `MAX(0,(F${rowNum}-${baseFte})*(IF(E${rowNum}>0,E${rowNum},$J$2)/${fullTimeHours})*B${rowNum})`,
+					result: diffGross
+				};
+				cellM.numFmt = '#,##0.00 €';
+
+				const cellN = wsGehalt.getCell(`N${rowNum}`);
+				cellN.value = {
+					formula: `M${rowNum}*T${rowNum}`,
+					result: diffAga
+				};
+				cellN.numFmt = '#,##0.00 €';
+
+				if (diffGross > 0.001) {
+					cellM.fill = {
+						type: 'pattern',
+						pattern: 'solid',
+						fgColor: { argb: 'FF' + COLOR_TARIFERHOEHUNG }
+					};
+					cellN.fill = {
+						type: 'pattern',
+						pattern: 'solid',
+						fgColor: { argb: 'FF' + COLOR_TARIFERHOEHUNG }
+					};
 				}
 
 				// Col O (AN-Brutto): =SUM(G#:G#)
@@ -601,11 +670,16 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 				activeMonthCounter++;
 			} else {
 				// Inactive month
-				wsGehalt.getCell(`G${rowNum}`).value = { formula: `F${rowNum}*($J$2/39)*B${rowNum}`, result: 0 };
+				const baseFte = getBaselineFteSalary(group, initialStepNum) || 2674.27;
+				wsGehalt.getCell(`G${rowNum}`).value = { formula: `F${rowNum}*(IF(E${rowNum}>0,E${rowNum},$J$2)/${fullTimeHours})*B${rowNum}`, result: 0 };
 				wsGehalt.getCell(`G${rowNum}`).numFmt = '#,##0.00 €';
 				wsGehalt.getCell(`H${rowNum}`).value = { formula: `SUM(G${rowNum}:G${rowNum})*19%`, result: 0 };
 				wsGehalt.getCell(`I${rowNum}`).value = { formula: `SUM(G${rowNum}:H${rowNum})`, result: 0 };
 				wsGehalt.getCell(`K${rowNum}`).value = { formula: `I${rowNum}*J${rowNum}%`, result: 0 };
+				wsGehalt.getCell(`M${rowNum}`).value = { formula: `MAX(0,(F${rowNum}-${baseFte})*(IF(E${rowNum}>0,E${rowNum},$J$2)/${fullTimeHours})*B${rowNum})`, result: 0 };
+				wsGehalt.getCell(`M${rowNum}`).numFmt = '#,##0.00 €';
+				wsGehalt.getCell(`N${rowNum}`).value = { formula: `M${rowNum}*T${rowNum}`, result: 0 };
+				wsGehalt.getCell(`N${rowNum}`).numFmt = '#,##0.00 €';
 				wsGehalt.getCell(`O${rowNum}`).value = { formula: `SUM(G${rowNum}:G${rowNum})`, result: 0 };
 				wsGehalt.getCell(`O${rowNum}`).numFmt = '#,##0.00 €';
 				wsGehalt.getCell(`U${rowNum}`).value = { formula: `O${rowNum}*$Y$2`, result: 0 };
@@ -633,14 +707,36 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 		const jszAgaAmount = isEmployedInDecember && lastActiveMonthRowNumber ? (sepAgaValue * jszPct * (yearMonthUnitsTotal / 12)) : 0;
 		const jszBgAmount = isEmployedInDecember && lastActiveMonthRowNumber ? (sepBgValue * jszPct * (yearMonthUnitsTotal / 12)) : 0;
 
+		const baselineJszAmount = isEmployedInDecember && lastActiveMonthRowNumber ? (sepBaselineSalaryValue * jszPct * (yearMonthUnitsTotal / 12)) : 0;
+		const baselineJszAgaAmount = isEmployedInDecember && lastActiveMonthRowNumber ? (sepBaselineAgaValue * jszPct * (yearMonthUnitsTotal / 12)) : 0;
+		const diffJszGross = Math.max(0, jszAmount - baselineJszAmount);
+		const diffJszAga = Math.max(0, jszAgaAmount - baselineJszAgaAmount);
+
+		const refSepM = septemberRowNumber ? `M${septemberRowNumber}` : (lastActiveMonthRowNumber ? `M${lastActiveMonthRowNumber}` : `M${yearEndRow}`);
+		const refSepN = septemberRowNumber ? `N${septemberRowNumber}` : (lastActiveMonthRowNumber ? `N${lastActiveMonthRowNumber}` : `N${yearEndRow}`);
+		const refSepO = septemberRowNumber ? `O${septemberRowNumber}` : (lastActiveMonthRowNumber ? `O${lastActiveMonthRowNumber}` : `O${yearEndRow}`);
+		const refSepU = septemberRowNumber ? `U${septemberRowNumber}` : (lastActiveMonthRowNumber ? `U${lastActiveMonthRowNumber}` : `U${yearEndRow}`);
+		const refDec = decemberRowNumber || yearEndRow;
+
 		// Row: Jahressonderzahlung (85%)
 		wsGehalt.getCell(`L${jszRow}`).value = { formula: `SUM(B${yearStartRow}:B${yearEndRow})`, result: yearMonthUnitsTotal };
 		wsGehalt.getCell(`L${jszRow}`).numFmt = '0.00';
+
+		// Col M: Tarifmittel on JSZ
+		const cellJszM = wsGehalt.getCell(`M${jszRow}`);
+		cellJszM.value = { formula: `IF(V${refDec}>0,${refSepM}*${jszPct}*(L${jszRow}/12),0)`, result: diffJszGross };
+		cellJszM.numFmt = '#,##0.00 €';
+		cellJszM.font = { bold: true };
+		if (diffJszGross > 0.001) {
+			cellJszM.fill = {
+				type: 'pattern',
+				pattern: 'solid',
+				fgColor: { argb: 'FF' + COLOR_TARIFERHOEHUNG }
+			};
+		}
+
 		wsGehalt.getCell(`O${jszRow}`).value = `Jahressonderzahlung (${Math.round(jszPct * 100)}%)`;
 		wsGehalt.getCell(`O${jszRow}`).font = { bold: true };
-
-		const refSepO = septemberRowNumber ? `O${septemberRowNumber}` : (lastActiveMonthRowNumber ? `O${lastActiveMonthRowNumber}` : `O${yearEndRow}`);
-		const refDec = decemberRowNumber || yearEndRow;
 
 		// Col W: JSZ BG
 		const cellJszW = wsGehalt.getCell(`W${jszRow}`);
@@ -657,10 +753,32 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 		cellJszZ.value = { formula: `IF(V${refDec}>0,${refSepO}*${jszPct}*(L${jszRow}/12),0)`, result: jszAmount };
 		cellJszZ.numFmt = '#,##0.00 €';
 
+		// Color columns O to AB with light grey for Jahressonderzahlung (Requirement 3)
+		for (const col of ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB']) {
+			const cell = wsGehalt.getCell(`${col}${jszRow}`);
+			cell.fill = {
+				type: 'pattern',
+				pattern: 'solid',
+				fgColor: { argb: 'FF' + COLOR_JSZ_BG }
+			};
+		}
+
 		// Row: AGA auf JSZ
+		// Col N: Tarifmittel AGA on JSZ
+		const cellAgaJszN = wsGehalt.getCell(`N${agaJszRow}`);
+		cellAgaJszN.value = { formula: `IF(V${refDec}>0,${refSepN}*${jszPct}*(L${jszRow}/12),0)`, result: diffJszAga };
+		cellAgaJszN.numFmt = '#,##0.00 €';
+		cellAgaJszN.font = { bold: true };
+		if (diffJszAga > 0.001) {
+			cellAgaJszN.fill = {
+				type: 'pattern',
+				pattern: 'solid',
+				fgColor: { argb: 'FF' + COLOR_TARIFERHOEHUNG }
+			};
+		}
+
 		wsGehalt.getCell(`O${agaJszRow}`).value = 'AGA auf JSZ';
 		wsGehalt.getCell(`O${agaJszRow}`).font = { bold: true };
-		const refSepU = septemberRowNumber ? `U${septemberRowNumber}` : (lastActiveMonthRowNumber ? `U${lastActiveMonthRowNumber}` : `U${yearEndRow}`);
 
 		// Col X: AGA auf JSZ in Gesamtkosten inkl. BG
 		const cellAgaJszX = wsGehalt.getCell(`X${agaJszRow}`);
@@ -672,20 +790,60 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 		cellAgaJszZ.value = { formula: `IF(V${refDec}>0,${refSepU}*${jszPct}*(L${jszRow}/12),0)`, result: jszAgaAmount };
 		cellAgaJszZ.numFmt = '#,##0.00 €';
 
+		// Color columns O to AB with light grey for AGA auf JSZ (Requirement 3)
+		for (const col of ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB']) {
+			const cell = wsGehalt.getCell(`${col}${agaJszRow}`);
+			cell.fill = {
+				type: 'pattern',
+				pattern: 'solid',
+				fgColor: { argb: 'FF' + COLOR_JSZ_BG }
+			};
+		}
+
 		// Row: Yearly Totals
+		// Col M (Tarifmittel sum) & Col N (Tarifmittel AGA sum)
+		const cellSumM = wsGehalt.getCell(`M${sumRow}`);
+		cellSumM.value = { formula: `SUM(M${yearStartRow}:M${agaJszRow})` };
+		cellSumM.font = { bold: true };
+		cellSumM.numFmt = '#,##0.00 €';
+		cellSumM.fill = {
+			type: 'pattern',
+			pattern: 'solid',
+			fgColor: { argb: 'FF' + COLOR_SUM_BG }
+		};
+		cellSumM.border = {
+			top: { style: 'thin' },
+			bottom: { style: 'double' }
+		};
+
+		const cellSumN = wsGehalt.getCell(`N${sumRow}`);
+		cellSumN.value = { formula: `SUM(N${yearStartRow}:N${agaJszRow})` };
+		cellSumN.font = { bold: true };
+		cellSumN.numFmt = '#,##0.00 €';
+		cellSumN.fill = {
+			type: 'pattern',
+			pattern: 'solid',
+			fgColor: { argb: 'FF' + COLOR_SUM_BG }
+		};
+		cellSumN.border = {
+			top: { style: 'thin' },
+			bottom: { style: 'double' }
+		};
+
 		wsGehalt.getCell(`O${sumRow}`).value = { formula: `SUM(O${yearStartRow}:O${yearEndRow})` };
-		wsGehalt.getCell(`O${sumRow}`).font = { bold: true };
 		wsGehalt.getCell(`O${sumRow}`).numFmt = '#,##0.00 €';
 
 		wsGehalt.getCell(`V${sumRow}`).value = { formula: `SUM(V${yearStartRow}:V${yearEndRow})` };
-		wsGehalt.getCell(`V${sumRow}`).font = { bold: true };
 		wsGehalt.getCell(`V${sumRow}`).numFmt = '#,##0.00 €';
 
-		for (const col of ['W', 'X', 'Y', 'Z', 'AA', 'AB']) {
+		// Color columns O to AB with yellow for Yearly Totals section (Requirement 3)
+		for (const col of ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB']) {
 			const cell = wsGehalt.getCell(`${col}${sumRow}`);
-			cell.value = { formula: `SUM(${col}${yearStartRow}:${col}${agaJszRow})` };
+			if (['W', 'X', 'Y', 'Z', 'AA', 'AB'].includes(col)) {
+				cell.value = { formula: `SUM(${col}${yearStartRow}:${col}${agaJszRow})` };
+				cell.numFmt = '#,##0.00 €';
+			}
 			cell.font = { bold: true };
-			cell.numFmt = '#,##0.00 €';
 			cell.fill = {
 				type: 'pattern',
 				pattern: 'solid',

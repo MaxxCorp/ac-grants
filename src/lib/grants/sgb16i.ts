@@ -462,7 +462,7 @@ export function calculateSingleParticipant(
 		const effectiveAga = getEffectiveAgaRate(r, participant.defaultAgaRate, customAgaTimeline);
 		const safeMonthUnits = r.monthUnits && r.monthUnits > 0 ? r.monthUnits : 1.0;
 
-		const fullMonthlyPartTime = r.fullMonthlyPartTime || (r.fteSalary * participant.weeklyHours) / 39;
+		const fullMonthlyPartTime = r.fullMonthlyPartTime || (r.fteSalary * (r.weeklyHours || participant.weeklyHours)) / 39;
 		const fullMonthlyFlatRate = fullMonthlyPartTime * 0.19;
 		const fullMonthlyJcTotalGross = r.fullMonthlyJcTotalGross || fullMonthlyPartTime + fullMonthlyFlatRate;
 		const fullMonthlySvShortfall = fullMonthlyPartTime * (effectiveAga - 0.19);
@@ -550,7 +550,7 @@ export function calculateSingleParticipant(
 		if (currentJcGroup.length === 0) return;
 		const first = currentJcGroup[0];
 		const monthCount = round2(currentJcGroup.reduce((sum, r) => sum + (r.monthUnits || 1.0), 0));
-		const monthlyAmount = round2(first.fullMonthlyJcTotalGross || (first.fteSalary * participant.weeklyHours / 39) * 1.19);
+		const monthlyAmount = round2(first.fullMonthlyJcTotalGross || (first.fteSalary * (first.weeklyHours || participant.weeklyHours) / 39) * 1.19);
 		const percentage = first.jcDegressionPct;
 		const rowNumber = jcRows.length + 1;
 
@@ -593,7 +593,7 @@ export function calculateSingleParticipant(
 		jcRows.push({
 			id: `jc-row-${rowNumber}`,
 			rowNumber,
-			workingHours: participant.weeklyHours,
+			workingHours: first.weeklyHours || participant.weeklyHours,
 			monthlyAmount,
 			percentage,
 			monthCount,
@@ -623,8 +623,9 @@ export function calculateSingleParticipant(
 			const sameFte = Math.abs(prev.fteSalary - r.fteSalary) < 0.01;
 			const sameDegression = prev.jcDegressionPct === r.jcDegressionPct;
 			const sameTariffStep = getTariffStep(prev, participant) === getTariffStep(r, participant);
+			const sameHours = (prev.weeklyHours || participant.weeklyHours) === (r.weeklyHours || participant.weeklyHours);
 
-			if (sameFte && sameDegression && sameTariffStep) {
+			if (sameFte && sameDegression && sameTariffStep && sameHours) {
 				currentJcGroup.push(r);
 			} else {
 				flushJcGroup();

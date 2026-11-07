@@ -7,7 +7,9 @@ import {
 	COLOR_STUFENAUFSTIEG,
 	COLOR_TARIFERHOEHUNG,
 	COLOR_EXIT,
-	COLOR_UMGRUPPIERUNG
+	COLOR_UMGRUPPIERUNG,
+	COLOR_JSZ_BG,
+	COLOR_SUM_BG
 } from './excel-generator';
 import { parseExcelBuffer } from './excel';
 import { transformSgb16i, transformSgb16iMulti } from '#lib/grants/sgb16i';
@@ -89,6 +91,9 @@ describe('Berechnungsblatt Generator', () => {
 		expect(wsGehalt.getCell('W2').value).toBe('Barmer');
 
 		// Check repurposed headers in Row 3
+		expect(wsGehalt.getCell('E3').value).toBe('Wochenstunden');
+		expect(wsGehalt.getCell('M3').value).toBe('Tarifmittel');
+		expect(wsGehalt.getCell('N3').value).toBe('Tarifmittel AGA');
 		expect(wsGehalt.getCell('P3').value).toBe('Krankenkasse');
 		expect(wsGehalt.getCell('Q3').value).toBe('KV+ZB (AG)');
 		expect(wsGehalt.getCell('R3').value).toBe('RV+AV+PV (AG)');
@@ -596,5 +601,159 @@ describe('Berechnungsblatt Generator', () => {
 		expect(step3).toBeDefined();
 		expect(step3?.year).toBe(2027);
 		expect(step3?.month).toBe(8);
+	});
+
+	it('supports varying work hours over time via weeklyHoursTimeline and column E', async () => {
+		const opt: BerechnungsblattGeneratorOptions = {
+			employeeName: 'Herr Teilzeit-Wechsel',
+			startDate: '2026-10-01',
+			durationMonths: 24,
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			weeklyHours: 30, // baseline default
+			weeklyHoursTimeline: [
+				{
+					id: 'wh-1',
+					startDate: '2027-04-01',
+					endDate: '2027-09-30',
+					weeklyHours: 35,
+					label: 'Befristete Stundenerhöhung'
+				}
+			]
+		};
+
+		const buf = await generateBerechnungsblattExcel(opt);
+		const wb = new ExcelJS.Workbook();
+		await wb.xlsx.load(buf as any);
+		const ws = wb.getWorksheet('Gehalt')!;
+
+		// Default hours in cell J2
+		expect(ws.getCell('J2').value).toBe(30);
+
+		// Oct 2026 is row 13: weekly hours match default, so column E should not have an override
+		expect(ws.getCell('E13').value == null).toBe(true);
+		const g13Formula = (ws.getCell('G13').value as any)?.formula || ws.getCell('G13').value;
+		expect(g13Formula).toContain('IF(E13>0,E13,$J$2)');
+
+		// April 2027 is row 22: weekly hours 35, so column E should have 35
+		expect(ws.getCell('E22').value).toBe(35);
+		const g22Formula = (ws.getCell('G22').value as any)?.formula || ws.getCell('G22').value;
+		expect(g22Formula).toContain('IF(E22>0,E22,$J$2)');
+
+		// Parse back and verify records
+		const parsed = parseExcelBuffer(buf);
+		expect(parsed.participant.weeklyHours).toBe(30);
+
+		const recOct = parsed.records.find(r => r.year === 2026 && r.month === 10);
+		const recApr = parsed.records.find(r => r.year === 2027 && r.month === 4);
+
+		expect(recOct?.weeklyHours).toBe(30);
+		expect(recApr?.weeklyHours).toBe(35);
+
+		// 35 hours salary must be higher than 30 hours salary (given same FTE salary)
+		expect(recApr!.fullMonthlyPartTime).toBeCloseTo((recApr!.fteSalary * 35) / 39, 2);
+		expect(recOct!.fullMonthlyPartTime).toBeCloseTo((recOct!.fteSalary * 30) / 39, 2);
+
+		// SGB16i transform should validate with MATCH
+		const result = transformSgb16i(parsed.records, parsed.participant, { includeOffsetRows: true });
+		expect(result.controls.overallStatus).toBe('MATCH');
+	});
+
+	it('computes Tarifmittel (gross delta in M) and Tarifmittel AGA (delta in N) against a baseline tariff month', async () => {
+		const opt: BerechnungsblattGeneratorOptions = {
+			employeeName: 'Frau Tarifmittel-Test',
+			startDate: '2026-10-01',
+			durationMonths: 24,
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			weeklyHours: 30,
+			baselineTariffMonth: '2025-09' // Older baseline table before 2026-09 increase
+		};
+
+		const buf = await generateBerechnungsblattExcel(opt);
+		const wb = new ExcelJS.Workbook();
+		await wb.xlsx.load(buf as any);
+		const ws = wb.getWorksheet('Gehalt')!;
+
+		// Header checks
+		expect(ws.getCell('M3').value).toBe('Tarifmittel');
+		expect(ws.getCell('N3').value).toBe('Tarifmittel AGA');
+
+		// Month 10 (row 13): Oct 2026.
+		// Baseline FTE for EG2 ES1 at 2025-09 is 2576.77
+		// Active FTE at 2026-10 is 2705.61 (from 2026-09 period)
+		const m13Formula = (ws.getCell('M13').value as any)?.formula;
+		expect(m13Formula).toContain('MAX(0,(F13-2576.77)');
+		const n13Formula = (ws.getCell('N13').value as any)?.formula;
+		expect(n13Formula).toBe('M13*T13');
+
+		// Since there is a tariff increase (2705.61 > 2576.77), cells M13 and N13 must have COLOR_TARIFERHOEHUNG ('FFC000') fill
+		const m13Fill = ws.getCell('M13').fill as any;
+		expect(m13Fill?.fgColor?.argb).toBe('FFFFC000');
+		const n13Fill = ws.getCell('N13').fill as any;
+		expect(n13Fill?.fgColor?.argb).toBe('FFFFC000');
+
+		// Check JSZ row (row 16 in year 1) & AGA auf JSZ row (row 17 in year 1)
+		const m16Formula = (ws.getCell('M16').value as any)?.formula;
+		expect(m16Formula).toContain('0.85*(L16/12)');
+		const n17Formula = (ws.getCell('N17').value as any)?.formula;
+		expect(n17Formula).toContain('0.85*(L16/12)');
+		expect((ws.getCell('M16').fill as any)?.fgColor?.argb).toBe('FFFFC000');
+		expect((ws.getCell('N17').fill as any)?.fgColor?.argb).toBe('FFFFC000');
+
+		// Sum row (row 18 in year 1)
+		const m18Formula = (ws.getCell('M18').value as any)?.formula;
+		expect(m18Formula).toBe('SUM(M4:M17)');
+		const n18Formula = (ws.getCell('N18').value as any)?.formula;
+		expect(n18Formula).toBe('SUM(N4:N17)');
+
+		// Parse back and verify tariffAgaDelta
+		const parsed = parseExcelBuffer(buf);
+		expect(parsed.records[0].tariffAgaDelta).toBeDefined();
+	});
+
+	it('restores light grey background on JSZ rows and yellow background on Yearly Summary rows (cols O to AB)', async () => {
+		const buf = await generateBerechnungsblattExcel({
+			employeeName: 'Herr Farbtest',
+			startDate: '2026-10-01',
+			durationMonths: 12,
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			weeklyHours: 30
+		});
+
+		const wb = new ExcelJS.Workbook();
+		await wb.xlsx.load(buf as any);
+		const ws = wb.getWorksheet('Gehalt')!;
+
+		// Row 16: JSZ row
+		// Row 17: AGA auf JSZ row
+		// Row 18: Yearly Summary / Total row
+
+		// Columns O through AB for JSZ rows should have light grey background (COLOR_JSZ_BG = 'D9D9D9')
+		const testCols = ['O', 'P', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB'];
+		for (const col of testCols) {
+			const cellJsz = ws.getCell(`${col}16`);
+			const fillJsz = cellJsz.fill as any;
+			expect(fillJsz?.fgColor?.argb, `Col ${col} row 16 should be light grey`).toBe('FF' + COLOR_JSZ_BG);
+
+			const cellAgaJsz = ws.getCell(`${col}17`);
+			const fillAgaJsz = cellAgaJsz.fill as any;
+			expect(fillAgaJsz?.fgColor?.argb, `Col ${col} row 17 should be light grey`).toBe('FF' + COLOR_JSZ_BG);
+		}
+
+		// Columns O through AB for Summary row should have yellow background (COLOR_SUM_BG = 'FFFF00')
+		for (const col of testCols) {
+			const cellSum = ws.getCell(`${col}18`);
+			const fillSum = cellSum.fill as any;
+			expect(fillSum?.fgColor?.argb, `Col ${col} row 18 should be yellow`).toBe('FF' + COLOR_SUM_BG);
+			// Check border has top thin and bottom double
+			expect(cellSum.border?.top?.style).toBe('thin');
+			expect(cellSum.border?.bottom?.style).toBe('double');
+		}
+
+		// Also verify columns M and N on the sum row have yellow fill
+		expect((ws.getCell('M18').fill as any)?.fgColor?.argb).toBe('FF' + COLOR_SUM_BG);
+		expect((ws.getCell('N18').fill as any)?.fgColor?.argb).toBe('FF' + COLOR_SUM_BG);
 	});
 });

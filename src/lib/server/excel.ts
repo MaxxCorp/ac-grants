@@ -520,7 +520,10 @@ export function parseParticipantSheet(
 				}
 			}
 
-			const fullMonthlyPartTime = (fteSalary * weeklyHours) / 39;
+			const colEHours = parseNumber(getCellValue('E', r), 0);
+			const rowWeeklyHours = colEHours > 0 ? colEHours : weeklyHours;
+
+			const fullMonthlyPartTime = (fteSalary * rowWeeklyHours) / 39;
 			const fullMonthlyFlatRate = fullMonthlyPartTime * 0.19;
 			const fullMonthlyJcTotalGross = fullMonthlyPartTime + fullMonthlyFlatRate;
 			const fullMonthlySvShortfall = fullMonthlyPartTime * (defaultAgaRate - 0.19);
@@ -531,6 +534,7 @@ export function parseParticipantSheet(
 			const jcDegressionPct = parseNumber(getCellValue('J', r), 100);
 			const jcGrantAmount = parseNumber(getCellValue('K', r), (jcTotalGross * jcDegressionPct) / 100);
 			const tariffDelta = parseNumber(getCellValue('M', r), 0);
+			const tariffAgaDelta = parseNumber(getCellValue('N', r), 0);
 
 			let rowAgaRate = defaultAgaRate;
 			const colTVal = parseNumber(getCellValue('T', r), 0);
@@ -570,7 +574,7 @@ export function parseParticipantSheet(
 				fteSalary,
 				partTimeSalary,
 				fullMonthlyPartTime,
-				weeklyHours,
+				weeklyHours: rowWeeklyHours,
 				fullTimeHours: 39,
 				jcFlatRateAmount,
 				jcTotalGross,
@@ -587,6 +591,7 @@ export function parseParticipantSheet(
 				jszAgaAmount: 0,
 				sachkostenAmount,
 				tariffDelta: tariffDelta > 0 ? tariffDelta : undefined,
+				tariffAgaDelta: tariffAgaDelta > 0 ? tariffAgaDelta : undefined,
 				isJszMonth: false,
 				bgRate: rowBgRate,
 				bgAmount,
