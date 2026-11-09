@@ -482,7 +482,7 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 						fgColor: { argb: 'FF' + COLOR_STUFENAUFSTIEG }
 					};
 					dateCell.font = { bold: true, color: { argb: 'FF000000' } };
-				} else if (isAwoTariffIncreaseMonth(y, r.month) && r.isSplitPart !== 2) {
+				} else if (isAwoTariffIncreaseMonth(y, r.month) && r.isSplitPart !== 2 && activeMonthCounter > 0) {
 					dateCell.fill = {
 						type: 'pattern',
 						pattern: 'solid',
@@ -504,7 +504,16 @@ export function populateGehaltWorksheet(wsGehalt: ExcelJS.Worksheet, options: Be
 					cellE.alignment = { horizontal: 'right' };
 				}
 
-				const salaryInfo = getAwoTariffSalary(currentGroup, currentStep, y, r.month, rowHours, fullTimeHours);
+				const salaryInfo =
+					getAwoTariffSalary(currentGroup, currentStep, y, r.month, rowHours, fullTimeHours) ||
+					getAwoTariffSalary(
+						currentGroup,
+						currentStep,
+						AWO_TARIFF_PERIODS[0].validFromYear,
+						AWO_TARIFF_PERIODS[0].validFromMonth,
+						rowHours,
+						fullTimeHours
+					);
 				const fteSalary = salaryInfo?.fteSalary || 2674.27;
 
 				const partTimeSalary = (fteSalary * (rowHours / fullTimeHours)) * r.monthUnits;

@@ -664,8 +664,37 @@ describe('TV-L Comparison Calculation Engine', () => {
 		expect(result2027.inputs.endDateLeft).toBe('31.01.2027');
 	});
 
-	it('correctly looks up official AWO Landesverband Berlin e.V. tariff scale values across all 4 periods', () => {
-		// Period 1: ab 2026/01
+	it('correctly looks up official AWO Landesverband Berlin e.V. tariff scale values across all 7 periods (2023/2024 through 2028)', () => {
+		// Period 1: ab 2023/07 (bzw. 2024, valid through 02/2025)
+		const p2024_e2_1 = getAwoTariffSalary('E2', 1, 2024, 5, 30, 39);
+		expect(p2024_e2_1?.fteSalary).toBe(2245.27);
+		expect(p2024_e2_1?.partTimeSalary).toBe(1727.13);
+
+		const p2024_e2_2 = getAwoTariffSalary('E2', 2, 2024, 11, 30, 39);
+		expect(p2024_e2_2?.fteSalary).toBe(2441.88);
+		expect(p2024_e2_2?.partTimeSalary).toBe(1878.37);
+
+		// Jan-Feb 2025 still uses the 2023-07 / 2024 table
+		const p2025_02_e2_2 = getAwoTariffSalary('E2', 2, 2025, 2, 30, 39);
+		expect(p2025_02_e2_2?.fteSalary).toBe(2441.88);
+
+		// Period 2: ab 2025/03 (+97.50 € E-table / +95.00 € S-table)
+		const p2025_03_e2_2 = getAwoTariffSalary('E2', 2, 2025, 3, 30, 39);
+		expect(p2025_03_e2_2?.fteSalary).toBe(2539.38);
+		expect(p2025_03_e2_2?.partTimeSalary).toBe(1953.37);
+
+		const p2025_03_s8b = getAwoTariffSalary('S8b', 3, 2025, 4, 39, 39);
+		expect(p2025_03_s8b?.fteSalary).toBe(3478.87);
+
+		// Period 3: ab 2025/06 (+97.50 € E-table / +95.00 € S-table)
+		const p2025_06_e2_2 = getAwoTariffSalary('E2', 2, 2025, 6, 30, 39);
+		expect(p2025_06_e2_2?.fteSalary).toBe(2636.88);
+		expect(p2025_06_e2_2?.partTimeSalary).toBe(2028.37);
+
+		const p2025_06_s8b = getAwoTariffSalary('S8b', 3, 2025, 7, 39, 39);
+		expect(p2025_06_s8b?.fteSalary).toBe(3573.87);
+
+		// Period 4: ab 2025/09 (bzw. 2026/01)
 		const p1_e2_2 = getAwoTariffSalary('E2', 2, 2026, 1, 30, 39);
 		expect(p1_e2_2?.fteSalary).toBe(2781.91);
 		expect(p1_e2_2?.partTimeSalary).toBe(2139.93);
@@ -674,7 +703,7 @@ describe('TV-L Comparison Calculation Engine', () => {
 		expect(p1_e2_3?.fteSalary).toBe(2844.86);
 		expect(p1_e2_3?.partTimeSalary).toBe(2188.35);
 
-		// Period 2: ab 2026/09
+		// Period 5: ab 2026/09
 		const p2_e2_2 = getAwoTariffSalary('E2', 2, 2026, 9, 30, 39);
 		expect(p2_e2_2?.fteSalary).toBe(2879.41);
 		expect(p2_e2_2?.partTimeSalary).toBe(2214.93);
@@ -683,12 +712,12 @@ describe('TV-L Comparison Calculation Engine', () => {
 		expect(p2_e2_3?.fteSalary).toBe(2942.36);
 		expect(p2_e2_3?.partTimeSalary).toBe(2263.35);
 
-		// Period 3: ab 2027/07
+		// Period 6: ab 2027/07
 		const p3_e2_3 = getAwoTariffSalary('E2', 3, 2027, 7, 30, 39);
 		expect(p3_e2_3?.fteSalary).toBe(3001.21);
 		expect(p3_e2_3?.partTimeSalary).toBe(2308.62);
 
-		// Period 4: ab 2028/07
+		// Period 7: ab 2028/07
 		const p4_e2_3 = getAwoTariffSalary('E2', 3, 2028, 7, 30, 39);
 		expect(p4_e2_3?.fteSalary).toBe(3031.22);
 		expect(p4_e2_3?.partTimeSalary).toBe(2331.71);
@@ -759,20 +788,61 @@ describe('TV-L Comparison Calculation Engine', () => {
 		expect(resErr.tariffValidation?.discrepancies[0].expectedFteSalary).toBe(2781.91);
 		expect(resErr.tariffValidation?.discrepancies[0].diffFteSalary).toBe(-116.91);
 
-		// Case C: Records prior to 09/2025 (e.g. 2023 / 2024) are skipped without false positives
+		// Case C: Records prior to 07/2023 (e.g. 05/2023) are skipped without false positives
 		const pastRecords: MonthlyRecord[] = [
 			{
 				...compliantRecords[0],
-				year: 2024,
+				year: 2023,
 				month: 5,
-				date: '2024-05-31',
-				fteSalary: 2400.00 // Historical rate before available comparison tables
+				date: '2023-05-31',
+				fteSalary: 2100.00 // Historical rate before 07/2023 comparison tables
 			}
 		];
 		const resPast = calculateTvlComparison(pastRecords, participant, 2026);
 		expect(resPast.tariffValidation?.skippedPriorTo2025Count).toBe(1);
 		expect(resPast.tariffValidation?.checkedCount).toBe(0);
 		expect(resPast.tariffValidation?.discrepancyCount).toBe(0);
+
+		// Case D: Records in 2024 and 2025 (03/2025 and 06/2025) are validated against historical AWO tables
+		const records2024And2025: MonthlyRecord[] = [
+			{
+				...compliantRecords[0],
+				year: 2024,
+				month: 5,
+				date: '2024-05-31',
+				monthUnits: 1.0,
+				startDate: '01.05.2024',
+				endDate: '31.05.2024',
+				fteSalary: 2441.88, // E2 ES2 in 2024
+				partTimeSalary: 1878.37
+			},
+			{
+				...compliantRecords[0],
+				year: 2025,
+				month: 4,
+				date: '2025-04-30',
+				monthUnits: 1.0,
+				startDate: '01.04.2025',
+				endDate: '30.04.2025',
+				fteSalary: 2539.38, // E2 ES2 in 03/2025 - 05/2025
+				partTimeSalary: 1953.37
+			},
+			{
+				...compliantRecords[0],
+				year: 2025,
+				month: 7,
+				date: '2025-07-31',
+				monthUnits: 1.0,
+				startDate: '01.07.2025',
+				endDate: '31.07.2025',
+				fteSalary: 2636.88, // E2 ES2 in 06/2025 - 08/2025
+				partTimeSalary: 2028.37
+			}
+		];
+		const res2024_2025 = calculateTvlComparison(records2024And2025, participant, 2025);
+		expect(res2024_2025.tariffValidation?.checkedCount).toBe(3);
+		expect(res2024_2025.tariffValidation?.isCompliant).toBe(true);
+		expect(res2024_2025.tariffValidation?.discrepancyCount).toBe(0);
 	});
 
 	it('uses full-time/part-time monthly gross from AWO tariff data even if Berechnungsblatt has partial month amounts', () => {

@@ -756,4 +756,69 @@ describe('Berechnungsblatt Generator', () => {
 		expect((ws.getCell('M18').fill as any)?.fgColor?.argb).toBe('FF' + COLOR_SUM_BG);
 		expect((ws.getCell('N18').fill as any)?.fgColor?.argb).toBe('FF' + COLOR_SUM_BG);
 	});
+
+	it('accurately computes 2024 and 2025 salaries, tariff increases (03/2025, 06/2025, 09/2025), and Tarifmittel when generating Berechnungsblätter starting in 2024', async () => {
+		const opt2024: BerechnungsblattGeneratorOptions = {
+			employeeName: 'Frau Historisch 2024',
+			startDate: '2024-01-01',
+			durationMonths: 60, // 01/2024 to 12/2028
+			tariffGroup: 'EG2',
+			tariffStep: 'ES1',
+			weeklyHours: 30,
+			fullTimeHours: 39,
+			healthInsuranceName: 'Barmer'
+		};
+
+		// 1. Verify milestones include 03/2025, 06/2025, 09/2025, 09/2026, 07/2027, 07/2028 tariff increases
+		const milestones = calculateMilestones(opt2024);
+		expect(milestones.find(m => m.type === 'stufenaufstieg' && m.year === 2025 && m.month === 1)?.newSalary).toBe(2441.88);
+		expect(milestones.find(m => m.type === 'tariferhoehung' && m.year === 2025 && m.month === 3)?.newSalary).toBe(2539.38);
+		expect(milestones.find(m => m.type === 'tariferhoehung' && m.year === 2025 && m.month === 6)?.newSalary).toBe(2636.88);
+		expect(milestones.find(m => m.type === 'tariferhoehung' && m.year === 2025 && m.month === 9)?.newSalary).toBe(2781.91);
+		expect(milestones.find(m => m.type === 'tariferhoehung' && m.year === 2026 && m.month === 9)?.newSalary).toBe(2879.41);
+
+		// 2. Generate Excel and parse back
+		const buf = await generateBerechnungsblattExcel(opt2024);
+		const parsed = parseExcelBuffer(buf);
+
+		expect(parsed.records.length).toBe(60);
+
+		// 2024 (EG2 / ES1): 2245.27 €
+		const jan2024 = parsed.records.find(r => r.year === 2024 && r.month === 1)!;
+		const dec2024 = parsed.records.find(r => r.year === 2024 && r.month === 12)!;
+		expect(jan2024.fteSalary).toBe(2245.27);
+		expect(dec2024.fteSalary).toBe(2245.27);
+
+		// Jan-Feb 2025 (Stufenaufstieg to ES2, still 2023-07/2024 table): 2441.88 €
+		const jan2025 = parsed.records.find(r => r.year === 2025 && r.month === 1)!;
+		const feb2025 = parsed.records.find(r => r.year === 2025 && r.month === 2)!;
+		expect(jan2025.fteSalary).toBe(2441.88);
+		expect(feb2025.fteSalary).toBe(2441.88);
+
+		// Mar-May 2025 (ab 2025/03 table, +97.50 €): 2539.38 €
+		const mar2025 = parsed.records.find(r => r.year === 2025 && r.month === 3)!;
+		const may2025 = parsed.records.find(r => r.year === 2025 && r.month === 5)!;
+		expect(mar2025.fteSalary).toBe(2539.38);
+		expect(may2025.fteSalary).toBe(2539.38);
+
+		// Jun-Aug 2025 (ab 2025/06 table, +97.50 €): 2636.88 €
+		const jun2025 = parsed.records.find(r => r.year === 2025 && r.month === 6)!;
+		const aug2025 = parsed.records.find(r => r.year === 2025 && r.month === 8)!;
+		expect(jun2025.fteSalary).toBe(2636.88);
+		expect(aug2025.fteSalary).toBe(2636.88);
+
+		// Sep-Dec 2025 (ab 2025/09 table, +5.5%): 2781.91 €
+		const sep2025 = parsed.records.find(r => r.year === 2025 && r.month === 9)!;
+		expect(sep2025.fteSalary).toBe(2781.91);
+
+		// 3. Transform with SGB 16i and verify 100% MATCH and 100% tariff compliance
+		const result = transformSgb16i(parsed.records, parsed.participant, {
+			includeOffsetRows: true
+		});
+		expect(result.controls.overallStatus).toBe('MATCH');
+		expect(result.controls.totalDelta).toBe(0);
+		expect(result.tariffValidation?.isCompliant).toBe(true);
+		expect(result.tariffValidation?.checkedCount).toBe(60);
+		expect(result.tariffValidation?.discrepancyCount).toBe(0);
+	});
 });

@@ -32,11 +32,11 @@
 		});
 	}
 
-	// Build a complete audit list of all records >= 09/2025
+	// Build a complete audit list of all records >= 07/2023
 	const auditRows = $derived.by(() => {
 		if (!activeRecords || activeRecords.length === 0) return [];
 		return activeRecords
-			.filter(r => r.year * 100 + r.month >= 202509)
+			.filter(r => r.year * 100 + r.month >= 202307)
 			.map(r => {
 				const step = determineParticipantStepForRecord(activeParticipant, r);
 				const awo = getAwoTariffSalary(
@@ -157,7 +157,7 @@
 		<!-- Metrics Grid -->
 		<div class="audit-metrics-grid">
 			<div class="metric-box">
-				<span class="metric-label">Prüfungsstatus (ab 09/2025)</span>
+				<span class="metric-label">Prüfungsstatus (ab 07/2023)</span>
 				<span class="metric-val {activeValidation.isCompliant ? 'text-emerald' : 'text-amber'}">
 					{activeValidation.isCompliant ? '✓ Fehlerfrei' : `⚠️ ${activeValidation.discrepancyCount} Abweichungen`}
 				</span>
@@ -179,13 +179,13 @@
 			</div>
 
 			<div class="metric-box">
-				<span class="metric-label">Geprüfte Monate (ab 09/2025)</span>
+				<span class="metric-label">Geprüfte Monate (ab 07/2023)</span>
 				<span class="metric-val font-mono">{activeValidation.checkedCount} Monate</span>
-				<span class="metric-sub">09/2025 bis 12/2028</span>
+				<span class="metric-sub">07/2023 bis 12/2028</span>
 			</div>
 
 			<div class="metric-box">
-				<span class="metric-label">Monate vor 09/2025</span>
+				<span class="metric-label">Monate vor 07/2023</span>
 				<span class="metric-val font-mono">{activeValidation.skippedPriorTo2025Count} Monate</span>
 				<span class="metric-sub">Keine Tariftabelle hinterlegt</span>
 			</div>
@@ -215,7 +215,7 @@
 							class="btn-filter {filterView === 'all' ? 'active' : ''}"
 							onclick={() => (filterView = 'all')}
 						>
-							Alle Monate ab 09/2025 ({auditRows.length})
+							Alle Monate ab 07/2023 ({auditRows.length})
 						</button>
 					</div>
 				</div>
@@ -225,7 +225,7 @@
 						{#if filterView === 'discrepancies'}
 							✓ Keine Abweichungen gefunden! Alle {activeValidation.checkedCount} Monate stimmen exakt mit der AWO-Tariftabelle überein.
 						{:else}
-							Keine Datensätze ab 09/2025 vorhanden.
+							Keine Datensätze ab 07/2023 vorhanden.
 						{/if}
 					</div>
 				{:else}

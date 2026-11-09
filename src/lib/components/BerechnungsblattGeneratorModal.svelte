@@ -835,6 +835,9 @@
 						<div class="baseline-tariff-control-row">
 							<select id="baselineTariffMonth" bind:value={baselineTariffSelection} class="form-select flex-grow">
 								<option value="">Tarifstand bei Projektbeginn ({startDate ? formatDateDMY(parseDateInput(startDate)) : 'Startdatum'})</option>
+								<option value="2023-07">ab 07/2023 bzw. 2024 (Tariftabelle 2023/2024)</option>
+								<option value="2025-03">ab 03/2025 (+ 1. Sockelbetrag 2025)</option>
+								<option value="2025-06">ab 06/2025 (+ 2. Sockelbetrag 2025)</option>
 								<option value="2025-09">ab 09/2025 bzw. 01/2026 (Basis-Tariftabelle)</option>
 								<option value="2026-09">ab 09/2026 (+ Tarifsteigerung 2026)</option>
 								<option value="2027-07">ab 07/2027 (+ Tarifsteigerung 2027)</option>

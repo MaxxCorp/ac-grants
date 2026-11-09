@@ -8,7 +8,8 @@ import type {
 import {
 	getAwoTariffSalary,
 	calculateTariffStepAtDate,
-	isAwoTariffIncreaseMonth
+	isAwoTariffIncreaseMonth,
+	AWO_TARIFF_PERIODS
 } from '#lib/grants/awo-tariff-data';
 import { DEFAULT_INSURANCE_FUNDS } from '#lib/grants/tvl-tariff-data';
 
@@ -44,6 +45,16 @@ export function parseDateInput(input?: string): { year: number; month: number; d
 			year: parseInt(isoMatch[1], 10),
 			month: parseInt(isoMatch[2], 10),
 			day: parseInt(isoMatch[3], 10)
+		};
+	}
+
+	// Format YYYY-MM
+	const ymMatch = input.match(/^(\d{4})-(\d{1,2})$/);
+	if (ymMatch) {
+		return {
+			year: parseInt(ymMatch[1], 10),
+			month: parseInt(ymMatch[2], 10),
+			day: 1
 		};
 	}
 
@@ -409,7 +420,16 @@ export function calculateMilestones(options: BerechnungsblattGeneratorOptions): 
 		const currentGroup = tariffState.group;
 		const currentStep = tariffState.step;
 
-		const salaryInfo = getAwoTariffSalary(currentGroup, currentStep, curYear, curMonth, weeklyHours, fullTimeHours);
+		const salaryInfo =
+			getAwoTariffSalary(currentGroup, currentStep, curYear, curMonth, weeklyHours, fullTimeHours) ||
+			getAwoTariffSalary(
+				currentGroup,
+				currentStep,
+				AWO_TARIFF_PERIODS[0].validFromYear,
+				AWO_TARIFF_PERIODS[0].validFromMonth,
+				weeklyHours,
+				fullTimeHours
+			);
 		const currentFte = salaryInfo?.fteSalary || 0;
 
 		// 1. Reclassification check (Umgruppierung / Stufenanpassung)
